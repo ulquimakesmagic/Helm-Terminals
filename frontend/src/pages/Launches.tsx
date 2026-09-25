@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, short } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, errMsg, short } from "../api";
+import {
+  Address, Callout, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenAvatar, UnitInput, relTime, useToast,
+} from "../components/ui";
 
-interface Launch { id: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null; imported: boolean }
+interface Launch {
+  id: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
+  imported: boolean; created_at: string; dev_buy_sol: number; description: string;
+}
 interface Pad { id: string; network: string; status: string }
 interface W { id: string; label: string; address: string; kind: string }
+
+type Filter = "all" | "live" | "draft" | "archived";
 
 function toBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -15,115 +23,220 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-export default function Launches() {
+const EMPTY_FORM = { launchpad: "pumpfun", name: "", symbol: "", description: "", twitter: "", telegram: "", website: "", dev_wallet_id: "", dev_buy_sol: "0" };
+
+function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; onClose: () => void }) {
   const nav = useNavigate();
-  const [launches, setLaunches] = useState<Launch[]>([]);
-  const [archived, setArchived] = useState<Launch[]>([]);
-  const [pads, setPads] = useState<Pad[]>([]);
-  const [wallets, setWallets] = useState<W[]>([]);
-  const [error, setError] = useState("");
-  const [f, setF] = useState({ launchpad: "pumpfun", name: "", symbol: "", description: "", twitter: "", telegram: "", website: "", dev_wallet_id: "", dev_buy_sol: "0" });
+  const [f, setF] = useState(EMPTY_FORM);
   const [image, setImage] = useState<File | null>(null);
-  const [mint, setMint] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase() : e.target.value });
 
-  const load = async () => {
-    try {
-      const [l, a, p, w] = await Promise.all([
-        api<Launch[]>("/launches"), api<Launch[]>("/launches?status=archived"), api<Pad[]>("/launchpads"), api<W[]>("/wallets"),
-      ]);
-      setLaunches(l); setArchived(a); setPads(p); setWallets(w.filter((x) => x.kind === "managed"));
-    } catch (e) { setError((e as ApiError).detail); }
-  };
-  useEffect(() => { load(); }, []);
-
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  useEffect(() => {
+    if (!image) { setPreview(null); return; }
+    const u = URL.createObjectURL(image);
+    setPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [image]);
 
   async function create() {
     setError("");
+    if (image && image.size > 2_000_000) { setError("Image must be 2 MB or smaller."); return; }
+    setBusy(true);
     try {
       const l = await api<Launch>("/launches", { body: {
-        launchpad: f.launchpad, name: f.name, symbol: f.symbol, description: f.description,
+        launchpad: f.launchpad, name: f.name.trim(), symbol: f.symbol.trim(), description: f.description,
         socials: { twitter: f.twitter, telegram: f.telegram, website: f.website },
-        dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: +f.dev_buy_sol,
+        dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: +f.dev_buy_sol || 0,
         image_b64: image ? await toBase64(image) : null,
       } });
       nav(`/launches/${l.id}`);
-    } catch (e) { setError((e as ApiError).detail); }
+    } catch (e) { setError(errMsg(e)); setBusy(false); }
   }
 
-  const tryIt = (p: Promise<Launch>) => p.then((l) => nav(`/launches/${l.id}`)).catch((e) => setError((e as ApiError).detail));
+  return (
+    <Modal wide title="New launch" sub="Creates a draft. Nothing is sent on-chain until you review and confirm the deployment." onClose={onClose}
+      foot={<>
+        <span className="muted small grow">{!f.dev_wallet_id && "You can pick a dev wallet later, before deploying."}</span>
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={!f.name || !f.symbol || busy} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}Create draft</button>
+      </>}>
+      {error && <Callout tone="err">{error}</Callout>}
+      <div className="row" style={{ alignItems: "stretch", gap: 16, flexWrap: "nowrap" }}>
+        <label style={{ cursor: "pointer", flex: "none" }} title="Upload image">
+          <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+          {preview ? (
+            <img src={preview} alt="" style={{ width: 112, height: 112, borderRadius: 18, objectFit: "cover", border: "1px solid var(--line-2)" }} />
+          ) : (
+            <div style={{ width: 112, height: 112, borderRadius: 18, border: "1.5px dashed var(--line-2)", display: "grid", placeItems: "center", color: "var(--muted)", textAlign: "center", fontSize: 11.5 }}>
+              <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />max 2 MB</div></div>
+            </div>
+          )}
+        </label>
+        <div className="stack grow">
+          <div className="row nowrap" style={{ alignItems: "flex-start" }}>
+            <Field label="Token name" extra={`${f.name.length}/32`} style={{ flex: 2 }}><input value={f.name} onChange={set("name")} maxLength={32} placeholder="Helm Cat" autoFocus /></Field>
+            <Field label="Ticker" style={{ flex: 1 }}><input value={f.symbol} onChange={set("symbol")} maxLength={10} placeholder="HCAT" className="mono" /></Field>
+          </div>
+          <Field label="Launchpad">
+            <select value={f.launchpad} onChange={set("launchpad")}>
+              {pads.map((p) => <option key={p.id} value={p.id} disabled={p.status !== "available"}>{p.id} · {p.network}{p.status !== "available" ? " (coming soon)" : ""}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+      <Field label="Description" extra={`${f.description.length}/500`}>
+        <textarea value={f.description} onChange={set("description")} rows={3} maxLength={500} placeholder="What is this token about?" />
+      </Field>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        <Field label="X / Twitter"><input value={f.twitter} onChange={set("twitter")} placeholder="https://x.com/…" /></Field>
+        <Field label="Telegram"><input value={f.telegram} onChange={set("telegram")} placeholder="https://t.me/…" /></Field>
+        <Field label="Website"><input value={f.website} onChange={set("website")} placeholder="https://…" /></Field>
+      </div>
+      <div className="divider" />
+      <div className="row nowrap" style={{ alignItems: "flex-start" }}>
+        <Field label="Dev wallet" style={{ flex: 2 }} hint={wallets.length === 0 ? "Create a managed wallet on the Wallets page first." : "Signs the create transaction and makes the dev buy."}>
+          <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
+            <option value="">Choose later…</option>
+            {wallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
+          </select>
+        </Field>
+        <Field label="Dev buy" style={{ flex: 1 }}><UnitInput unit="SOL" value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function ImportLaunch({ wallets, onClose }: { wallets: W[]; onClose: () => void }) {
+  const nav = useNavigate();
+  const [mode, setMode] = useState<"import" | "clone">("import");
+  const [mint, setMint] = useState("");
+  const [dev, setDev] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true); setError("");
+    try {
+      const l = await api<Launch>(mode === "import" ? "/launches/import" : "/launches/clone", { body: mode === "import" ? { mint: mint.trim() } : { mint: mint.trim(), dev_wallet_id: dev || null } });
+      nav(`/launches/${l.id}`);
+    } catch (e) { setError(errMsg(e)); setBusy(false); }
+  }
+  return (
+    <Modal title="Import or clone a token" onClose={onClose}
+      foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn" disabled={!mint.trim() || busy} onClick={go}>{busy && <Spinner />}{mode === "import" ? "Import token" : "Clone into draft"}</button></>}>
+      <Seg full value={mode} onChange={setMode} options={[["import", "Import existing"], ["clone", "Clone metadata"]]} />
+      <p className="muted small">
+        {mode === "import"
+          ? "Attach your own wallets to a token that already exists so you can trade it here and see the supply transparency panel."
+          : "Copies the name, ticker and description of an existing token into a new draft. The image is not copied."}
+      </p>
+      {error && <Callout tone="err">{error}</Callout>}
+      <Field label="Token mint address"><input value={mint} onChange={(e) => setMint(e.target.value)} className="mono" placeholder="e.g. 7xKX…pump" autoFocus /></Field>
+      {mode === "clone" && (
+        <Field label="Dev wallet (optional)">
+          <select value={dev} onChange={(e) => setDev(e.target.value)}>
+            <option value="">Choose later…</option>
+            {wallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
+          </select>
+        </Field>
+      )}
+    </Modal>
+  );
+}
+
+export default function Launches() {
+  const nav = useNavigate();
+  const toast = useToast();
+  const [launches, setLaunches] = useState<Launch[] | null>(null);
+  const [archived, setArchived] = useState<Launch[]>([]);
+  const [pads, setPads] = useState<Pad[]>([]);
+  const [wallets, setWallets] = useState<W[]>([]);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [q, setQ] = useState("");
+  const [modal, setModal] = useState<null | "create" | "import">(null);
+
+  useEffect(() => {
+    Promise.all([api<Launch[]>("/launches"), api<Launch[]>("/launches?status=archived"), api<Pad[]>("/launchpads"), api<W[]>("/wallets")])
+      .then(([l, a, p, w]) => { setLaunches(l); setArchived(a); setPads(p); setWallets(w.filter((x) => x.kind === "managed")); })
+      .catch((e) => { toast("bad", errMsg(e)); setLaunches([]); });
+  }, [toast]);
+
+  const counts = useMemo(() => ({
+    all: launches?.length ?? 0,
+    live: launches?.filter((l) => l.status === "live").length ?? 0,
+    draft: launches?.filter((l) => l.status !== "live").length ?? 0,
+    archived: archived.length,
+  }), [launches, archived]);
+
+  const shown = useMemo(() => {
+    const base = filter === "archived" ? archived : (launches ?? []).filter((l) => filter === "all" || (filter === "live" ? l.status === "live" : l.status !== "live"));
+    const s = q.trim().toLowerCase();
+    return s ? base.filter((l) => l.name.toLowerCase().includes(s) || l.symbol.toLowerCase().includes(s) || (l.mint_address ?? "").toLowerCase().includes(s)) : base;
+  }, [launches, archived, filter, q]);
 
   return (
     <>
-      <h1>Launches</h1>
-      {error && <div className="banner err">{error}</div>}
-      <div className="grid cols2" style={{ marginBottom: 16 }}>
-        <div className="card stack">
-          <h2>Create a launch</h2>
-          <label>Launchpad
-            <select value={f.launchpad} onChange={set("launchpad")}>
-              {pads.map((p) => <option key={p.id} value={p.id} disabled={p.status !== "available"}>{p.id} ({p.network}){p.status !== "available" ? " — planned" : ""}</option>)}
-            </select>
-          </label>
-          <div className="row">
-            <label style={{ flex: 2 }}>Name<input value={f.name} onChange={set("name")} maxLength={32} /></label>
-            <label style={{ flex: 1 }}>Symbol<input value={f.symbol} onChange={set("symbol")} maxLength={10} /></label>
-          </div>
-          <label>Description<textarea value={f.description} onChange={set("description")} rows={2} maxLength={500} /></label>
-          <div className="row">
-            <label style={{ flex: 1 }}>X<input value={f.twitter} onChange={set("twitter")} placeholder="x.com/…" /></label>
-            <label style={{ flex: 1 }}>Telegram<input value={f.telegram} onChange={set("telegram")} placeholder="t.me/…" /></label>
-            <label style={{ flex: 1 }}>Website<input value={f.website} onChange={set("website")} /></label>
-          </div>
-          <label>Image (max 2 MB)<input type="file" accept="image/*" onChange={(e) => setImage(e.target.files?.[0] ?? null)} /></label>
-          <div className="row">
-            <label style={{ flex: 2 }}>Dev wallet
-              <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
-                <option value="">Choose…</option>
-                {wallets.map((w) => <option key={w.id} value={w.id}>{w.label || short(w.address)}</option>)}
-              </select>
-            </label>
-            <label style={{ flex: 1 }}>Dev buy (SOL)<input value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></label>
-          </div>
-          <button disabled={!f.name || !f.symbol} onClick={create}>Create draft</button>
-          <p className="muted" style={{ margin: 0 }}>The draft is not sent on-chain until you review and confirm the deployment.</p>
-        </div>
+      <PageHeader title="Launches" sub="Create tokens, import ones you hold, and open a workspace to trade and manage each one."
+        actions={<>
+          <button className="btn secondary" onClick={() => setModal("import")}><Icon name="download" size={15} />Import / clone</button>
+          <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />New launch</button>
+        </>} />
 
-        <div className="card stack">
-          <h2>Clone or import a token</h2>
-          <label>Token mint address<input value={mint} onChange={(e) => setMint(e.target.value)} className="mono" /></label>
-          <div className="row">
-            <button className="ghost" disabled={!mint} onClick={() => tryIt(api<Launch>("/launches/clone", { body: { mint, dev_wallet_id: f.dev_wallet_id || null } }))}>Clone metadata into a draft</button>
-            <button className="ghost" disabled={!mint} onClick={() => tryIt(api<Launch>("/launches/import", { body: { mint } }))}>Import existing token</button>
-          </div>
-          <p className="muted" style={{ margin: 0 }}>
-            Clone copies name, symbol and description (not the image). Import lets you attach your own wallets to an existing token to trade it and see the supply transparency panel.
-          </p>
-          <h3 style={{ marginTop: 12 }}>Launchpad roadmap</h3>
-          <div className="row">
-            {pads.map((p) => <span key={p.id} className={`badge ${p.status === "available" ? "live" : "planned"}`}>{p.id}</span>)}
-          </div>
-        </div>
+      <div className="row between">
+        <Seg value={filter} onChange={setFilter} options={[
+          ["all", <>All <span className="muted num">{counts.all}</span></>],
+          ["live", <>Live <span className="muted num">{counts.live}</span></>],
+          ["draft", <>Drafts <span className="muted num">{counts.draft}</span></>],
+          ["archived", <>Archived <span className="muted num">{counts.archived}</span></>],
+        ]} />
+        <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
 
-      <div className="card">
-        <div className="row between"><h2>Your launches</h2><button className="ghost" onClick={() => setShowArchived(!showArchived)}>{showArchived ? "Hide" : "Show"} archived ({archived.length})</button></div>
-        <table>
-          <thead><tr><th>Token</th><th>Status</th><th>Launchpad</th><th>Mint</th></tr></thead>
-          <tbody>
-            {[...launches, ...(showArchived ? archived : [])].map((l) => (
-              <tr key={l.id}>
-                <td><Link to={`/launches/${l.id}`}>{l.name} <span className="muted">${l.symbol}</span></Link></td>
-                <td><span className={`badge ${l.status}`}>{l.status}</span>{l.imported && <span className="badge"> imported</span>}</td>
-                <td>{l.launchpad}</td>
-                <td className="mono">{l.mint_address ? short(l.mint_address) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {launches.length === 0 && <p className="muted">No launches yet.</p>}
-      </div>
+      {!launches ? <div className="card"><Loading rows={4} /></div> : shown.length === 0 && (q || filter !== "all") ? (
+        <div className="card"><Empty icon="search" title="No launches match" text="Try a different filter or search." /></div>
+      ) : (
+        <div className="grid g-cards">
+          {filter !== "archived" && !q && (
+            <button className="card lcard-new" onClick={() => setModal("create")}>
+              <span className="empty" style={{ padding: 0 }}><span className="ic"><Icon name="plus" size={22} /></span></span>
+              <b style={{ color: "var(--text)" }}>New launch</b>
+              <span className="small">Start a draft on Pump.fun</span>
+            </button>
+          )}
+          {shown.map((l) => (
+            <div key={l.id} className="card lcard" role="link" tabIndex={0} onClick={() => nav(`/launches/${l.id}`)} onKeyDown={(e) => e.key === "Enter" && nav(`/launches/${l.id}`)}>
+              <div className="row nowrap" style={{ gap: 12 }}>
+                <TokenAvatar symbol={l.symbol} size={44} />
+                <div className="grow">
+                  <div className="truncate" style={{ fontWeight: 650, fontSize: 15 }}>{l.name}</div>
+                  <div className="muted mono">${l.symbol}</div>
+                </div>
+                <StatusBadge status={l.status} />
+              </div>
+              {l.description && <p className="muted small" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{l.description}</p>}
+              <div className="meta">
+                <div><span className="k">Launchpad</span>{l.launchpad}{l.imported && <span className="badge violet" style={{ marginLeft: 6 }}>imported</span>}</div>
+                <div><span className="k">Created</span>{relTime(l.created_at)}</div>
+                <div style={{ gridColumn: "1 / -1" }}><span className="k">Mint</span>{l.mint_address ? <Address address={l.mint_address} type="token" /> : <span className="muted">Not deployed</span>}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pads.length > 0 && (
+        <p className="small muted row" style={{ gap: 8 }}>
+          <span className="badge good"><span className="dot" />{pads.filter((p) => p.status === "available").map((p) => p.id).join(", ")} live</span>
+          <span>Coming soon: {pads.filter((p) => p.status !== "available").map((p) => p.id).join(", ")}.</span>
+        </p>
+      )}
+
+      {modal === "create" && <CreateLaunch pads={pads} wallets={wallets} onClose={() => setModal(null)} />}
+      {modal === "import" && <ImportLaunch wallets={wallets} onClose={() => setModal(null)} />}
     </>
   );
 }

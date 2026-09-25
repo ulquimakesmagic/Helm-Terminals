@@ -1,70 +1,140 @@
 import { useEffect, useState } from "react";
-import { api, fmt } from "../api";
+import { Link } from "react-router-dom";
+import { api, errMsg, fmt } from "../api";
+import AreaChart from "../components/Chart";
+import { ActivityRow, FeedItem } from "../components/feed";
+import { Callout, Card, CopyButton, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, useToast } from "../components/ui";
+import { useSession } from "../session";
 
-const PERIODS = [["all", "All-time"], ["1y", "1 Year"], ["1m", "1 Month"], ["7d", "7 Days"], ["1d", "1 Day"]];
-
-function Line({ points }: { points: { date: string; cumulative_sol: number }[] }) {
-  if (!points.length) return <p className="muted" style={{ textAlign: "center", padding: 40 }}>No transactions yet.</p>;
-  const w = 560, h = 180, pad = 8;
-  const ys = points.map((p) => p.cumulative_sol);
-  const min = Math.min(0, ...ys), max = Math.max(0, ...ys) || 1;
-  const x = (i: number) => pad + (points.length === 1 ? (w - 2 * pad) / 2 : (i * (w - 2 * pad)) / (points.length - 1));
-  const y = (v: number) => h - pad - ((v - min) / (max - min || 1)) * (h - 2 * pad);
-  const d = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.cumulative_sol)}`).join(" ");
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Cumulative net SOL flow">
-      <line x1={pad} x2={w - pad} y1={y(0)} y2={y(0)} stroke="var(--line)" />
-      <path d={d} fill="none" stroke="var(--accent)" strokeWidth="2" />
-    </svg>
-  );
-}
+type Period = "all" | "1y" | "1m" | "7d" | "1d";
+const PERIODS: [Period, string][] = [["1d", "24H"], ["7d", "7D"], ["1m", "30D"], ["1y", "1Y"], ["all", "All"]];
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState("all");
+  const toast = useToast();
+  const { me, tg } = useSession();
+  const [period, setPeriod] = useState<Period>("all");
   const [data, setData] = useState<any>(null);
+  const [wallets, setWallets] = useState<any[] | null>(null);
+  const [launches, setLaunches] = useState<any[] | null>(null);
+  const [feed, setFeed] = useState<ActivityRow[] | null>(null);
   const [error, setError] = useState("");
 
-  const load = () => api(`/dashboard?period=${period}`).then(setData).catch((e) => setError(e.detail));
+  const load = () => api(`/dashboard?period=${period}`).then((d) => { setData(d); setError(""); }).catch((e) => setError(errMsg(e)));
   useEffect(() => { load(); }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    api<any[]>("/wallets").then(setWallets).catch(() => setWallets([]));
+    api<any[]>("/launches").then(setLaunches).catch(() => setLaunches([]));
+    api<ActivityRow[]>("/activity?limit=7").then(setFeed).catch(() => setFeed([]));
+  }, []);
+
+  const managed = wallets?.filter((w) => w.kind === "managed") ?? [];
+  const live = launches?.filter((l) => l.status === "live") ?? [];
+  const referralUses = data?.referral.codes.reduce((s: number, c: any) => s + c.uses, 0) ?? 0;
+
+  const steps: [boolean, string, string, string][] = [
+    [managed.length > 0, "Create your first wallets", "/wallets", "Wallets"],
+    [!!me?.totp_enabled, "Turn on two-factor authentication", "/settings", "Settings"],
+    [(launches?.length ?? 0) > 0, "Create or import a launch", "/launches", "Launches"],
+    [!!tg?.linked, "Link the Telegram bot", "/settings", "Settings"],
+  ];
+  const done = steps.filter((s) => s[0]).length;
 
   return (
     <>
-      <div className="row between">
-        <h1>Dashboard</h1>
-        <div className="row">
-          {PERIODS.map(([k, l]) => (
-            <button key={k} className={period === k ? "" : "ghost"} onClick={() => setPeriod(k)}>{l}</button>
-          ))}
+      <PageHeader
+        title="Dashboard"
+        sub="Your SOL flow, launches and recent account activity."
+        actions={<>
+          <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>
+        </>}
+      />
+      {error && <Callout tone="err">{error}</Callout>}
+
+      <div className="grid g-stats">
+        {data ? (
+          <Stat accent label="Net SOL flow" icon="trend" value={`${data.net_sol_flow > 0 ? "+" : ""}${fmt(data.net_sol_flow)}`} unit="SOL"
+            tone={data.net_sol_flow > 0 ? "good" : data.net_sol_flow < 0 ? "bad" : undefined} hint={PERIODS.find((p) => p[0] === period)?.[1] + " · confirmed txs"} />
+        ) : <div className="card stat"><Skeleton h={12} w={90} /><Skeleton h={26} w={140} /></div>}
+        <Stat label="Launches" icon="rocket" value={data ? data.total_launches : "–"} hint={`${live.length} live now`} />
+        <Stat label="Managed wallets" icon="wallet" value={wallets ? managed.length : "–"} hint={`${(wallets?.length ?? 0) - managed.length} watch-only`} />
+        <Stat label="Referral signups" icon="gift" value={data ? referralUses : "–"} hint={`${data?.referral.codes.length ?? 0} active codes`} />
+      </div>
+
+      <div className="grid g-main">
+        <div className="col">
+          <Card title="Cumulative net SOL flow" icon="trend" sub="Confirmed on-chain transactions, fees included"
+            actions={<Seg value={period} onChange={setPeriod} options={PERIODS} />}
+            foot={data?.note}>
+            {!data ? <Skeleton h={240} /> : data.series.length === 0 ? (
+              <Empty icon="trend" title="No confirmed transactions in this period" text="Once you deploy, trade or move SOL, your net flow shows up here." />
+            ) : <AreaChart points={data.series} />}
+          </Card>
+
+          <Card title="Your launches" icon="rocket" actions={<Link to="/launches" className="btn sm ghost">View all<Icon name="arrowright" size={13} /></Link>} flush>
+            {!launches ? <Loading /> : launches.length === 0 ? (
+              <Empty icon="rocket" title="No launches yet" text="Create a token on Pump.fun, or import one you already hold to track and trade it."
+                action={<Link to="/launches" className="btn sm"><Icon name="plus" size={14} />Create launch</Link>} />
+            ) : (
+              <div className="table-wrap"><table>
+                <thead><tr><th>Token</th><th>Status</th><th className="hide-sm">Launchpad</th><th /></tr></thead>
+                <tbody>
+                  {launches.slice(0, 5).map((l) => (
+                    <tr key={l.id}>
+                      <td><Link to={`/launches/${l.id}`} style={{ color: "var(--text)", fontWeight: 600 }}>{l.name}</Link> <span className="muted">${l.symbol}</span></td>
+                      <td><StatusBadge status={l.status} /></td>
+                      <td className="hide-sm text-2">{l.launchpad}</td>
+                      <td className="r"><Link to={`/launches/${l.id}`} className="btn sm secondary">Open</Link></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            )}
+          </Card>
+        </div>
+
+        <div className="col">
+          {done < steps.length && (
+            <Card title="Get set up" icon="zap" actions={<span className="muted small num">{done}/{steps.length}</span>}>
+              <div className="bar thin" style={{ marginBottom: 6 }}><div style={{ width: `${(done / steps.length) * 100}%` }} /></div>
+              {steps.map(([ok, label, to, cta]) => (
+                <div key={label} className={`check ${ok ? "done" : ""}`}>
+                  <span className="tick"><Icon name="check" size={13} stroke={3} /></span>
+                  <span className="label grow">{label}</span>
+                  {!ok && <Link to={to} className="btn sm secondary">{cta}</Link>}
+                </div>
+              ))}
+            </Card>
+          )}
+
+          <Card title="Recent activity" icon="activity" flush actions={<Link to="/activity" className="btn sm ghost">All<Icon name="arrowright" size={13} /></Link>}>
+            {!feed ? <Loading /> : feed.length === 0 ? <Empty icon="activity" title="Nothing yet" /> : (
+              <div className="feed">{feed.map((a) => <FeedItem key={a.id} a={a} />)}</div>
+            )}
+          </Card>
+
+          <Card title="Referrals" icon="gift" actions={
+            <button className="btn sm secondary" onClick={() => api("/referrals", { method: "POST", body: {} }).then(() => { toast("good", "Referral code created"); load(); }).catch((e) => toast("bad", errMsg(e)))}>
+              <Icon name="plus" size={13} />New code
+            </button>} flush>
+            {!data ? <Loading rows={2} /> : data.referral.codes.length === 0 ? (
+              <Empty icon="gift" title="No referral codes" text="Create a code to invite other people to Helm Terminals." />
+            ) : (
+              <div className="feed">
+                {data.referral.codes.map((c: any) => (
+                  <div key={c.code} className="feed-item" style={{ alignItems: "center" }}>
+                    <span className="mono" style={{ fontSize: 14, fontWeight: 600, letterSpacing: "0.06em" }}>{c.code}</span>
+                    <CopyButton text={c.code} />
+                    <div className="grow">
+                      <div className="bar thin"><div style={{ width: `${Math.min(100, (c.uses / Math.max(1, c.max_uses)) * 100)}%` }} /></div>
+                    </div>
+                    <span className="muted small num">{c.uses}/{c.max_uses}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
       </div>
-      {error && <div className="banner err">{error}</div>}
-      {data && (
-        <div className="stack" style={{ gap: 16 }}>
-          <div className="grid cols4">
-            <div className="card stat"><div className="l">Net SOL flow</div><div className={`v ${data.net_sol_flow >= 0 ? "good" : "bad"}`}>{fmt(data.net_sol_flow)} SOL</div></div>
-            <div className="card stat"><div className="l">Launches</div><div className="v">{data.total_launches}</div></div>
-            <div className="card stat"><div className="l">Referral codes</div><div className="v">{data.referral.codes.length}</div></div>
-          </div>
-          <div className="card">
-            <h2>Cumulative net SOL flow</h2>
-            <Line points={data.series} />
-            <p className="muted" style={{ marginBottom: 0 }}>{data.note}</p>
-          </div>
-          <div className="card">
-            <div className="row between">
-              <h2>Referral program</h2>
-              <button className="ghost" onClick={() => api("/referrals", { method: "POST", body: {} }).then(load)}>New code</button>
-            </div>
-            {data.referral.codes.length === 0 ? <p className="muted">No codes yet.</p> : (
-              <table><tbody>
-                {data.referral.codes.map((c: any) => (
-                  <tr key={c.code}><td className="mono">{c.code}</td><td>{c.uses}/{c.max_uses} used</td></tr>
-                ))}
-              </tbody></table>
-            )}
-          </div>
-        </div>
-      )}
     </>
   );
 }

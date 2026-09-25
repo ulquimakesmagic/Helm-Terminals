@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { api, ApiError, solscan, short } from "../api";
+import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { api, errMsg, fmt, solscan } from "../api";
+import { Address, Callout, Icon, Modal, Spinner, StatusBadge } from "./ui";
 
 type Phase = "loading" | "review" | "submitting" | "polling" | "done" | "error";
 
@@ -12,21 +13,89 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial"];
+const HIDDEN = new Set(["launch_id"]);
+const LABELS: Record<string, string> = {
+  dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
+  platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
+  irreversible: "Irreversible", launchpad: "Launchpad", destination: "Destination", wallets: "Wallets", wallet: "Wallet",
+  percent: "Percent", tokens: "Tokens", side: "Side", amount: "Amount", mode: "Mode", name: "Name", symbol: "Ticker",
+};
+const KIND_LABEL: Record<string, string> = {
+  deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
+};
 
-function Value({ v }: { v: unknown }) {
-  if (Array.isArray(v))
+const isAddr = (v: unknown): v is string => typeof v === "string" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
+
+function Value({ k, v }: { k: string; v: unknown }): ReactNode {
+  if (Array.isArray(v)) {
     return (
-      <div className="stack" style={{ gap: 2 }}>
-        {v.map((x, i) => (
-          <div key={i} className="mono">
-            {typeof x === "object" && x !== null
-              ? Object.entries(x as Record<string, unknown>).map(([k, val]) => `${k}: ${String(val)}`).join("  ·  ")
-              : String(x)}
-          </div>
-        ))}
+      <div className="stack tight" style={{ alignItems: "flex-end" }}>
+        {v.map((x, i) => {
+          if (isAddr(x)) return <Address key={i} address={x} />;
+          if (x && typeof x === "object") {
+            const o = x as Record<string, unknown>;
+            return (
+              <div key={i} className="row nowrap" style={{ gap: 10 }}>
+                {isAddr(o.address) && <Address address={o.address} />}
+                {typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} SOL</span>}
+              </div>
+            );
+          }
+          return <span key={i} className="mono">{String(x)}</span>;
+        })}
+        <span className="muted small">{v.length} item{v.length === 1 ? "" : "s"}</span>
       </div>
     );
-  return <span className="mono">{String(v)}</span>;
+  }
+  if (isAddr(v)) return <Address address={v} type={k === "mint" ? "token" : "account"} />;
+  if (typeof v === "boolean") return <span className={v && k === "irreversible" ? "bad" : ""} style={{ fontWeight: 600 }}>{v ? "Yes" : "No"}</span>;
+  if (typeof v === "number") {
+    const unit = k.endsWith("_sol") ? " SOL" : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
+    return <span className="num" style={{ fontWeight: 600 }}>{fmt(v, 6)}{unit}</span>;
+  }
+  if (k === "side") return <span className={`badge cap ${v === "buy" ? "good" : "bad"}`}>{String(v)}</span>;
+  return <span>{String(v ?? "—")}</span>;
+}
+
+function Steps({ phase }: { phase: Phase }) {
+  const cur = phase === "loading" || phase === "error" ? 0 : phase === "done" ? 2 : 1;
+  return (
+    <div className="steps">
+      {["Preview", "Confirm", "Result"].map((l, i) => {
+        const done = i < cur || (phase === "done" && i === 2);
+        return (
+          <span key={l} className="row nowrap" style={{ gap: 6 }}>
+            {i > 0 && <span className="sep" />}
+            <span className={`s ${done ? "done" : i === cur ? "on" : ""}`}>
+              <span className="n">{done ? <Icon name="check" size={11} stroke={3} /> : i + 1}</span>{l}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function Otp({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const set = (i: number, ch: string) => {
+    const digits = ch.replace(/\D/g, "");
+    if (digits.length > 1) { onChange(digits.slice(0, 6)); refs.current[Math.min(5, digits.length)]?.focus(); return; }
+    const arr = value.padEnd(6, " ").split("");
+    arr[i] = digits || " ";
+    onChange(arr.join("").trimEnd().replace(/ /g, ""));
+    if (digits && i < 5) refs.current[i + 1]?.focus();
+  };
+  return (
+    <div className="otp">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <input key={i} ref={(el) => (refs.current[i] = el)} value={value[i] ?? ""} inputMode="numeric" autoComplete={i === 0 ? "one-time-code" : "off"}
+          maxLength={6} aria-label={`Digit ${i + 1}`} autoFocus={i === 0}
+          onChange={(e) => set(i, e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Backspace" && !value[i] && i > 0) refs.current[i - 1]?.focus(); }} />
+      ))}
+    </div>
+  );
 }
 
 /** Every fund-moving action goes through here: preflight first, then confirm with the same hash. */
@@ -42,16 +111,8 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
 
   useEffect(() => {
     api(path, { body })
-      .then((r) => {
-        setPre(r.preflight);
-        setHash(r.preflight_hash);
-        setNeeds2fa(Boolean(r.requires_2fa));
-        setPhase("review");
-      })
-      .catch((e: ApiError) => {
-        setError(e.detail);
-        setPhase("error");
-      });
+      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
+      .catch((e) => { setError(errMsg(e)); setPhase("error"); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -59,9 +120,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
     setPhase("submitting");
     setError("");
     try {
-      const r = await api(path, {
-        body: { ...body, confirm: true, preflight_hash: hash, idempotency_key: key.current, totp: totp || undefined },
-      });
+      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, idempotency_key: key.current, totp: totp || undefined } });
       setPhase("polling");
       let j = await api(`/jobs/${r.job_id}`);
       while (!TERMINAL.includes(j.status)) {
@@ -72,84 +131,84 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
       setPhase("done");
       onDone?.();
     } catch (e) {
-      setError((e as ApiError).detail ?? String(e));
+      setError(errMsg(e));
       setPhase("review");
     }
   }
 
   const { warnings = [], kind, ...rest } = pre ?? {};
+  const rows = Object.entries(rest).filter(([k]) => !HIDDEN.has(k));
+  const busy = phase === "submitting" || phase === "polling";
+  const blocked = warnings.length > 0;
+  const danger = kind === "burn" || kind === "withdraw" || kind === "send_tokens";
+
+  const foot =
+    phase === "done" || phase === "error" ? <button className="btn" onClick={onClose}>Close</button> :
+    phase === "loading" ? <button className="btn ghost" onClick={onClose}>Cancel</button> : (
+      <>
+        <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || (needs2fa && totp.length !== 6)}>
+          {busy ? <><Spinner />{phase === "polling" ? "Waiting for confirmation…" : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
+        </button>
+      </>
+    );
 
   return (
-    <div className="modal-bg" onClick={phase === "polling" || phase === "submitting" ? undefined : onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{title}</h2>
-        {phase === "loading" && <p className="muted">Building preflight…</p>}
-        {phase === "error" && <div className="banner err">{error}</div>}
-        {pre && phase !== "done" && (
-          <>
-            <div className="banner info">Review exactly what will happen. Nothing is sent until you confirm.</div>
-            <div className="kv">
-              {Object.entries(rest).map(([k, v]) => (
-                <div key={k} style={{ display: "contents" }}>
-                  <div className="k">{k.replace(/_/g, " ")}</div>
-                  <div><Value v={v} /></div>
-                </div>
-              ))}
-            </div>
-            {warnings.map((w: string) => (
-              <div key={w} className="banner warn" style={{ marginTop: 12 }}>{w}</div>
+    <Modal title={title} sub={<Steps phase={phase} />} onClose={onClose} foot={foot} lock={busy}>
+      {phase === "loading" && (
+        <div className="row" style={{ padding: "24px 0", justifyContent: "center", gap: 10 }}><Spinner /><span className="muted">Building preview and simulating…</span></div>
+      )}
+      {phase === "error" && <Callout tone="err"><b>Couldn't build this action.</b><br />{error}</Callout>}
+
+      {pre && phase !== "done" && phase !== "error" && (
+        <>
+          <Callout icon="eye">Review exactly what will happen. <b>Nothing is sent until you confirm.</b></Callout>
+          <div className="kv">
+            {rows.map(([k, v]) => (
+              <Fragment key={k}>
+                <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
+                <div className="v"><Value k={k} v={v} /></div>
+              </Fragment>
             ))}
-            {error && <div className="banner err" style={{ marginTop: 12 }}>{error}</div>}
-            <div className="row" style={{ marginTop: 16 }}>
-              {needs2fa && (
-                <input
-                  placeholder="2FA code (required)"
-                  value={totp}
-                  onChange={(e) => setTotp(e.target.value)}
-                  inputMode="numeric"
-                  maxLength={6}
-                  style={{ width: 170 }}
-                />
-              )}
-              <div className="spacer" style={{ flex: 1 }} />
-              <button className="ghost" onClick={onClose} disabled={phase !== "review"}>Cancel</button>
-              <button onClick={confirm} disabled={phase !== "review" || warnings.length > 0 || (needs2fa && totp.length !== 6)}>
-                {phase === "review" ? `Confirm ${kind ?? ""}` : "Working…"}
-              </button>
+          </div>
+          {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
+          {error && <Callout tone="err">{error}</Callout>}
+          {needs2fa && !blocked && (
+            <div className="stack tight" style={{ alignItems: "center", padding: "6px 0" }}>
+              <span className="small text-2 row" style={{ gap: 6 }}><Icon name="shield" size={14} />Enter your 2FA code to authorise</span>
+              <Otp value={totp} onChange={setTotp} />
             </div>
-          </>
-        )}
-        {phase === "done" && job && (
-          <>
-            <p>
-              Result: <span className={`badge ${job.status}`}>{job.status}</span>
-            </p>
-            {job.error && <div className="banner err">{job.error}</div>}
-            <table>
+          )}
+        </>
+      )}
+
+      {phase === "done" && job && (
+        <>
+          <div className="stack" style={{ alignItems: "center", textAlign: "center", padding: "8px 0" }}>
+            <div className={`feed-ic ${job.status === "confirmed" ? "good" : job.status === "failed" ? "bad" : "warn"}`} style={{ width: 48, height: 48, borderRadius: 14 }}>
+              <Icon name={job.status === "confirmed" ? "checkcircle" : job.status === "failed" ? "xcircle" : "alert"} size={24} />
+            </div>
+            <h2>{job.status === "confirmed" ? "Confirmed on-chain" : job.status === "failed" ? "Failed" : "Partly completed"}</h2>
+          </div>
+          {job.error && <Callout tone="err">{job.error}</Callout>}
+          <div className="card" style={{ background: "var(--bg-2)" }}>
+            <div className="table-wrap"><table>
               <tbody>
                 {job.transactions.map((t: any) => (
                   <tr key={t.id}>
                     <td>{t.kind}</td>
-                    <td><span className={`badge ${t.status}`}>{t.status}</span></td>
-                    <td className="mono">
-                      {t.signature ? <a href={solscan(t.signature)} target="_blank" rel="noreferrer">{short(t.signature)}</a> : ""}
-                      {t.error ? <span className="bad"> {t.error}</span> : null}
+                    <td><StatusBadge status={t.status} /></td>
+                    <td className="r mono">
+                      {t.signature ? <a href={solscan(t.signature)} target="_blank" rel="noreferrer">View on Solscan <Icon name="ext" size={11} /></a> : null}
+                      {t.error ? <span className="bad small"> {t.error}</span> : null}
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-            <div className="row" style={{ marginTop: 12, justifyContent: "flex-end" }}>
-              <button onClick={onClose}>Close</button>
-            </div>
-          </>
-        )}
-        {phase === "error" && (
-          <div className="row" style={{ justifyContent: "flex-end" }}>
-            <button onClick={onClose}>Close</button>
+            </table></div>
           </div>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </Modal>
   );
 }

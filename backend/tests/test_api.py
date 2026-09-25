@@ -280,3 +280,11 @@ async def test_excluded_features_are_not_exposed(client):
     paths = " ".join((await client.get("/openapi.json")).json()["paths"]).lower()
     for word in EXCLUDED_WORDS:
         assert word not in paths, f"excluded feature leaked into API: {word}"
+
+
+async def test_me_reports_email_and_2fa(client):
+    await client.post("/auth/register", json={"email": "me@example.com", "password": "correct-horse-1"})
+    r = await client.post("/auth/login", json={"email": "me@example.com", "password": "correct-horse-1"})
+    h = {"Authorization": f"Bearer {r.json()['token']}"}
+    me = (await client.get("/auth/me", headers=h)).json()
+    assert me["email"] == "me@example.com" and me["totp_enabled"] is False

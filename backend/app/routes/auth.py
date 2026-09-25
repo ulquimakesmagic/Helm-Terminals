@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import log_activity, web_user
+from ..deps import current_user, log_activity, web_user
 from ..models import Session, User, utcnow
 from ..security import (
     check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
@@ -87,6 +87,12 @@ async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSessi
     await log_activity(db, user.id, "2fa.enabled")
     await db.commit()
     return {"totp_enabled": True}
+
+
+@router.get("/me")
+async def me(user: User = Depends(current_user)):
+    return {"id": user.id, "email": user.email, "totp_enabled": user.totp_enabled,
+            "created_at": user.created_at.isoformat()}
 
 
 @router.get("/sessions")

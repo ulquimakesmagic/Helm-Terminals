@@ -39,7 +39,14 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data);
+    const detail = typeof data.detail === "string" ? data.detail
+      : Array.isArray(data.detail)
+        ? data.detail.map((d: any) => {
+            const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : "";
+            const msg = String(d.msg ?? "invalid value").replace(/^Value error, /, "");
+            return field && field !== "body" ? `${String(field).replace(/_/g, " ")}: ${msg}` : msg;
+          }).join(". ")
+        : JSON.stringify(data.detail ?? data);
     if (res.status === 401 && token && !detail.startsWith("totp_required")) {
       setToken(null);
       window.location.assign("/login");
@@ -52,3 +59,5 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export const solscan = (sig: string) => `https://solscan.io/tx/${sig}`;
 export const short = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 export const fmt = (n: number, d = 4) => n.toLocaleString(undefined, { maximumFractionDigits: d });
+export const sol = (n: number, d = 4) => `${fmt(n, d)} SOL`;
+export const errMsg = (e: unknown) => (e as ApiError)?.detail ?? String(e);
