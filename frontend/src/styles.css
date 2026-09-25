@@ -1,0 +1,42 @@
+:root {
+  --bg: #0d0f14; --panel: #151821; --panel2: #1b1f2b; --line: #262b3a; --text: #e6e8ee; --muted: #8b93a7;
+  --accent: #7c8cff; --good: #35d39a; --bad: #ff6b81; --warn: #f5b942;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Inter, system-ui, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+h1 { font-size: 20px; margin: 0 0 16px; } h2 { font-size: 15px; margin: 0 0 12px; } h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); }
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.sidebar { background: var(--panel); border-right: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.brand { font-weight: 700; font-size: 18px; margin-bottom: 16px; } .brand small { color: var(--muted); font-weight: 400; }
+.nav a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--muted); }
+.nav a.active, .nav a:hover { background: var(--panel2); color: var(--text); }
+.spacer { flex: 1; }
+.main { padding: 24px; max-width: 1200px; width: 100%; }
+.grid { display: grid; gap: 16px; } .grid.cols2 { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); } .grid.cols4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.stat .v { font-size: 22px; font-weight: 600; } .stat .l { color: var(--muted); font-size: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .row.between { justify-content: space-between; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+input, select, textarea { background: var(--panel2); border: 1px solid var(--line); color: var(--text); padding: 8px 10px; border-radius: 8px; font: inherit; min-width: 0; }
+input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+button { background: var(--accent); color: #0b0d14; border: 0; padding: 8px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
+button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+button.danger { background: var(--bad); } button:disabled { opacity: .45; cursor: not-allowed; }
+table { width: 100%; border-collapse: collapse; } th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; }
+td, th { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--panel2); border: 1px solid var(--line); }
+.badge.live, .badge.confirmed { color: var(--good); } .badge.failed { color: var(--bad); } .badge.draft, .badge.planned { color: var(--muted); }
+.badge.deploying, .badge.submitted, .badge.partial { color: var(--warn); } .badge.yours { color: var(--accent); }
+.banner { padding: 10px 12px; border-radius: 8px; border: 1px solid; margin-bottom: 12px; }
+.banner.warn { border-color: var(--warn); color: var(--warn); background: #2a2415; } .banner.err { border-color: var(--bad); color: var(--bad); background: #2a1519; }
+.banner.info { border-color: var(--line); color: var(--muted); background: var(--panel2); }
+.bar { height: 10px; background: var(--panel2); border-radius: 999px; overflow: hidden; } .bar > div { height: 100%; background: var(--accent); }
+.bar.hot > div { background: var(--warn); }
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 520px; max-width: 100%; max-height: 90vh; overflow: auto; }
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; } .kv .k { color: var(--muted); }
+.auth { max-width: 380px; margin: 12vh auto; } .muted { color: var(--muted); } .good { color: var(--good); } .bad { color: var(--bad); }
+@media (max-width: 800px) { .layout { grid-template-columns: 1fr; } .sidebar { flex-direction: row; overflow-x: auto; } .brand { margin: 0 12px 0 0; } }
