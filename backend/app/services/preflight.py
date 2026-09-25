@@ -17,5 +17,11 @@ def platform_fee_lamports(proceeds_lamports: int, bps: int) -> int:
 
 def build_preflight(kind: str, summary: dict, warnings: list[str] | None = None) -> dict:
     """`summary` must contain everything that defines the action (wallets, amounts, fees)."""
+    from ..deps import needs_2fa  # local import: deps imports this package
+
     body = {"kind": kind, **summary}
-    return {"preflight": {**body, "warnings": warnings or []}, "preflight_hash": preflight_hash(body)}
+    return {
+        "preflight": {**body, "warnings": warnings or []},
+        "preflight_hash": preflight_hash(body),
+        "requires_2fa": needs_2fa(kind),  # not part of the hash: it is policy, not part of the action
+    }

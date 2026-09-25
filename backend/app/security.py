@@ -49,7 +49,7 @@ def new_totp_secret() -> str:
 
 
 def totp_uri(secret: str, email: str) -> str:
-    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="Helm")
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="Helm Terminals")
 
 
 def check_totp(secret: str, code: str) -> bool:

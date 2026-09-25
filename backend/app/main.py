@@ -10,7 +10,7 @@ from .chains.solana import RPCError
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import auth, launches, misc, wallets
+from .routes import auth, launches, misc, telegram, wallets
 from .signing import get_signer
 
 
@@ -23,14 +23,14 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     s = get_settings()
-    app = FastAPI(title="Helm", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Helm Terminals", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in s.cors_origins.split(",") if o.strip()],
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (auth.router, wallets.router, launches.router, misc.router):
+    for r in (auth.router, wallets.router, launches.router, misc.router, telegram.router):
         app.include_router(r)
 
     # Upstream failures (RPC down, launchpad API changed, signer unreachable) become clear 502s. These are

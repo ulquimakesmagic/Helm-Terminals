@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
-    valid_address,
+    two_fa_warnings, valid_address,
 )
 from ..models import Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
 from ..services.executor import Executor, run_single, run_trade
@@ -308,6 +308,18 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
         for w in wallets:
             if await rpc.get_balance(w.address) < int((body.amount + 0.01) * LAMPORTS_PER_SOL):
                 warnings.append(f"{w.address} has too little SOL for a {body.amount} SOL buy plus fees.")
+    if body.side == "buy" and getattr(user, "channel", "web") == "bot":
+        # Cap how much a hijacked or mistaken chat session can spend on buys. Larger orders go through the web app.
+        since = utcnow() - timedelta(hours=24)
+        prior = (await db.execute(select(Job).where(
+            Job.user_id == user.id, Job.channel == "bot", Job.kind == "trade_buy",
+            Job.status != "failed", Job.created_at >= since))).scalars().all()
+        spent = sum(float(j.params.get("amount", 0)) * len(j.params.get("wallets", [])) for j in prior)
+        new = body.amount * len(wallets)
+        if spent + new > s.bot_daily_buy_limit_sol:
+            warnings.append(
+                f"Telegram daily buy limit: {spent:.2f} of {s.bot_daily_buy_limit_sol:.2f} SOL used in the last 24h; "
+                f"this order adds {new:.2f} SOL. Use the web app for larger orders.")
     fee_note = f"{s.platform_fee_bps / 100:.2f}% of SOL received" if body.side == "sell" and s.platform_fee_bps else "none"
     pf = build_preflight("trade", {
         "launch_id": l.id, "mint": l.mint_address, "side": body.side, "amount": body.amount,
@@ -421,6 +433,7 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
     _, decimals = await rpc.get_token_supply(l.mint_address)
     amount = int(raw_bal * body.percent / 100)
     warnings = [] if amount > 0 else ["Nothing to send: token balance is zero."]
+    warnings += two_fa_warnings(user, "send_tokens")
     pf = build_preflight("send_tokens", {"launch_id": l.id, "from": w.address, "to": body.recipient,
                                          "mint": l.mint_address, "tokens": amount / 10**decimals,
                                          "platform_fee": "none"}, warnings)

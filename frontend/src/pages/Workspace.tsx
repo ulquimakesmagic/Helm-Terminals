@@ -46,7 +46,7 @@ function downloadPnlCard(launch: any, pnl: any) {
   g.fillStyle = "#8b93a7"; g.font = "28px Inter, sans-serif";
   g.fillText(`Net SOL flow · ${pnl.confirmed_txs} confirmed transactions`, 60, 380);
   g.fillText("Unsold tokens are not valued. Fees included.", 60, 420);
-  g.fillText("Made with Helm", 60, 570);
+  g.fillText("Made with Helm Terminals", 60, 570);
   const a = document.createElement("a");
   a.download = `${launch.symbol}-pnl.png`; a.href = c.toDataURL("image/png"); a.click();
 }

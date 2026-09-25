@@ -34,7 +34,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the Helm server. Check that the API is running and reachable.");
+    throw new ApiError(0, "Cannot reach the Helm Terminals server. Check that the API is running and reachable.");
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));

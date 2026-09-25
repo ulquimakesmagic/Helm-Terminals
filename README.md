@@ -1,4 +1,4 @@
-# Helm
+# Helm Terminals
 
 A transparent token-launch and wallet-operations platform, modelled on the useful parts of Proxima.
 Read `docs/SPEC.md` first: it lists what is in scope, what is deliberately excluded and why, and the roadmap.
@@ -19,10 +19,25 @@ npm install
 npm run dev                     # http://localhost:5173
 ```
 
+## Telegram bot
+
+1. Create a bot with @BotFather and copy its token.
+2. In `backend/.env` set `BOT_API_KEY` (a long random string) and `TELEGRAM_BOT_USERNAME`; restart the API.
+3. Start the bot with the same key:
+
+```bash
+cd backend
+TELEGRAM_BOT_TOKEN=123:abc BOT_API_KEY=<same key> HELM_API_URL=http://localhost:8000 python -m helm_bot
+```
+
+4. In the web app open Settings -> Telegram -> Link Telegram, then send `/link CODE` to your bot in a private chat.
+
+Withdrawals and token sends need 2FA (set it up under Settings first). Buys placed through Telegram are capped per day.
+
 ## Test
 
 ```bash
-cd backend && pytest            # 26 tests, no network needed
+cd backend && pytest            # 47 tests, no network needed
 cd ../frontend && npm run build # type-check + production build
 ```
 

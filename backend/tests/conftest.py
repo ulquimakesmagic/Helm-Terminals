@@ -131,3 +131,13 @@ async def signup(client, email="a@example.com", password="correct-horse-battery"
     r = await client.post("/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+async def enable_2fa(client, headers):
+    """Turn on TOTP for the signed-in user and return the secret."""
+    import pyotp
+
+    secret = (await client.post("/auth/totp/enable", headers=headers)).json()["secret"]
+    r = await client.post("/auth/totp/verify", json={"code": pyotp.TOTP(secret).now()}, headers=headers)
+    assert r.status_code == 200, r.text
+    return secret

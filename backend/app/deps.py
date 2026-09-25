@@ -35,7 +35,25 @@ async def current_user(authorization: str | None = Header(default=None), db: Asy
     user = await db.get(User, sess.user_id)
     if not user:
         raise HTTPException(401, "invalid session")
+    user.channel = sess.channel  # type: ignore[attr-defined]  # transient: which client this request came from
     return user
+
+
+async def web_user(user: User = Depends(current_user)) -> User:
+    """Account-security actions (2FA, sessions, Telegram linking) are only allowed from the web app."""
+    if getattr(user, "channel", "web") != "web":
+        raise HTTPException(403, "this action is only available in the web app")
+    return user
+
+
+def needs_2fa(kind: str) -> bool:
+    return kind in {k.strip() for k in get_settings().tfa_required_kinds.split(",") if k.strip()}
+
+
+def two_fa_warnings(user: User, kind: str) -> list[str]:
+    if needs_2fa(kind) and not user.totp_enabled:
+        return ["Enable 2FA in the web app (Settings) before sending assets out of your wallets."]
+    return []
 
 
 def valid_address(addr: str) -> bool:
@@ -87,7 +105,9 @@ async def begin_spend(
         raise HTTPException(409, "preflight_changed: review the new preflight and confirm again")
     if not body.idempotency_key:
         raise HTTPException(400, "idempotency_key is required when confirm=true")
-    if user.totp_enabled:
+    if needs_2fa(kind):
+        if not user.totp_enabled:
+            raise HTTPException(403, "2fa_setup_required: enable 2FA in the web app before sending assets out")
         if not body.totp or not user.totp_secret_enc or not check_totp(decrypt_secret(user.totp_secret_enc), body.totp):
             raise HTTPException(401, "totp_required: provide a valid 2FA code to confirm")
     existing = (
@@ -95,7 +115,8 @@ async def begin_spend(
     ).scalar_one_or_none()
     if existing:
         return existing, False
-    job = Job(user_id=user.id, launch_id=launch_id, kind=kind, params=params, idempotency_key=body.idempotency_key)
+    job = Job(user_id=user.id, launch_id=launch_id, kind=kind, params=params, idempotency_key=body.idempotency_key,
+              channel=getattr(user, "channel", "web"))
     db.add(job)
     await log_activity(db, user.id, f"{kind}.confirmed", "job", job.id, {"preflight_hash": body.preflight_hash})
     await db.commit()

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user, log_activity
+from ..deps import log_activity, web_user
 from ..models import Session, User, utcnow
 from ..security import (
     check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
@@ -68,7 +68,7 @@ async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db
 
 
 @router.post("/totp/enable")
-async def totp_enable(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def totp_enable(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     if user.totp_enabled:
         raise HTTPException(409, "2FA already enabled")
     secret = new_totp_secret()
@@ -78,7 +78,7 @@ async def totp_enable(user: User = Depends(current_user), db: AsyncSession = Dep
 
 
 @router.post("/totp/verify")
-async def totp_verify(body: Code, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     if not user.totp_secret_enc:
         raise HTTPException(400, "call /auth/totp/enable first")
     if not check_totp(decrypt_secret(user.totp_secret_enc), body.code):
@@ -90,7 +90,7 @@ async def totp_verify(body: Code, user: User = Depends(current_user), db: AsyncS
 
 
 @router.get("/sessions")
-async def sessions(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def sessions(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     rows = (
         await db.execute(select(Session).where(Session.user_id == user.id, Session.revoked_at.is_(None)))
     ).scalars().all()
@@ -102,7 +102,7 @@ async def sessions(user: User = Depends(current_user), db: AsyncSession = Depend
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
-async def revoke(session_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def revoke(session_id: str, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     s = await db.get(Session, session_id)
     if not s or s.user_id != user.id:
         raise HTTPException(404, "session not found")

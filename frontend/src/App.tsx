@@ -15,7 +15,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          Helm <small>v0.1</small>
+          Helm Terminals <small>v0.1</small>
         </div>
         <nav className="nav">
           <NavLink to="/" end>Dashboard</NavLink>

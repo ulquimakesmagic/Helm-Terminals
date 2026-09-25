@@ -35,6 +35,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
   const [totp, setTotp] = useState("");
+  const [needs2fa, setNeeds2fa] = useState(false);
   const [error, setError] = useState("");
   const [job, setJob] = useState<any>(null);
   const key = useRef(crypto.randomUUID());
@@ -44,6 +45,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
       .then((r) => {
         setPre(r.preflight);
         setHash(r.preflight_hash);
+        setNeeds2fa(Boolean(r.requires_2fa));
         setPhase("review");
       })
       .catch((e: ApiError) => {
@@ -99,16 +101,19 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
             ))}
             {error && <div className="banner err" style={{ marginTop: 12 }}>{error}</div>}
             <div className="row" style={{ marginTop: 16 }}>
-              <input
-                placeholder="2FA code (if enabled)"
-                value={totp}
-                onChange={(e) => setTotp(e.target.value)}
-                inputMode="numeric"
-                style={{ width: 170 }}
-              />
+              {needs2fa && (
+                <input
+                  placeholder="2FA code (required)"
+                  value={totp}
+                  onChange={(e) => setTotp(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  style={{ width: 170 }}
+                />
+              )}
               <div className="spacer" style={{ flex: 1 }} />
               <button className="ghost" onClick={onClose} disabled={phase !== "review"}>Cancel</button>
-              <button onClick={confirm} disabled={phase !== "review" || warnings.length > 0}>
+              <button onClick={confirm} disabled={phase !== "review" || warnings.length > 0 || (needs2fa && totp.length !== 6)}>
                 {phase === "review" ? `Confirm ${kind ?? ""}` : "Working…"}
               </button>
             </div>

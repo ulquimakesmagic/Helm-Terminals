@@ -6,7 +6,7 @@ from app.db import get_sessionmaker
 from app.models import Transaction
 from app.signing import get_signer  # noqa: F401
 
-from .conftest import SOL, signup
+from .conftest import SOL, enable_2fa, signup
 
 EXCLUDED_WORDS = ("marketplace", "volume", "nuke", "cleanup", "sniper", "generate-activity", "bundle", "block0")
 
@@ -157,20 +157,34 @@ async def test_sell_charges_optional_platform_fee_after_confirmation(client, fak
     assert kinds["sell"].status == "confirmed" and kinds["platform_fee"].sol_delta_lamports == -50_000_000
 
 
-async def test_two_factor_is_required_for_spend_once_enabled(client, fake_rpc):
+async def test_two_factor_policy_only_gates_assets_leaving_the_wallets(client, fake_rpc):
     h = await signup(client)
-    secret = (await client.post("/auth/totp/enable", headers=h)).json()["secret"]
-    assert (await client.post("/auth/totp/verify", json={"code": pyotp.TOTP(secret).now()}, headers=h)).status_code == 200
+    funder, other = await make_wallets(client, h, 2)
+    body = {"wallet_ids": [funder["id"]], "destination": other["address"]}
 
-    dev = (await make_wallets(client, h))[0]
-    lid = (await client.post("/launches", json={"name": "T", "symbol": "T", "dev_wallet_id": dev["id"]},
-                             headers=h)).json()["id"]
-    path = f"/launches/{lid}/deploy"
-    pre = (await client.post(path, json={}, headers=h)).json()
-    base = {"confirm": True, "preflight_hash": pre["preflight_hash"], "idempotency_key": "2fa"}
-    assert (await client.post(path, json=base, headers=h)).status_code == 401
-    ok = await client.post(path, json={**base, "totp": pyotp.TOTP(secret).now()}, headers=h)
+    # Withdrawals need 2FA to be set up first: the preflight says so and confirming is refused.
+    pre = (await client.post("/wallets/withdraw", json=body, headers=h)).json()
+    assert pre["requires_2fa"] is True and any("Enable 2FA" in w for w in pre["preflight"]["warnings"])
+    refused = await client.post("/wallets/withdraw", json={**body, "confirm": True, "idempotency_key": "a",
+                                                          "preflight_hash": pre["preflight_hash"]}, headers=h)
+    assert refused.status_code == 400
+
+    secret = await enable_2fa(client, h)
+    pre = (await client.post("/wallets/withdraw", json=body, headers=h)).json()
+    base = {**body, "confirm": True, "preflight_hash": pre["preflight_hash"], "idempotency_key": "b"}
+    assert (await client.post("/wallets/withdraw", json=base, headers=h)).status_code == 401  # no code
+    assert (await client.post("/wallets/withdraw", json={**base, "totp": "000000"}, headers=h)).status_code == 401
+    ok = await client.post("/wallets/withdraw", json={**base, "totp": pyotp.TOTP(secret).now()}, headers=h)
     assert ok.status_code == 200
+
+    # Everything inside your own wallets (deploy, trades, ...) does not ask for a code, even with 2FA on.
+    lid = (await client.post("/launches", json={"name": "T", "symbol": "T", "dev_wallet_id": funder["id"]},
+                             headers=h)).json()["id"]
+    pre = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
+    assert pre["requires_2fa"] is False
+    r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "idempotency_key": "d",
+                                                          "preflight_hash": pre["preflight_hash"]}, headers=h)
+    assert r.status_code == 200
 
     # login now needs a code too
     r = await client.post("/auth/login", json={"email": "a@example.com", "password": "correct-horse-battery"})
@@ -186,9 +200,10 @@ async def test_fund_and_withdraw(client, fake_rpc):
     assert pre["preflight"]["total_sol"] == 0.30000000000000004 or abs(pre["preflight"]["total_sol"] - 0.3) < 1e-9
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
+    secret = await enable_2fa(client, h)
     dest = funder["address"]
     pre, r = await confirm(client, h, "/wallets/withdraw", {"wallet_ids": [a["id"], b["id"]], "destination": dest},
-                           key="w1")
+                           key="w1", totp=pyotp.TOTP(secret).now())
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
     bad = await client.post("/wallets/withdraw", json={"wallet_ids": [a["id"]], "destination": "not-an-address"},
@@ -204,8 +219,10 @@ async def test_burn_and_send_build_valid_transactions(client, fake_rpc):
     assert pre["preflight"]["irreversible"] is True and pre["preflight"]["tokens"] == 0.5
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
+    secret = await enable_2fa(client, h)
     _, r = await confirm(client, h, f"/launches/{lid}/send",
-                         {"wallet_id": holders[0]["id"], "recipient": dev["address"], "percent": 10}, key="s1")
+                         {"wallet_id": holders[0]["id"], "recipient": dev["address"], "percent": 10}, key="s1",
+                         totp=pyotp.TOTP(secret).now())
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
 

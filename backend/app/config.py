@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     # Transparency panel: warn when user-controlled wallets hold more than this share of supply.
     controlled_supply_warn_pct: float = 20.0
 
+    # Actions that move assets out to an arbitrary address. These need a 2FA code, and 2FA must be set up first.
+    # Trades and other actions inside the user's own wallets do not.
+    tfa_required_kinds: str = "withdraw,send_tokens"
+
+    # Telegram bot integration. The bot authenticates with a shared service key; empty disables the integration.
+    bot_api_key: str = ""
+    telegram_bot_username: str = ""
+    bot_session_ttl_minutes: int = 30
+    link_code_ttl_minutes: int = 10
+    bot_daily_buy_limit_sol: float = 5.0  # cap on buys placed through the bot in any rolling 24 hours
+
     run_jobs_inline: bool = False  # tests: await jobs in the request instead of a background task
     cors_origins: str = "http://localhost:5173"
 

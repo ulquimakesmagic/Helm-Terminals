@@ -1,6 +1,6 @@
-# Helm: transparent token launch and operations platform
+# Helm Terminals: transparent token launch and operations platform
 
-Working name: **Helm**. This is a spec and scaffold for a Proxima-style launch and wallet operations tool,
+Name: **Helm Terminals** (helmterminals.xyz; short form "Helm"). This is a spec and scaffold for a Proxima-style launch and wallet operations tool,
 minus the features whose main purpose is to disguise holder ownership or fabricate trading activity.
 
 ## 1. What it is
@@ -8,7 +8,7 @@ minus the features whose main purpose is to disguise holder ownership or fabrica
 A single interface to (1) deploy a token on a launchpad, (2) manage the wallets you own that hold and trade it,
 and (3) operate the token after launch: manual trades, creator fees, locks, burns, transfers, P&L reporting.
 
-Every wallet is created and controlled by the signed-in user. Nothing in Helm is designed to make one party's
+Every wallet is created and controlled by the signed-in user. Nothing in Helm Terminals is designed to make one party's
 holdings look like many independent holders, or to make trading look like organic demand.
 
 ## 2. Scope
@@ -26,6 +26,7 @@ holdings look like many independent holders, or to make trading look like organi
 | Token ops | Claim creator fees, lock supply (Streamflow), burn, send tokens, swap quote asset |
 | Tracker | Watchlist of external wallet addresses with labels and bookmarks |
 | Reporting | Dashboard (P&L, launches, referral), P&L card export |
+| Telegram | Bot terminal: read, buy/sell, claim, burn, send, withdraw, with preview + confirm on every action (section 11) |
 | Safety | Pre-flight summary before every on-chain action, per-action confirmation, spend limits, audit log |
 | Fees | Optional platform fee on sells, configured in one place and shown before submit |
 
@@ -171,7 +172,11 @@ interface that changes over time, so treat this as an ongoing roadmap, not a v1 
 
 ## 9. Security and compliance
 
-- Turnkey policies: per-key daily spend limit, allowlisted destinations for withdrawals, 2FA for sells and withdrawals.
+- Turnkey policies: per-key daily spend limit and allowlisted destinations for withdrawals.
+- 2FA policy (app level, `TFA_REQUIRED_KINDS`): a code is required only for actions that move assets **out** to an arbitrary
+  address: `withdraw` and `send_tokens`. 2FA must be set up first; otherwise those actions are refused up front.
+  Trades and other actions inside the user's own wallets do not need a code. A hijacked session can therefore lose
+  value on bad trades but cannot move assets out. The Telegram daily buy cap limits that exposure.
 - Argon2id password hashing, TOTP secrets encrypted at rest, session tokens stored hashed.
 - Rate limits on auth and spend endpoints. All spend endpoints require an idempotency key.
 - Full audit log (`activity`) for wallet creation, funding, trades, exports.
@@ -187,3 +192,31 @@ interface that changes over time, so treat this as an ongoing roadmap, not a v1 
 4. Streamflow lock, burn, send, swap quote asset
 5. Second and third launchpad adapters, then EVM
 6. Hardening: Turnkey policy templates, monitoring, load test, external security review
+
+## 11. Telegram bot (terminal)
+
+The bot is a thin client over the same API (`backend/helm_bot`, run with `python -m helm_bot`). It has no logic of its
+own for money: the API produces the preflight, enforces 2FA and idempotency, and runs the job.
+
+**Linking.** Web Settings -> Telegram -> Link creates a one-time code (10 characters, 10 minutes, stored hashed).
+The user sends `/link CODE` to the bot in a private chat. The bot calls `/telegram/bot/link` with a shared service key.
+One Telegram account maps to one Helm Terminals account. Wrong codes are throttled (5 per 10 minutes per Telegram user).
+
+**Sessions.** With the service key the bot can only ask for a short-lived (30 minute) *bot-channel* session for a
+linked Telegram ID. Bot sessions use the normal API but are refused on account-security endpoints (2FA, session list,
+linking). Unlinking, from the web or the bot, deletes the link and revokes bot sessions immediately.
+
+**Spending.** Every fund-moving command replies with the preview and Confirm/Cancel buttons. Confirmations are bound
+to the requesting Telegram user, expire after 2 minutes, and work once. If the API says a 2FA code is required the bot
+asks for it in chat and deletes the message. Three wrong codes cancel the action. A warning in the preview (for example
+"2FA not set up" or the daily limit) removes the Confirm button entirely.
+
+**Limits.** Buys placed through Telegram are capped per rolling 24 hours (`BOT_DAILY_BUY_LIMIT_SOL`, default 5).
+Deploying and launch creation stay in the web app (images, wallet attachment and review need a full screen).
+
+**Commands.** `/wallets /launches /launch /transparency /buy /sell /claim /burn /send /withdraw /status /unlink /help`.
+Ids are the first 6 characters shown in the lists.
+
+**Known limits.** Pending confirmations are held in memory, so run one bot process (or move `PendingStore` to Redis).
+The service key is powerful: anyone holding it can request sessions for linked users, so keep it in a secret store and
+rotate it if leaked. Long-polling is used; switch to webhooks when running several instances.

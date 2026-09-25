@@ -8,7 +8,7 @@ from ..chains.solana import LAMPORTS_PER_SOL, SolanaRPC, build_unsigned, sol_tra
 from ..db import get_db
 from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
-    valid_address,
+    two_fa_warnings, valid_address,
 )
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single
@@ -219,6 +219,7 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
         plan.append((w, lamports, bal))
     warnings = [f"{w.address} has too little SOL to send {lam / LAMPORTS_PER_SOL:.4f}" for w, lam, bal in plan
                 if lam <= 0 or lam + TX_FEE_RESERVE > bal]
+    warnings += two_fa_warnings(user, "withdraw")
     pf = build_preflight("withdraw", {
         "destination": body.destination,
         "from": [{"address": w.address, "sol": lam / LAMPORTS_PER_SOL} for w, lam, _ in plan],

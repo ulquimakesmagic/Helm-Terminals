@@ -34,7 +34,7 @@ export default function Auth() {
 
   return (
     <form className="card auth stack" onSubmit={submit}>
-      <div className="brand">Helm</div>
+      <div className="brand">Helm Terminals</div>
       <p className="muted" style={{ margin: 0 }}>
         Launch and operate tokens from wallets you own. Every action is previewed before it is sent.
       </p>

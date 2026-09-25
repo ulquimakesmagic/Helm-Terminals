@@ -43,6 +43,7 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    channel: Mapped[str] = mapped_column(String(8), default="web")  # web | bot
 
 
 class Folder(Base):
@@ -115,6 +116,7 @@ class Job(Base):
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|submitted|confirmed|failed|partial
     idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    channel: Mapped[str] = mapped_column(String(8), default="web")  # where the confirmation came from
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
@@ -153,6 +155,28 @@ class Activity(Base):
     ref_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TelegramLink(Base):
+    """One Telegram account linked to one Helm user. Removed on unlink."""
+
+    __tablename__ = "telegram_links"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LinkCode(Base):
+    """Short-lived one-time code shown in the web app and sent to the bot. Only its hash is stored."""
+
+    __tablename__ = "link_codes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Referral(Base):
