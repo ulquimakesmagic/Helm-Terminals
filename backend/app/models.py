@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, event
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
 
@@ -186,3 +186,26 @@ class Referral(Base):
     code: Mapped[str] = mapped_column(String(16), unique=True)
     uses: Mapped[int] = mapped_column(Integer, default=0)
     max_uses: Mapped[int] = mapped_column(Integer, default=1)
+
+
+def _declare_fk_dependencies() -> None:
+    """Tell SQLAlchemy's unit of work which table depends on which.
+
+    The models use plain foreign-key columns with no relationship(), so on flush SQLAlchemy has no dependency
+    information and may INSERT a child row (e.g. an activity) before its parent (the user). SQLite ignores that;
+    Postgres rejects it. One private many-to-one relationship per foreign key fixes the ordering for every route.
+    """
+    by_table = {m.local_table.name: m.class_ for m in Base.registry.mappers}
+    for cls in list(by_table.values()):
+        for fk in cls.__table__.foreign_keys:
+            target = by_table.get(fk.column.table.name)
+            if target is None:
+                continue
+            setattr(
+                cls,
+                f"_dep_{fk.parent.name}",
+                relationship(target, foreign_keys=[fk.parent], lazy="raise", viewonly=False),
+            )
+
+
+_declare_fk_dependencies()
