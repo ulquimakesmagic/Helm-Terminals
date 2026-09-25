@@ -52,7 +52,7 @@ export default function Tracker() {
           <div style={{ width: 220 }}><SearchInput placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         </>}>
         {!items ? <Loading /> : items.length === 0 ? (
-          <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana, Base, BNB Chain or Ethereum address above to start watching it." />
+          <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana or EVM address (Base, BNB Chain, Robinhood Chain, Ethereum) above to start watching it." />
         ) : shown.length === 0 ? <Empty icon="search" title="No matches" /> : (
           <div className="table-wrap"><table>
             <thead><tr><th style={{ width: 44 }} /><th>Label</th><th>Chain</th><th>Address</th><th className="r" /></tr></thead>

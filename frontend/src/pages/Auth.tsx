@@ -7,7 +7,7 @@ import { Callout, ChainDot, Field, Icon, Logo, Seg, Spinner } from "../component
 import { useSession } from "../session";
 
 const FEATURES: [Parameters<typeof Icon>[0]["name"], string, string][] = [
-  ["layers", "Every chain, one desk", "Solana, Base, BNB Chain and Ethereum launchpads behind one workflow."],
+  ["layers", "Every chain, one desk", "Solana, Base, BNB Chain, Robinhood Chain and Ethereum launchpads in one workflow."],
   ["eye", "Preview every action", "Each spend shows its exact wallets, amounts and fees before anything is signed."],
   ["pie", "Supply transparency", "See how much of a token your own wallets control, next to the real holders."],
   ["telegram", "Telegram terminal", "Trade and monitor from chat, with tap-to-confirm on every order."],
@@ -64,7 +64,7 @@ export default function Auth() {
           </div>
           <h1>Launch on any chain. <span className="grad-text">Run it in the open.</span></h1>
           <p className="text-2" style={{ maxWidth: 500, fontSize: 15 }}>
-            One desk for creating tokens across {cov.pads || "a dozen"} launchpads on {cov.chains || 4} chains, managing your wallets and trading, with every order previewed and every wallet you control shown next to the real holder list.
+            One desk for creating tokens across {cov.pads || "a dozen"} launchpads on {cov.chains || 5} chains, managing your wallets and trading, with every order previewed and every wallet you control shown next to the real holder list.
           </p>
           <div className="feat">
             {FEATURES.map(([ic, t, d]) => (

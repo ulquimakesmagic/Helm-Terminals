@@ -56,7 +56,7 @@ def two_fa_warnings(user: User, kind: str) -> list[str]:
     return []
 
 
-EVM_NETWORKS = {"base", "bsc", "ethereum"}
+EVM_NETWORKS = {"base", "bsc", "ethereum", "robinhood"}
 NETWORKS = {"solana", *EVM_NETWORKS}
 
 

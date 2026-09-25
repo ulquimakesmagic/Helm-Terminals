@@ -18,6 +18,7 @@ PLANNED = [
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("clanker", "base"), ("bankr", "base"),
     ("four-meme", "bsc"), ("flap-sh", "bsc"),
+    ("pons", "robinhood"), ("flap-sh-robinhood", "robinhood"),
     ("uniswap-v2", "ethereum"),
 ]
 

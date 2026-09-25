@@ -297,6 +297,10 @@ async def test_watch_and_tracker_accept_evm_addresses(client):
     assert r.status_code == 201 and r.json()["network"] == "base"
     r = await client.post("/tracker", json={"network": "bsc", "address": evm, "label": "dev"}, headers=h)
     assert r.status_code == 201 and r.json()["network"] == "bsc"
+    r = await client.post("/wallets/watch", json={"network": "robinhood", "address": "0x" + "cd" * 20}, headers=h)
+    assert r.status_code == 201 and r.json()["network"] == "robinhood"
+    pads = {p["id"]: p["network"] for p in (await client.get("/launchpads")).json()}
+    assert pads["pons"] == "robinhood" and pads["flap-sh-robinhood"] == "robinhood"
     bad = await client.post("/tracker", json={"network": "base", "address": "not-an-address"}, headers=h)
     assert bad.status_code == 400
     sol_on_evm = await client.post("/wallets/watch", json={"network": "ethereum", "address": "11111111111111111111111111111111"}, headers=h)
