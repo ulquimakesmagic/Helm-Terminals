@@ -122,3 +122,11 @@ def test_transparency_quiet_below_threshold():
 def test_find_ata_is_deterministic():
     o, m = Keypair().pubkey(), Keypair().pubkey()
     assert find_ata(o, m) == find_ata(o, m) != find_ata(m, o)
+
+
+def test_database_url_is_normalised_for_async_driver():
+    from app.config import Settings
+
+    assert Settings(database_url="postgres://u:p@h:5432/d").database_url == "postgresql+asyncpg://u:p@h:5432/d"
+    assert Settings(database_url="postgresql://u:p@h/d").database_url == "postgresql+asyncpg://u:p@h/d"
+    assert Settings(database_url="postgresql+asyncpg://u:p@h/d").database_url == "postgresql+asyncpg://u:p@h/d"

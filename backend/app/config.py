@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,15 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./helm.db"  # use postgresql+asyncpg://... in prod
     secret_key: str = "dev-secret-change-me"
     session_ttl_hours: int = 24 * 7
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, v: str) -> str:
+        # Railway/Heroku hand out postgres:// or postgresql://; SQLAlchemy async needs the asyncpg driver.
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix):]
+        return v
 
     # Signing: "local" (dev only) or "turnkey"
     signer: str = "local"
