@@ -82,9 +82,12 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
             raise HTTPException(400, "image_b64 is not valid base64")
         if len(image) > MAX_IMAGE_BYTES:
             raise HTTPException(400, "image too large (max 2 MB)")
+    network = get_adapter(body.launchpad).network
     if body.dev_wallet_id:
-        await owned_wallet(db, user, body.dev_wallet_id)
-    l = Launch(user_id=user.id, network="solana", launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
+        dev = await owned_wallet(db, user, body.dev_wallet_id)
+        if dev.network != network:
+            raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {network}")
+    l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
                description=body.description, image_blob=image, socials=body.socials, dev_wallet_id=body.dev_wallet_id,
                dev_buy_sol=body.dev_buy_sol, launchpad_params={"slippage_pct": body.slippage_pct})
     db.add(l)

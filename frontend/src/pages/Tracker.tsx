@@ -1,14 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { Address, Card, Empty, Icon, Loading, PageHeader, SearchInput, Seg, useToast } from "../components/ui";
+import { CHAIN_ORDER, CHAINS, ChainId, chainOf } from "../chains";
+import { Address, Card, ChainDot, Empty, Icon, Loading, PageHeader, SearchInput, Seg, useToast } from "../components/ui";
 
-interface Item { id: string; address: string; label: string; bookmarked: boolean }
+interface Item { id: string; address: string; label: string; bookmarked: boolean; network: string }
 
 export default function Tracker() {
   const toast = useToast();
   const [items, setItems] = useState<Item[] | null>(null);
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
+  const [network, setNetwork] = useState<ChainId>("solana");
   const [filter, setFilter] = useState<"all" | "starred">("all");
   const [q, setQ] = useState("");
 
@@ -18,7 +20,7 @@ export default function Tracker() {
 
   function add(e: FormEvent) {
     e.preventDefault();
-    act(api("/tracker", { body: { address: address.trim(), label: label.trim() } }).then(() => { setAddress(""); setLabel(""); }), "Address added");
+    act(api("/tracker", { body: { network, address: address.trim(), label: label.trim() } }).then(() => { setAddress(""); setLabel(""); }), "Address added");
   }
 
   const shown = useMemo(() => {
@@ -31,11 +33,14 @@ export default function Tracker() {
 
   return (
     <>
-      <PageHeader title="Tracker" sub="Keep an eye on outside wallets: devs, whales, other traders. Label them and star the ones that matter." />
+      <PageHeader title="Tracker" sub="Keep an eye on outside wallets on any chain: devs, whales, other traders. Label them and star the ones that matter." />
 
       <Card title="Track an address" icon="radar">
         <form className="row" onSubmit={add} style={{ alignItems: "stretch" }}>
-          <input className="mono" placeholder="Solana address" value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} />
+          <select value={network} onChange={(e) => setNetwork(e.target.value as ChainId)} style={{ flex: "0 0 150px" }} aria-label="Chain">
+            {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name}</option>)}
+          </select>
+          <input className="mono" placeholder={network === "solana" ? "Solana address" : "0x… address"} value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} />
           <input placeholder="Label, e.g. Dev of $CAT" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: "1 1 180px" }} />
           <button className="btn" disabled={address.trim().length < 32}><Icon name="plus" size={15} />Track</button>
         </form>
@@ -47,10 +52,10 @@ export default function Tracker() {
           <div style={{ width: 220 }}><SearchInput placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         </>}>
         {!items ? <Loading /> : items.length === 0 ? (
-          <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana address above to start watching it." />
+          <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana, Base, BNB Chain or Ethereum address above to start watching it." />
         ) : shown.length === 0 ? <Empty icon="search" title="No matches" /> : (
           <div className="table-wrap"><table>
-            <thead><tr><th style={{ width: 44 }} /><th>Label</th><th>Address</th><th className="r" /></tr></thead>
+            <thead><tr><th style={{ width: 44 }} /><th>Label</th><th>Chain</th><th>Address</th><th className="r" /></tr></thead>
             <tbody>
               {shown.map((i) => (
                 <tr key={i.id}>
@@ -63,7 +68,8 @@ export default function Tracker() {
                     </button>
                   </td>
                   <td style={{ fontWeight: 550 }}>{i.label || <span className="muted">Unlabelled</span>}</td>
-                  <td><Address address={i.address} chars={6} /></td>
+                  <td><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={i.network} size={16} /><span className="hide-sm text-2">{chainOf(i.network).name}</span></span></td>
+                  <td><Address address={i.address} chars={6} network={i.network} /></td>
                   <td className="r">
                     <button className="icon-btn" title="Remove" onClick={() => act(api(`/tracker/${i.id}`, { method: "DELETE" }), "Removed")}><Icon name="trash" size={14} /></button>
                   </td>

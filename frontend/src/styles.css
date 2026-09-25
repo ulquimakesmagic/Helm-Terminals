@@ -331,6 +331,19 @@ tfoot td { border-top: 1px solid var(--line); border-bottom: 0; color: var(--tex
 .skel { background: linear-gradient(90deg, var(--panel-2), var(--panel-3), var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: 8px; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+/* ---------- chains ---------- */
+.chain-dot { display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid; font-weight: 800; flex: none; line-height: 1; }
+.pad-tile {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--bg-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; min-width: 0;
+}
+.pad-tile:hover:not(:disabled) { border-color: #3a4558; background: var(--panel-2); }
+.pad-tile.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--panel-2); }
+.pad-tile:disabled { cursor: not-allowed; opacity: 0.55; }
+.pad-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; }
+.chain-group + .chain-group { margin-top: 16px; }
+.chain-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 600; font-size: 13px; }
+
 /* ---------- token avatar ---------- */
 .tok {
   flex: none; display: grid; place-items: center; border-radius: 12px; font-weight: 700; color: #fff;

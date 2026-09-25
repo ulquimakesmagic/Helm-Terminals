@@ -38,7 +38,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <Link to="/" className="logo">
           <Logo size={34} />
-          <div className="logo-name">Helm Terminals<small>Solana launch desk</small></div>
+          <div className="logo-name">Helm Terminals<small>Multichain launch desk</small></div>
         </Link>
         <nav className="nav">
           {NAV.map((g) => (
@@ -91,7 +91,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           )}
           <span className="pill hide-sm">
             <span className="dot" style={{ background: health ? "var(--good)" : "var(--bad)" }} />
-            {health ? "Mainnet · API online" : "API offline"}
+            {health ? "API online" : "API offline"}
           </span>
         </header>
         <main className="content">{children}</main>

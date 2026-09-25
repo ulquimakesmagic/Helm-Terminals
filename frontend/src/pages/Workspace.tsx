@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, errMsg, fmt, short, solscan } from "../api";
+import { api, errMsg, fmt, short } from "../api";
+import { chainOf, explorerUrl, padName } from "../chains";
 import SpendDialog from "../components/SpendDialog";
 import {
-  Address, Callout, Card, Empty, Field, Icon, PageHeader, Seg, Skeleton, Stat, StatusBadge, TokenAvatar, UnitInput, parseDate, relTime, useToast,
+  Address, Callout, Card, ChainBadge, Empty, Field, Icon, PageHeader, Seg, Skeleton, Stat, StatusBadge, TokenAvatar, UnitInput, parseDate, relTime, useToast,
 } from "../components/ui";
 
 type Dialog = { title: string; path: string; body: Record<string, unknown> } | null;
 type Op = "claim" | "burn" | "send" | "lock";
 
-function TransparencyPanel({ t }: { t: any }) {
+function TransparencyPanel({ t, network }: { t: any; network: string }) {
   const hot = t.warnings.length > 0;
   const maxPct = Math.max(1, ...t.top_holders.map((h: any) => h.pct));
   return (
@@ -29,7 +30,7 @@ function TransparencyPanel({ t }: { t: any }) {
             <span className="muted num" style={{ width: 18 }}>{i + 1}</span>
             <div className="grow">
               <div className="row nowrap between" style={{ gap: 6 }}>
-                <span className="row nowrap" style={{ gap: 6 }}><Address address={h.owner} />{h.is_yours && <span className="badge info">yours</span>}</span>
+                <span className="row nowrap" style={{ gap: 6 }}><Address address={h.owner} network={network} />{h.is_yours && <span className="badge info">yours</span>}</span>
                 <span className="num" style={{ fontWeight: 600 }}>{fmt(h.pct, 2)}%</span>
               </div>
               <div className="bar thin" style={{ marginTop: 4 }}>
@@ -44,6 +45,7 @@ function TransparencyPanel({ t }: { t: any }) {
 }
 
 function downloadPnlCard(launch: any, pnl: any) {
+  const unit = chainOf(launch.network).native;
   const c = document.createElement("canvas");
   c.width = 1200; c.height = 630;
   const g = c.getContext("2d")!;
@@ -56,9 +58,9 @@ function downloadPnlCard(launch: any, pnl: any) {
   g.fillStyle = "#e8ecf4"; g.font = "700 56px Inter, sans-serif"; g.fillText(launch.name, 70, 140);
   g.fillStyle = "#6d788e"; g.font = "500 34px 'JetBrains Mono', monospace"; g.fillText(`$${launch.symbol}`, 70, 192);
   g.fillStyle = pnl.net_sol_flow >= 0 ? "#34d399" : "#f87171"; g.font = "700 132px Inter, sans-serif";
-  g.fillText(`${pnl.net_sol_flow >= 0 ? "+" : ""}${fmt(pnl.net_sol_flow, 3)} SOL`, 70, 380);
+  g.fillText(`${pnl.net_sol_flow >= 0 ? "+" : ""}${fmt(pnl.net_sol_flow, 3)} ${unit}`, 70, 380);
   g.fillStyle = "#b0b9cb"; g.font = "28px Inter, sans-serif";
-  g.fillText(`Net SOL flow · ${pnl.confirmed_txs} confirmed transactions`, 70, 440);
+  g.fillText(`Net ${unit} flow on ${chainOf(launch.network).name} · ${pnl.confirmed_txs} confirmed transactions`, 70, 440);
   g.fillStyle = "#6d788e"; g.font = "24px Inter, sans-serif";
   g.fillText("Unsold tokens are not valued. Fees included.", 70, 480);
   const lg = g.createLinearGradient(70, 0, 400, 0); lg.addColorStop(0, "#38bdf8"); lg.addColorStop(1, "#818cf8");
@@ -114,6 +116,8 @@ export default function Workspace() {
     );
   }
   const l = ws.launch;
+  const chain = chainOf(l.network);
+  const cur = chain.native;
   const live = l.status === "live";
   const sel = [...selected];
   const toggle = (wid: string) => setSelected((s) => { const n = new Set(s); n.has(wid) ? n.delete(wid) : n.add(wid); return n; });
@@ -139,8 +143,8 @@ export default function Workspace() {
             <span>
               <span className="row" style={{ gap: 10 }}>{l.name}<StatusBadge status={l.status} />{l.imported && <span className="badge violet">imported</span>}</span>
               <span className="row small muted" style={{ fontWeight: 400, fontSize: 13, gap: 10, marginTop: 2 }}>
-                <span className="mono">${l.symbol}</span>·<span>{l.launchpad}</span>
-                {l.mint_address && <>·<Address address={l.mint_address} type="token" chars={6} /></>}
+                <span className="mono">${l.symbol}</span>·<ChainBadge network={l.network} />·<span>{padName(l.launchpad)}</span>
+                {l.mint_address && <>·<Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
               </span>
             </span>
           </span>
@@ -166,7 +170,7 @@ export default function Workspace() {
               <div>
                 <h2>{l.status === "failed" ? "Deployment failed. Ready to retry." : "Ready to deploy"}</h2>
                 <p className="muted small" style={{ marginTop: 2 }}>
-                  {l.dev_wallet_id ? <>Dev buy <b className="text-2">{l.dev_buy_sol} SOL</b>. You'll see a full preview, including cost, before anything is sent.</> : "Set a dev wallet on this launch before deploying."}
+                  {l.dev_wallet_id ? <>Dev buy <b className="text-2">{l.dev_buy_sol} {cur}</b>. You'll see a full preview, including cost, before anything is sent.</> : "Set a dev wallet on this launch before deploying."}
                 </p>
               </div>
             </div>
@@ -179,10 +183,10 @@ export default function Workspace() {
       {l.status === "deploying" && <Callout><b>Deploying…</b> This page refreshes automatically.</Callout>}
 
       <div className="grid g-stats">
-        <Stat accent label="Net SOL flow" icon="trend" value={`${ws.pnl.net_sol_flow > 0 ? "+" : ""}${fmt(ws.pnl.net_sol_flow)}`} unit="SOL"
+        <Stat accent label={`Net ${cur} flow`} icon="trend" value={`${ws.pnl.net_sol_flow > 0 ? "+" : ""}${fmt(ws.pnl.net_sol_flow)}`} unit={cur}
           tone={ws.pnl.net_sol_flow > 0 ? "good" : ws.pnl.net_sol_flow < 0 ? "bad" : undefined} hint={`${ws.pnl.confirmed_txs} confirmed txs`} />
         <Stat label="Supply you control" icon="pie" value={ws.transparency ? `${fmt(ws.transparency.controlled_pct, 2)}%` : "—"} hint={ws.transparency ? "across attached wallets" : "after the token is live"} />
-        <Stat label="SOL in wallets" icon="coins" value={fmt(totalSol)} unit="SOL" hint={`${ws.wallets.length} attached wallet${ws.wallets.length === 1 ? "" : "s"}`} />
+        <Stat label={`${cur} in wallets`} icon="coins" value={fmt(totalSol)} unit={cur} hint={`${ws.wallets.length} attached wallet${ws.wallets.length === 1 ? "" : "s"}`} />
         <Stat label="Tokens held" icon="layers" value={fmt(totalTok, 0)} hint={`$${l.symbol}`} />
       </div>
 
@@ -202,13 +206,13 @@ export default function Workspace() {
               <div className="table-wrap"><table>
                 <thead><tr>
                   <th className="cb"><input type="checkbox" checked={allSel} aria-label="Select all" onChange={() => setSelected(allSel ? new Set() : new Set(ws.wallets.map((w: any) => w.id)))} /></th>
-                  <th>Wallet</th><th className="hide-sm">Role</th><th className="r">SOL</th><th className="r">Tokens</th>
+                  <th>Wallet</th><th className="hide-sm">Role</th><th className="r">{cur}</th><th className="r">Tokens</th>
                 </tr></thead>
                 <tbody>
                   {ws.wallets.map((w: any) => (
                     <tr key={w.id} className={`clickable ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
                       <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} /></td>
-                      <td><div style={{ fontWeight: 550 }}>{w.label || "Untitled"}</div><Address address={w.address} /></td>
+                      <td><div style={{ fontWeight: 550 }}>{w.label || "Untitled"}</div><Address address={w.address} network={l.network} /></td>
                       <td className="hide-sm"><span className="badge cap">{w.role}</span></td>
                       <td className="r num">{fmt(w.sol)}</td>
                       <td className="r num">{fmt(w.tokens, 0)}</td>
@@ -223,7 +227,7 @@ export default function Workspace() {
           <Card title="Transactions" icon="activity" flush sub="Latest 50 for this launch">
             {ws.transactions.length === 0 ? <Empty icon="activity" title="No transactions yet" /> : (
               <div className="table-wrap"><table>
-                <thead><tr><th>Time</th><th>Type</th><th>Status</th><th className="r">SOL</th><th className="r">Tx</th></tr></thead>
+                <thead><tr><th>Time</th><th>Type</th><th>Status</th><th className="r">{cur}</th><th className="r">Tx</th></tr></thead>
                 <tbody>
                   {ws.transactions.map((t: any) => (
                     <tr key={t.id}>
@@ -231,7 +235,7 @@ export default function Workspace() {
                       <td style={{ textTransform: "capitalize" }}>{t.kind.replace(/_/g, " ")}</td>
                       <td><StatusBadge status={t.status} /></td>
                       <td className={`r num ${t.sol_delta > 0 ? "good" : t.sol_delta < 0 ? "bad" : "muted"}`}>{t.sol_delta > 0 ? "+" : ""}{fmt(t.sol_delta)}</td>
-                      <td className="r mono">{t.signature ? <a href={solscan(t.signature)} target="_blank" rel="noreferrer">{short(t.signature)} <Icon name="ext" size={11} /></a> : <span className="bad small" title={t.error}>{t.error ? "error" : "—"}</span>}</td>
+                      <td className="r mono">{t.signature ? <a href={explorerUrl(l.network, "tx", t.signature)} target="_blank" rel="noreferrer">{short(t.signature)} <Icon name="ext" size={11} /></a> : <span className="bad small" title={t.error}>{t.error ? "error" : "—"}</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -245,8 +249,8 @@ export default function Workspace() {
             <Card title="Order ticket" icon="zap">
               <div className="stack">
                 <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={[["buy", "Buy"], ["sell", "Sell"]]} />
-                <Field label={side === "buy" ? "SOL per wallet" : "Share of each wallet's tokens"}>
-                  <UnitInput unit={side === "buy" ? "SOL" : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <Field label={side === "buy" ? `${cur} per wallet` : "Share of each wallet's tokens"}>
+                  <UnitInput unit={side === "buy" ? cur : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </Field>
                 <div className="chips">
                   {presets.map((p) => <button key={p} className={`chip ${amount === p ? "on" : ""}`} onClick={() => setAmount(p)}>{p}{side === "sell" ? "%" : ""}</button>)}
@@ -266,7 +270,7 @@ export default function Workspace() {
                 <div className="kv small" style={{ padding: "0 2px" }}>
                   <div className="k">Wallets</div><div className="v num">{sel.length}</div>
                   <div className="k">{side === "buy" ? "Total spend" : "Selling"}</div>
-                  <div className="v num">{side === "buy" ? `${fmt(sel.length * (+amount || 0))} SOL` : `${amount || 0}% of holdings`}</div>
+                  <div className="v num">{side === "buy" ? `${fmt(sel.length * (+amount || 0))} ${cur}` : `${amount || 0}% of holdings`}</div>
                 </div>
                 <button className={`btn lg block ${side}`} disabled={!sel.length || !(+amount > 0)} onClick={() => setDialog({
                   title: `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
@@ -279,7 +283,7 @@ export default function Workspace() {
             </Card>
           )}
 
-          {ws.transparency ? <TransparencyPanel t={ws.transparency} /> : (
+          {ws.transparency ? <TransparencyPanel t={ws.transparency} network={l.network} /> : (
             <Card title="Supply transparency" icon="pie"><p className="muted small">Available once the token is live and chain data loads.</p></Card>
           )}
 
@@ -312,7 +316,7 @@ export default function Workspace() {
                 )}
                 {op === "send" && (
                   <>
-                    <Field label="Recipient"><input className="mono" placeholder="Solana address" value={sendTo} onChange={(e) => setSendTo(e.target.value)} /></Field>
+                    <Field label="Recipient"><input className="mono" placeholder={`${chain.name} address`} value={sendTo} onChange={(e) => setSendTo(e.target.value)} /></Field>
                     <Field label="Amount" hint={firstSel ? `From ${firstSel.label || short(firstSel.address)} · needs 2FA` : "Select a wallet in the table first"}>
                       <UnitInput unit="%" value={sendPct} onChange={(e) => setSendPct(e.target.value)} />
                     </Field>
@@ -329,14 +333,14 @@ export default function Workspace() {
 
           <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnlCard(l, ws.pnl)}><Icon name="download" size={13} />P&amp;L card</button>}>
             <div className={`num ${ws.pnl.net_sol_flow > 0 ? "good" : ws.pnl.net_sol_flow < 0 ? "bad" : ""}`} style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em" }}>
-              {ws.pnl.net_sol_flow > 0 ? "+" : ""}{fmt(ws.pnl.net_sol_flow)} SOL
+              {ws.pnl.net_sol_flow > 0 ? "+" : ""}{fmt(ws.pnl.net_sol_flow)} {cur}
             </div>
             <p className="muted small" style={{ marginTop: 6 }}>{ws.pnl.note}</p>
           </Card>
         </div>
       </div>
 
-      {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={load} />}
+      {dialog && <SpendDialog {...dialog} network={l.network} onClose={() => setDialog(null)} onDone={load} />}
     </>
   );
 }

@@ -56,6 +56,19 @@ def two_fa_warnings(user: User, kind: str) -> list[str]:
     return []
 
 
+EVM_NETWORKS = {"base", "bsc", "ethereum"}
+NETWORKS = {"solana", *EVM_NETWORKS}
+
+
+def valid_address_for(network: str, addr: str) -> bool:
+    """Address format check per chain. EVM chains share the 0x + 40 hex format."""
+    if network == "solana":
+        return valid_address(addr)
+    if network in EVM_NETWORKS:
+        return len(addr) == 42 and addr[:2].lower() == "0x" and all(c in "0123456789abcdefABCDEF" for c in addr[2:])
+    return False
+
+
 def valid_address(addr: str) -> bool:
     try:
         Pubkey.from_string(addr)

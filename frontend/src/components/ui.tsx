@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { short } from "../api";
+import { chainOf, explorerUrl } from "../chains";
 
 /* ---------------------------------------------------------------- icons */
 const P: Record<string, ReactNode> = {
@@ -230,12 +231,31 @@ export function CopyButton({ text, size = 13 }: { text: string; size?: number })
   );
 }
 
-export function Address({ address, type = "account", chars }: { address: string; type?: "account" | "token" | "tx"; chars?: number }) {
+export function Address({ address, type = "account", chars, network }: { address: string; type?: "account" | "token" | "tx"; chars?: number; network?: string | null }) {
   const label = chars ? `${address.slice(0, chars)}…${address.slice(-chars)}` : short(address);
   return (
     <span className="addr" onClick={(e) => e.stopPropagation()}>
-      <a href={`https://solscan.io/${type}/${address}`} target="_blank" rel="noreferrer" title={address}>{label}</a>
+      <a href={explorerUrl(network, type, address)} target="_blank" rel="noreferrer" title={address}>{label}</a>
       <CopyButton text={address} />
+    </span>
+  );
+}
+
+/* ---------------------------------------------------------------- chains */
+export function ChainDot({ network, size = 16 }: { network?: string | null; size?: number }) {
+  const c = chainOf(network);
+  return (
+    <span className="chain-dot" title={c.name} style={{ width: size, height: size, background: `${c.color}22`, borderColor: `${c.color}66`, color: c.color, fontSize: size * 0.5 }}>
+      {c.name.slice(0, 1)}
+    </span>
+  );
+}
+
+export function ChainBadge({ network, label }: { network?: string | null; label?: string }) {
+  const c = chainOf(network);
+  return (
+    <span className="badge" style={{ color: c.color, background: `${c.color}14`, borderColor: `${c.color}40` }}>
+      <span className="dot" />{label ?? c.name}
     </span>
   );
 }

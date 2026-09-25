@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.solana import LAMPORTS_PER_SOL
 from ..db import get_db
-from ..deps import current_user, valid_address
+from ..deps import current_user, valid_address_for
 from ..models import Activity, Job, Launch, Referral, Transaction, User, Watch, utcnow
 
 router = APIRouter(tags=["misc"])
@@ -78,8 +78,8 @@ async def tracker(user: User = Depends(current_user), db: AsyncSession = Depends
 
 @router.post("/tracker", status_code=201)
 async def tracker_add(body: WatchBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    if body.network != "solana" or not valid_address(body.address):
-        raise HTTPException(400, "invalid solana address")
+    if not valid_address_for(body.network, body.address):
+        raise HTTPException(400, f"invalid {body.network} address")
     w = Watch(user_id=user.id, network=body.network, address=body.address, label=body.label)
     db.add(w)
     try:
@@ -87,7 +87,7 @@ async def tracker_add(body: WatchBody, user: User = Depends(current_user), db: A
     except Exception:
         await db.rollback()
         raise HTTPException(409, "address already tracked")
-    return {"id": w.id, "address": w.address, "label": w.label, "bookmarked": w.bookmarked}
+    return {"id": w.id, "address": w.address, "label": w.label, "bookmarked": w.bookmarked, "network": w.network}
 
 
 @router.patch("/tracker/{watch_id}")

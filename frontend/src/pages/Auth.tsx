@@ -1,13 +1,15 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
-import { Callout, Field, Icon, Logo, Seg, Spinner } from "../components/ui";
+import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
+import { coverage } from "../components/Launchpads";
+import { Callout, ChainDot, Field, Icon, Logo, Seg, Spinner } from "../components/ui";
 import { useSession } from "../session";
 
 const FEATURES: [Parameters<typeof Icon>[0]["name"], string, string][] = [
+  ["layers", "Every chain, one desk", "Solana, Base, BNB Chain and Ethereum launchpads behind one workflow."],
   ["eye", "Preview every action", "Each spend shows its exact wallets, amounts and fees before anything is signed."],
   ["pie", "Supply transparency", "See how much of a token your own wallets control, next to the real holders."],
-  ["shield", "Managed signing", "Keys stay with the signing service. The app never shows or stores them."],
   ["telegram", "Telegram terminal", "Trade and monitor from chat, with tap-to-confirm on every order."],
 ];
 
@@ -22,6 +24,9 @@ export default function Auth() {
   const [needTotp, setNeedTotp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pads, setPads] = useState<Pad[]>([]);
+  useEffect(() => { api<Pad[]>("/launchpads").then(setPads).catch(() => undefined); }, []);
+  const cov = coverage(pads);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -49,13 +54,17 @@ export default function Auth() {
       <div className="auth-hero">
         <div className="row" style={{ gap: 12 }}>
           <Logo size={38} />
-          <div className="logo-name" style={{ fontSize: 17 }}>Helm Terminals<small>Solana launch desk</small></div>
+          <div className="logo-name" style={{ fontSize: 17 }}>Helm Terminals<small>Multichain launch desk</small></div>
         </div>
         <div className="stack" style={{ gap: 20 }}>
-          <span className="badge info" style={{ alignSelf: "flex-start" }}><span className="dot" />Pump.fun live · more launchpads coming</span>
-          <h1>Launch and run your token <span className="grad-text">in the open.</span></h1>
-          <p className="text-2" style={{ maxWidth: 480, fontSize: 15 }}>
-            One desk for creating tokens, managing your wallets and trading, with every order previewed and every wallet you control shown next to the real holder list.
+          <div className="row" style={{ gap: 8 }}>
+            {CHAIN_ORDER.map((c) => (
+              <span key={c} className="pill"><ChainDot network={c} size={16} />{CHAINS[c].name}</span>
+            ))}
+          </div>
+          <h1>Launch on any chain. <span className="grad-text">Run it in the open.</span></h1>
+          <p className="text-2" style={{ maxWidth: 500, fontSize: 15 }}>
+            One desk for creating tokens across {cov.pads || "a dozen"} launchpads on {cov.chains || 4} chains, managing your wallets and trading, with every order previewed and every wallet you control shown next to the real holder list.
           </p>
           <div className="feat">
             {FEATURES.map(([ic, t, d]) => (
@@ -69,7 +78,7 @@ export default function Auth() {
       <div className="auth-form">
         <form className="auth-card" onSubmit={submit}>
           <div className="row show-sm" style={{ gap: 10, marginBottom: 8 }}>
-            <Logo size={34} /><div className="logo-name">Helm Terminals<small>Solana launch desk</small></div>
+            <Logo size={34} /><div className="logo-name">Helm Terminals<small>Multichain launch desk</small></div>
           </div>
           <div>
             <h1>{needTotp ? "Two-factor check" : mode === "login" ? "Welcome back" : "Create your account"}</h1>

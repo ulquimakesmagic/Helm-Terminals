@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
+import { CHAIN_ORDER, CHAINS, ChainId, chainOf, Pad, padName } from "../chains";
+import { LaunchpadDirectory } from "../components/Launchpads";
 import {
-  Address, Callout, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenAvatar, UnitInput, relTime, useToast,
+  Address, Callout, Card, ChainBadge, ChainDot, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenAvatar, UnitInput, relTime, useToast,
 } from "../components/ui";
 
 interface Launch {
-  id: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
+  id: string; network: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
   imported: boolean; created_at: string; dev_buy_sol: number; description: string;
 }
-interface Pad { id: string; network: string; status: string }
-interface W { id: string; label: string; address: string; kind: string }
+interface W { id: string; label: string; address: string; kind: string; network: string }
 
 type Filter = "all" | "live" | "draft" | "archived";
 
@@ -32,6 +33,8 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const pad = pads.find((p) => p.id === f.launchpad);
+  const chain = chainOf(pad?.network);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase() : e.target.value });
 
@@ -58,13 +61,19 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   }
 
   return (
-    <Modal wide title="New launch" sub="Creates a draft. Nothing is sent on-chain until you review and confirm the deployment." onClose={onClose}
+    <Modal wide title="New launch" sub="Pick a chain and launchpad, then fill in the token. Nothing is sent on-chain until you confirm the deployment." onClose={onClose}
       foot={<>
         <span className="muted small grow">{!f.dev_wallet_id && "You can pick a dev wallet later, before deploying."}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn" disabled={!f.name || !f.symbol || busy} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}Create draft</button>
       </>}>
       {error && <Callout tone="err">{error}</Callout>}
+      <div>
+        <h3 style={{ marginBottom: 10 }}>1 · Chain and launchpad</h3>
+        <LaunchpadDirectory pads={pads} picked={f.launchpad} onPick={(p) => setF({ ...f, launchpad: p.id })} />
+      </div>
+      <div className="divider" />
+      <h3>2 · Token</h3>
       <div className="row" style={{ alignItems: "stretch", gap: 16, flexWrap: "nowrap" }}>
         <label style={{ cursor: "pointer", flex: "none" }} title="Upload image">
           <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
@@ -81,11 +90,9 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
             <Field label="Token name" extra={`${f.name.length}/32`} style={{ flex: 2 }}><input value={f.name} onChange={set("name")} maxLength={32} placeholder="Helm Cat" autoFocus /></Field>
             <Field label="Ticker" style={{ flex: 1 }}><input value={f.symbol} onChange={set("symbol")} maxLength={10} placeholder="HCAT" className="mono" /></Field>
           </div>
-          <Field label="Launchpad">
-            <select value={f.launchpad} onChange={set("launchpad")}>
-              {pads.map((p) => <option key={p.id} value={p.id} disabled={p.status !== "available"}>{p.id} · {p.network}{p.status !== "available" ? " (coming soon)" : ""}</option>)}
-            </select>
-          </Field>
+          <div className="row small muted" style={{ gap: 8 }}>
+            Launching on <ChainBadge network={chain.id} /> via <b className="text-2">{padName(f.launchpad)}</b>
+          </div>
         </div>
       </div>
       <Field label="Description" extra={`${f.description.length}/500`}>
@@ -101,10 +108,10 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
         <Field label="Dev wallet" style={{ flex: 2 }} hint={wallets.length === 0 ? "Create a managed wallet on the Wallets page first." : "Signs the create transaction and makes the dev buy."}>
           <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
             <option value="">Choose later…</option>
-            {wallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
+            {wallets.filter((w) => w.network === chain.id).map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-        <Field label="Dev buy" style={{ flex: 1 }}><UnitInput unit="SOL" value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>
+        <Field label="Dev buy" style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>
       </div>
     </Modal>
   );
@@ -157,6 +164,7 @@ export default function Launches() {
   const [wallets, setWallets] = useState<W[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
+  const [chainF, setChainF] = useState<"all" | ChainId>("all");
   const [modal, setModal] = useState<null | "create" | "import">(null);
 
   useEffect(() => {
@@ -175,12 +183,13 @@ export default function Launches() {
   const shown = useMemo(() => {
     const base = filter === "archived" ? archived : (launches ?? []).filter((l) => filter === "all" || (filter === "live" ? l.status === "live" : l.status !== "live"));
     const s = q.trim().toLowerCase();
-    return s ? base.filter((l) => l.name.toLowerCase().includes(s) || l.symbol.toLowerCase().includes(s) || (l.mint_address ?? "").toLowerCase().includes(s)) : base;
-  }, [launches, archived, filter, q]);
+    const byChain = chainF === "all" ? base : base.filter((l) => (l.network ?? "solana") === chainF);
+    return s ? byChain.filter((l) => l.name.toLowerCase().includes(s) || l.symbol.toLowerCase().includes(s) || (l.mint_address ?? "").toLowerCase().includes(s)) : byChain;
+  }, [launches, archived, filter, q, chainF]);
 
   return (
     <>
-      <PageHeader title="Launches" sub="Create tokens, import ones you hold, and open a workspace to trade and manage each one."
+      <PageHeader title="Launches" sub="Create tokens on any supported chain and launchpad, import ones you hold, and open a workspace to trade and manage each one."
         actions={<>
           <button className="btn secondary" onClick={() => setModal("import")}><Icon name="download" size={15} />Import / clone</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />New launch</button>
@@ -193,6 +202,12 @@ export default function Launches() {
           ["draft", <>Drafts <span className="muted num">{counts.draft}</span></>],
           ["archived", <>Archived <span className="muted num">{counts.archived}</span></>],
         ]} />
+        <div className="chips">
+          <button className={`chip ${chainF === "all" ? "on" : ""}`} onClick={() => setChainF("all")}>All chains</button>
+          {CHAIN_ORDER.map((c) => (
+            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} onClick={() => setChainF(c)}><ChainDot network={c} size={14} />{CHAINS[c].name}</button>
+          ))}
+        </div>
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
 
@@ -204,7 +219,7 @@ export default function Launches() {
             <button className="card lcard-new" onClick={() => setModal("create")}>
               <span className="empty" style={{ padding: 0 }}><span className="ic"><Icon name="plus" size={22} /></span></span>
               <b style={{ color: "var(--text)" }}>New launch</b>
-              <span className="small">Start a draft on Pump.fun</span>
+              <span className="small">Pick a chain and launchpad</span>
             </button>
           )}
           {shown.map((l) => (
@@ -219,9 +234,10 @@ export default function Launches() {
               </div>
               {l.description && <p className="muted small" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{l.description}</p>}
               <div className="meta">
-                <div><span className="k">Launchpad</span>{l.launchpad}{l.imported && <span className="badge violet" style={{ marginLeft: 6 }}>imported</span>}</div>
+                <div><span className="k">Chain</span><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={l.network} size={14} />{chainOf(l.network).name}</span></div>
+                <div><span className="k">Launchpad</span>{padName(l.launchpad)}{l.imported && <span className="badge violet" style={{ marginLeft: 6 }}>imported</span>}</div>
                 <div><span className="k">Created</span>{relTime(l.created_at)}</div>
-                <div style={{ gridColumn: "1 / -1" }}><span className="k">Mint</span>{l.mint_address ? <Address address={l.mint_address} type="token" /> : <span className="muted">Not deployed</span>}</div>
+                <div><span className="k">Token address</span>{l.mint_address ? <Address address={l.mint_address} type="token" network={l.network} /> : <span className="muted">Not deployed</span>}</div>
               </div>
             </div>
           ))}
@@ -229,10 +245,9 @@ export default function Launches() {
       )}
 
       {pads.length > 0 && (
-        <p className="small muted row" style={{ gap: 8 }}>
-          <span className="badge good"><span className="dot" />{pads.filter((p) => p.status === "available").map((p) => p.id).join(", ")} live</span>
-          <span>Coming soon: {pads.filter((p) => p.status !== "available").map((p) => p.id).join(", ")}.</span>
-        </p>
+        <Card title="Launchpads" icon="globe" sub={`${pads.length} launchpads across ${new Set(pads.map((p) => p.network)).size} chains · ${pads.filter((p) => p.status === "available").length} live today, the rest rolling out`}>
+          <LaunchpadDirectory pads={pads} />
+        </Card>
       )}
 
       {modal === "create" && <CreateLaunch pads={pads} wallets={wallets} onClose={() => setModal(null)} />}

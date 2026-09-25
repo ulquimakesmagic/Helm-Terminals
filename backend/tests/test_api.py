@@ -288,3 +288,16 @@ async def test_me_reports_email_and_2fa(client):
     h = {"Authorization": f"Bearer {r.json()['token']}"}
     me = (await client.get("/auth/me", headers=h)).json()
     assert me["email"] == "me@example.com" and me["totp_enabled"] is False
+
+
+async def test_watch_and_tracker_accept_evm_addresses(client):
+    h = await signup(client, "evm@example.com")
+    evm = "0x" + "ab" * 20
+    r = await client.post("/wallets/watch", json={"network": "base", "address": evm}, headers=h)
+    assert r.status_code == 201 and r.json()["network"] == "base"
+    r = await client.post("/tracker", json={"network": "bsc", "address": evm, "label": "dev"}, headers=h)
+    assert r.status_code == 201 and r.json()["network"] == "bsc"
+    bad = await client.post("/tracker", json={"network": "base", "address": "not-an-address"}, headers=h)
+    assert bad.status_code == 400
+    sol_on_evm = await client.post("/wallets/watch", json={"network": "ethereum", "address": "11111111111111111111111111111111"}, headers=h)
+    assert sol_on_evm.status_code == 400

@@ -48,7 +48,7 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
 
   return (
     <div className="chart" ref={ref} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
-      <svg viewBox={`0 0 ${w} ${h}`} style={{ height }} role="img" aria-label="Cumulative net SOL flow">
+      <svg viewBox={`0 0 ${w} ${h}`} style={{ height }} role="img" aria-label="Cumulative net flow">
         <defs>
           <linearGradient id="area-g" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={last >= 0 ? "#34d399" : "#f87171"} stopOpacity="0.28" />

@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
 import AreaChart from "../components/Chart";
+import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
+import { coverage } from "../components/Launchpads";
 import { ActivityRow, FeedItem } from "../components/feed";
-import { Callout, Card, CopyButton, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, useToast } from "../components/ui";
+import { Callout, Card, CopyButton, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, ChainDot, useToast } from "../components/ui";
 import { useSession } from "../session";
 
 type Period = "all" | "1y" | "1m" | "7d" | "1d";
@@ -17,6 +19,7 @@ export default function Dashboard() {
   const [wallets, setWallets] = useState<any[] | null>(null);
   const [launches, setLaunches] = useState<any[] | null>(null);
   const [feed, setFeed] = useState<ActivityRow[] | null>(null);
+  const [pads, setPads] = useState<Pad[]>([]);
   const [error, setError] = useState("");
 
   const load = () => api(`/dashboard?period=${period}`).then((d) => { setData(d); setError(""); }).catch((e) => setError(errMsg(e)));
@@ -24,6 +27,7 @@ export default function Dashboard() {
   useEffect(() => {
     api<any[]>("/wallets").then(setWallets).catch(() => setWallets([]));
     api<any[]>("/launches").then(setLaunches).catch(() => setLaunches([]));
+    api<Pad[]>("/launchpads").then(setPads).catch(() => undefined);
     api<ActivityRow[]>("/activity?limit=7").then(setFeed).catch(() => setFeed([]));
   }, []);
 
@@ -43,7 +47,7 @@ export default function Dashboard() {
     <>
       <PageHeader
         title="Dashboard"
-        sub="Your SOL flow, launches and recent account activity."
+        sub="Your launches across every chain, net flow and recent account activity."
         actions={<>
           <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>
         </>}
@@ -52,7 +56,7 @@ export default function Dashboard() {
 
       <div className="grid g-stats">
         {data ? (
-          <Stat accent label="Net SOL flow" icon="trend" value={`${data.net_sol_flow > 0 ? "+" : ""}${fmt(data.net_sol_flow)}`} unit="SOL"
+          <Stat accent label="Net flow · Solana" icon="trend" value={`${data.net_sol_flow > 0 ? "+" : ""}${fmt(data.net_sol_flow)}`} unit="SOL"
             tone={data.net_sol_flow > 0 ? "good" : data.net_sol_flow < 0 ? "bad" : undefined} hint={PERIODS.find((p) => p[0] === period)?.[1] + " · confirmed txs"} />
         ) : <div className="card stat"><Skeleton h={12} w={90} /><Skeleton h={26} w={140} /></div>}
         <Stat label="Launches" icon="rocket" value={data ? data.total_launches : "–"} hint={`${live.length} live now`} />
@@ -62,25 +66,26 @@ export default function Dashboard() {
 
       <div className="grid g-main">
         <div className="col">
-          <Card title="Cumulative net SOL flow" icon="trend" sub="Confirmed on-chain transactions, fees included"
+          <Card title="Cumulative net flow" icon="trend" sub="Solana, in SOL · confirmed transactions, fees included"
             actions={<Seg value={period} onChange={setPeriod} options={PERIODS} />}
             foot={data?.note}>
             {!data ? <Skeleton h={240} /> : data.series.length === 0 ? (
-              <Empty icon="trend" title="No confirmed transactions in this period" text="Once you deploy, trade or move SOL, your net flow shows up here." />
+              <Empty icon="trend" title="No confirmed transactions in this period" text="Once you deploy, trade or move funds, your net flow shows up here." />
             ) : <AreaChart points={data.series} />}
           </Card>
 
           <Card title="Your launches" icon="rocket" actions={<Link to="/launches" className="btn sm ghost">View all<Icon name="arrowright" size={13} /></Link>} flush>
             {!launches ? <Loading /> : launches.length === 0 ? (
-              <Empty icon="rocket" title="No launches yet" text="Create a token on Pump.fun, or import one you already hold to track and trade it."
+              <Empty icon="rocket" title="No launches yet" text="Create a token on any supported chain and launchpad, or import one you already hold."
                 action={<Link to="/launches" className="btn sm"><Icon name="plus" size={14} />Create launch</Link>} />
             ) : (
               <div className="table-wrap"><table>
-                <thead><tr><th>Token</th><th>Status</th><th className="hide-sm">Launchpad</th><th /></tr></thead>
+                <thead><tr><th>Token</th><th>Chain</th><th>Status</th><th className="hide-sm">Launchpad</th><th /></tr></thead>
                 <tbody>
                   {launches.slice(0, 5).map((l) => (
                     <tr key={l.id}>
                       <td><Link to={`/launches/${l.id}`} style={{ color: "var(--text)", fontWeight: 600 }}>{l.name}</Link> <span className="muted">${l.symbol}</span></td>
+                      <td><ChainDot network={l.network} size={18} /></td>
                       <td><StatusBadge status={l.status} /></td>
                       <td className="hide-sm text-2">{l.launchpad}</td>
                       <td className="r"><Link to={`/launches/${l.id}`} className="btn sm secondary">Open</Link></td>
@@ -105,6 +110,26 @@ export default function Dashboard() {
               ))}
             </Card>
           )}
+
+          <Card title="Chain coverage" icon="globe" sub={pads.length ? `${coverage(pads).pads} launchpads on ${coverage(pads).chains} chains` : undefined}
+            actions={<Link to="/launches" className="btn sm ghost">Launchpads<Icon name="arrowright" size={13} /></Link>} flush>
+            <div className="feed">
+              {CHAIN_ORDER.map((c) => {
+                const list = pads.filter((p) => p.network === c);
+                const live = list.filter((p) => p.status === "available").length;
+                return (
+                  <div key={c} className="feed-item" style={{ alignItems: "center" }}>
+                    <ChainDot network={c} size={26} />
+                    <div className="grow">
+                      <div style={{ fontWeight: 550 }}>{CHAINS[c].name}</div>
+                      <div className="muted small">{list.length} launchpad{list.length === 1 ? "" : "s"}</div>
+                    </div>
+                    <span className={`badge ${live ? "good" : ""}`}><span className="dot" />{live ? `${live} live` : "Rolling out"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
 
           <Card title="Recent activity" icon="activity" flush actions={<Link to="/activity" className="btn sm ghost">All<Icon name="arrowright" size={13} /></Link>}>
             {!feed ? <Loading /> : feed.length === 0 ? <Empty icon="activity" title="Nothing yet" /> : (

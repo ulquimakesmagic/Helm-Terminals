@@ -8,7 +8,7 @@ from ..chains.solana import LAMPORTS_PER_SOL, SolanaRPC, build_unsigned, sol_tra
 from ..db import get_db
 from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
-    two_fa_warnings, valid_address,
+    two_fa_warnings, valid_address, valid_address_for,
 )
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single
@@ -80,9 +80,9 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
 
 @router.post("/wallets/watch", status_code=201)
 async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    if body.network != "solana" or not valid_address(body.address):
-        raise HTTPException(400, "invalid solana address")
-    w = Wallet(user_id=user.id, network="solana", address=body.address, kind="watch", label=body.label)
+    if not valid_address_for(body.network, body.address):
+        raise HTTPException(400, f"invalid {body.network} address")
+    w = Wallet(user_id=user.id, network=body.network, address=body.address, kind="watch", label=body.label)
     db.add(w)
     await db.commit()
     return _wallet_out(w)

@@ -1,5 +1,6 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
-import { api, errMsg, fmt, solscan } from "../api";
+import { api, errMsg, fmt } from "../api";
+import { chainOf, explorerUrl } from "../chains";
 import { Address, Callout, Icon, Modal, Spinner, StatusBadge } from "./ui";
 
 type Phase = "loading" | "review" | "submitting" | "polling" | "done" | "error";
@@ -10,6 +11,7 @@ interface Props {
   body: Record<string, unknown>;
   onClose: () => void;
   onDone?: () => void;
+  network?: string;
 }
 
 const TERMINAL = ["confirmed", "failed", "partial"];
@@ -24,20 +26,21 @@ const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
 };
 
-const isAddr = (v: unknown): v is string => typeof v === "string" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
+const isAddr = (v: unknown): v is string => typeof v === "string" && (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v) || /^0x[0-9a-fA-F]{40}$/.test(v));
 
-function Value({ k, v }: { k: string; v: unknown }): ReactNode {
+function Value({ k, v, network }: { k: string; v: unknown; network?: string }): ReactNode {
+  const cur = chainOf(network).native;
   if (Array.isArray(v)) {
     return (
       <div className="stack tight" style={{ alignItems: "flex-end" }}>
         {v.map((x, i) => {
-          if (isAddr(x)) return <Address key={i} address={x} />;
+          if (isAddr(x)) return <Address key={i} address={x} network={network} />;
           if (x && typeof x === "object") {
             const o = x as Record<string, unknown>;
             return (
               <div key={i} className="row nowrap" style={{ gap: 10 }}>
-                {isAddr(o.address) && <Address address={o.address} />}
-                {typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} SOL</span>}
+                {isAddr(o.address) && <Address address={o.address} network={network} />}
+                {typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} {cur}</span>}
               </div>
             );
           }
@@ -47,10 +50,10 @@ function Value({ k, v }: { k: string; v: unknown }): ReactNode {
       </div>
     );
   }
-  if (isAddr(v)) return <Address address={v} type={k === "mint" ? "token" : "account"} />;
+  if (isAddr(v)) return <Address address={v} type={k === "mint" ? "token" : "account"} network={network} />;
   if (typeof v === "boolean") return <span className={v && k === "irreversible" ? "bad" : ""} style={{ fontWeight: 600 }}>{v ? "Yes" : "No"}</span>;
   if (typeof v === "number") {
-    const unit = k.endsWith("_sol") ? " SOL" : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
+    const unit = k.endsWith("_sol") ? ` ${cur}` : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
     return <span className="num" style={{ fontWeight: 600 }}>{fmt(v, 6)}{unit}</span>;
   }
   if (k === "side") return <span className={`badge cap ${v === "buy" ? "good" : "bad"}`}>{String(v)}</span>;
@@ -99,7 +102,7 @@ function Otp({ value, onChange }: { value: string; onChange: (v: string) => void
 }
 
 /** Every fund-moving action goes through here: preflight first, then confirm with the same hash. */
-export default function SpendDialog({ title, path, body, onClose, onDone }: Props) {
+export default function SpendDialog({ title, path, body, onClose, onDone, network = "solana" }: Props) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
@@ -167,7 +170,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
             {rows.map(([k, v]) => (
               <Fragment key={k}>
                 <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
-                <div className="v"><Value k={k} v={v} /></div>
+                <div className="v"><Value k={k} v={v} network={network} /></div>
               </Fragment>
             ))}
           </div>
@@ -199,7 +202,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone }: Prop
                     <td>{t.kind}</td>
                     <td><StatusBadge status={t.status} /></td>
                     <td className="r mono">
-                      {t.signature ? <a href={solscan(t.signature)} target="_blank" rel="noreferrer">View on Solscan <Icon name="ext" size={11} /></a> : null}
+                      {t.signature ? <a href={explorerUrl(network, "tx", t.signature)} target="_blank" rel="noreferrer">View on explorer <Icon name="ext" size={11} /></a> : null}
                       {t.error ? <span className="bad small"> {t.error}</span> : null}
                     </td>
                   </tr>
