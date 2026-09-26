@@ -64,3 +64,45 @@ class LaunchpadAdapter(Protocol):
     async def build_buy_tx(self, req: TradeRequest) -> BuiltTx: ...
     async def build_sell_tx(self, req: TradeRequest) -> BuiltTx: ...
     async def build_claim_fees_tx(self, req: ClaimRequest) -> BuiltTx | None: ...
+
+
+# --- EVM launchpads ------------------------------------------------------------------------------
+# EVM adapters don't return serialized transactions: they return the contract calls to make, in order.
+# Helm's EvmSender fills in nonce, gas and fees, simulates each call and signs it with the wallet's key.
+
+
+@dataclass
+class EvmStep:
+    label: str  # shown in the job log, e.g. "approve", "swap"
+    to: str
+    data: bytes
+    value: int = 0  # wei
+    essential: bool = True  # if an essential step fails, later steps are not sent
+
+
+@dataclass
+class EvmPlan:
+    steps: list[EvmStep]
+    token: str | None = None  # the token address (known before sending, e.g. from CREATE2)
+    notes: dict = field(default_factory=dict)  # extra facts for the preview (token type, commission, ...)
+
+
+@dataclass
+class EvmTradeRequest:
+    token: str
+    wallet: str
+    side: str  # buy | sell
+    amount_wei: int  # native coin in for buys; tokens in (raw units) for sells
+    slippage_pct: float = 10.0
+
+
+class EvmLaunchpadAdapter(Protocol):
+    id: str
+    network: str
+    quote_assets: list[str]
+    kind: str  # "evm"
+
+    def options_schema(self) -> dict: ...
+    async def prepare_create(self, req: CreateRequest) -> EvmPlan: ...
+    async def prepare_trade(self, req: EvmTradeRequest) -> EvmPlan: ...
+    async def build_claim_fees_tx(self, req: ClaimRequest) -> None: ...

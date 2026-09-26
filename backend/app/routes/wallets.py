@@ -15,6 +15,7 @@ from ..services.executor import Executor, _finish, _record, run_single
 from ..services.preflight import build_preflight
 from ..chains.evm import EVM_CHAINS, WEI, shared_evm
 from ..signing import get_signer
+from ..services.evm_exec import EvmCall
 
 router = APIRouter(tags=["wallets"])
 TX_FEE_RESERVE = 10_000  # lamports kept back for fees
@@ -65,8 +66,8 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
 @router.post("/wallets", status_code=201)
 async def create_wallets(body: CreateWallets, user: User = Depends(current_user),
                          db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
-    if body.network != "solana":
-        raise HTTPException(400, "only solana wallets are supported in v1")
+    if body.network != "solana" and body.network not in EVM_CHAINS:
+        raise HTTPException(400, f"unsupported network {body.network}")
     if body.folder_id:
         f = await db.get(Folder, body.folder_id)
         if not f or f.user_id != user.id:
@@ -182,6 +183,10 @@ async def fund(body: FundBody, user: User = Depends(current_user), db: AsyncSess
         return prior
     src = await owned_wallet(db, user, body.funder_wallet_id)
     targets = [(await owned_wallet(db, user, a.wallet_id, managed=False), a.sol) for a in body.allocations]
+    if any(w.network != src.network for w, _ in targets):
+        raise HTTPException(400, f"every wallet must be on {src.network}, the funder's network")
+    if src.network in EVM_CHAINS:
+        return await _fund_evm(body, user, db, ex, src, targets)
     total = sum(sol for _, sol in targets)
     bal = await rpc.get_balance(src.address)
     warnings = []
@@ -213,11 +218,16 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
                    rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
     if (prior := await find_replay(db, user, body)):
         return prior
-    if not valid_address(body.destination):
-        raise HTTPException(400, "invalid destination address")
     if not body.all and body.amount_sol is None:
         raise HTTPException(400, "set all=true or amount_sol")
     wallets = [await owned_wallet(db, user, wid) for wid in body.wallet_ids]
+    network = wallets[0].network
+    if any(w.network != network for w in wallets):
+        raise HTTPException(400, "withdraw from one network at a time")
+    if not valid_address_for(network, body.destination):
+        raise HTTPException(400, f"invalid {network} destination address")
+    if network in EVM_CHAINS:
+        return await _withdraw_evm(body, user, db, ex, wallets)
     plan = []
     for w in wallets:
         bal = await rpc.get_balance(w.address)
@@ -247,6 +257,83 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
                     blockhash,
                 )
                 res = await ex.submit(raw, {w.address: w.signer_ref or ""})
+                await _record(session, j, w, "withdraw", res, None)
+                results.append(res)
+            _finish(j, results)
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
+# --- EVM chains (Base, BNB Chain, Ethereum, Robinhood Chain) ---------------------------------------
+# Amounts in the request bodies (`sol`, `amount_sol`) are in the chain's own coin here: ETH or BNB.
+
+
+async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, src: Wallet, targets: list):
+    sender = ex.evm(src.network)
+    coin = EVM_CHAINS[src.network]["native"]
+    wei = [(w, int(round(amt * WEI))) for w, amt in targets]
+    total = sum(v for _, v in wei)
+    bal = await sender.rpc.get_balance(src.address)
+    gas = await sender.max_gas_cost() * len(wei)
+    warnings = []
+    if bal < total + gas:
+        warnings.append(f"Funder balance {bal / WEI:.6f} {coin} is below the {total / WEI:.6f} {coin} required "
+                        f"plus about {gas / WEI:.6f} {coin} gas.")
+    pf = build_preflight("fund", {
+        "network": src.network, "from": src.address,
+        "to": [{"address": w.address, "amount": v / WEI, "coin": coin} for w, v in wei],
+        "total": total / WEI, "coin": coin, "max_gas": gas / WEI, "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "fund", None, pf["preflight"])
+    if created:
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            results = []
+            for w, v in wei:
+                res = await sender.send(src.address, src.signer_ref or "", EvmCall(to=w.address, value=v))
+                await _record(session, j, src, "fund", res, None)
+                results.append(res)
+                await session.commit()
+            _finish(j, results)
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
+async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Executor, wallets: list[Wallet]):
+    network = wallets[0].network
+    sender = ex.evm(network)
+    coin = EVM_CHAINS[network]["native"]
+    gas = await sender.max_gas_cost()
+    plan = []
+    for w in wallets:
+        bal = await sender.rpc.get_balance(w.address)
+        amount = await sender.spendable(w.address) if body.all else int(round((body.amount_sol or 0) * WEI))
+        plan.append((w, amount, bal))
+    warnings = [f"{w.address} has too little {coin} to send {amt / WEI:.6f}" for w, amt, bal in plan
+                if amt <= 0 or amt + gas > bal]
+    warnings += two_fa_warnings(user, "withdraw")
+    pf = build_preflight("withdraw", {
+        "network": network, "destination": body.destination, "coin": coin,
+        "from": [{"address": w.address, "amount": amt / WEI} for w, amt, _ in plan],
+        "max_gas_each": gas / WEI, "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "withdraw", None, pf["preflight"])
+    if created:
+        async def work(session, j):
+            results = []
+            for w, amt, _ in plan:
+                res = await sender.send(w.address, w.signer_ref or "", EvmCall(to=body.destination, value=amt))
                 await _record(session, j, w, "withdraw", res, None)
                 results.append(res)
             _finish(j, results)

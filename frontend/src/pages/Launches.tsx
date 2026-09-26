@@ -14,6 +14,7 @@ interface Launch {
   imported: boolean; created_at: string; dev_buy_sol: number; description: string;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
+interface OptField { key: string; type: string; label?: string; hint?: string; options?: (string | number)[]; default?: unknown }
 
 type Filter = "all" | "live" | "draft" | "archived";
 
@@ -39,6 +40,8 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   const [notice, setNotice] = useState<string | null>(null);
   const [quoteMint, setQuoteMint] = useState("");
   const [eligible, setEligible] = useState(false);
+  const [extra, setExtra] = useState<OptField[]>([]);
+  const [opts, setOpts] = useState<Record<string, unknown>>({});
   const pad = pads.find((p) => p.id === f.launchpad);
   const quote = quotes.find((q) => q.mint === quoteMint);
   const paired = !!quote && quote.kind !== "native";
@@ -49,6 +52,13 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
     api<{ assets: QuoteAsset[]; notice: string | null }>(`/launchpads/${f.launchpad}/quote-assets`)
       .then((r) => { setQuotes(r.assets); setNotice(r.notice); setQuoteMint(r.assets[0]?.mint ?? ""); })
       .catch(() => undefined);
+    // Launchpad-specific settings (e.g. Flap's trading tax). Dev buy and slippage have their own inputs.
+    setExtra([]); setOpts({});
+    api<{ fields?: OptField[] }>(`/launchpads/${f.launchpad}/options`).then((r) => {
+      const fields = (r.fields ?? []).filter((x) => x.type === "select");
+      setExtra(fields);
+      setOpts(Object.fromEntries(fields.map((x) => [x.key, x.default])));
+    }).catch(() => undefined);
   }, [f.launchpad, pad?.status]);
   const chain = chainOf(pad?.network);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -72,6 +82,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
         dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: paired ? 0 : +f.dev_buy_sol || 0,
         image_b64: image ? await toBase64(image) : null,
         quote_mint: paired ? quoteMint : null, eligibility_confirmed: paired ? eligible : false,
+        options: opts,
       } });
       nav(`/launches/${l.id}`);
     } catch (e) { setError(errMsg(e)); setBusy(false); }
@@ -130,6 +141,15 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
         </Field>
         {!paired && <Field label="Dev buy" style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
       </div>
+      {extra.map((x) => (
+        <Field key={x.key} label={x.label ?? x.key} hint={x.hint}>
+          <select value={String(opts[x.key] ?? "")} onChange={(e) => setOpts({ ...opts, [x.key]: Number.isNaN(+e.target.value) ? e.target.value : +e.target.value })}>
+            {(x.options ?? []).map((o) => (
+              <option key={String(o)} value={String(o)}>{x.key === "tax_rate_pct" ? (o === 0 ? "No tax (standard token)" : `${o}% tax on buys and sells`) : String(o)}</option>
+            ))}
+          </select>
+        </Field>
+      ))}
       {quotes.length > 1 && (
         <>
           <div className="divider" />

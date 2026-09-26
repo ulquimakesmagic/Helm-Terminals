@@ -16,7 +16,7 @@ import httpx
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from .base import SigningError, WalletRef
+from .base import EVM_NETWORKS, SigningError, WalletRef
 
 
 class TurnkeySigner:
@@ -68,8 +68,9 @@ class TurnkeySigner:
         return activity.get("result", {})
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef:
-        if network != "solana":
-            raise SigningError("Turnkey signer: only solana is wired up in v1")
+        evm = network in EVM_NETWORKS
+        if network != "solana" and not evm:
+            raise SigningError(f"Turnkey signer doesn't support {network}")
         result = await self._submit(
             "/public/v1/submit/create_private_keys",
             "ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2",
@@ -77,9 +78,9 @@ class TurnkeySigner:
                 "privateKeys": [
                     {
                         "privateKeyName": f"{user_id}:{label}"[:60],
-                        "curve": "CURVE_ED25519",
+                        "curve": "CURVE_SECP256K1" if evm else "CURVE_ED25519",
                         "privateKeyTags": [],
-                        "addressFormats": ["ADDRESS_FORMAT_SOLANA"],
+                        "addressFormats": ["ADDRESS_FORMAT_ETHEREUM" if evm else "ADDRESS_FORMAT_SOLANA"],
                     }
                 ]
             },
@@ -100,3 +101,21 @@ class TurnkeySigner:
         )
         sig = result["signRawPayloadResult"]
         return bytes.fromhex(sig["r"]) + bytes.fromhex(sig["s"])
+
+    async def sign_digest(self, signer_ref: str, digest: bytes) -> tuple[int, int, int]:
+        """secp256k1 signature over an already-hashed EVM payload (Helm computes the keccak digest itself)."""
+        if len(digest) != 32:
+            raise SigningError("EVM digest must be 32 bytes")
+        result = await self._submit(
+            "/public/v1/submit/sign_raw_payload",
+            "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2",
+            {
+                "signWith": signer_ref,
+                "payload": digest.hex(),
+                "encoding": "PAYLOAD_ENCODING_HEXADECIMAL",
+                "hashFunction": "HASH_FUNCTION_NO_OP",
+            },
+        )
+        sig = result["signRawPayloadResult"]
+        v = int(sig["v"], 16)
+        return (v - 27 if v >= 27 else v), int(sig["r"], 16), int(sig["s"], 16)

@@ -57,7 +57,7 @@ export const padName = (id: string) => PAD_NAMES[id] ?? id;
 export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string }
 
 /** Launchpads that need a token image to launch. */
-export const NEEDS_IMAGE = new Set(["letsbonk", "bags"]);
+export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-robinhood"]);
 
 /** Launchpads grouped by chain, in display order. */
 export function padsByChain(pads: Pad[]) {
@@ -65,4 +65,4 @@ export function padsByChain(pads: Pad[]) {
 }
 
 /** Wallet networks the signing service can create keys on today. */
-export const MANAGED_NETWORKS: ChainId[] = ["solana"];
+export const MANAGED_NETWORKS: ChainId[] = ["solana", "base", "bsc", "robinhood", "ethereum"];

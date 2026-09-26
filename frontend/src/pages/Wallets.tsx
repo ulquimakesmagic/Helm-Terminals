@@ -9,7 +9,7 @@ import {
 interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number }
 interface Folder { id: string; name: string; color: string }
 interface Funder { id: string; wallet_id: string; label: string; is_default: boolean }
-type Dialog = null | { title: string; path: string; body: Record<string, unknown> };
+type Dialog = null | { title: string; path: string; body: Record<string, unknown>; network?: string };
 
 function CreateWallets({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const toast = useToast();
@@ -113,6 +113,10 @@ export default function Wallets() {
   const totalSol = all.filter((w) => (w.network ?? "solana") === "solana").reduce((s, w) => s + (w.balance_sol ?? 0), 0);
   const sel = [...selected];
   const selManaged = sel.filter((id) => managed.some((w) => w.id === id));
+  const selNets = [...new Set(selManaged.map((id) => managed.find((w) => w.id === id)?.network ?? "solana"))];
+  const selNet = selNets.length === 1 ? selNets[0] : null;
+  const coin = chainOf(selNet).native;
+  const evmSel = !!selNet && selNet !== "solana";
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const allShownSelected = shown.length > 0 && shown.every((w) => selected.has(w.id));
   const funderOf = (id: string) => funders.find((f) => f.wallet_id === id);
@@ -197,8 +201,9 @@ export default function Wallets() {
           <b className="num">{sel.length} selected</b>
           {selManaged.length !== sel.length && <span className="muted small">({sel.length - selManaged.length} watch-only ignored)</span>}
           <div className="grow" />
-          <button className="btn sm buy" disabled={!selManaged.length} onClick={() => setModal("fund")}><Icon name="arrowdown" size={14} />Fund</button>
-          <button className="btn sm secondary" disabled={!selManaged.length} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
+          {selNets.length > 1 && <span className="warn-t small">Pick wallets on one chain to fund or withdraw</span>}
+          <button className="btn sm buy" disabled={!selNet} onClick={() => setModal("fund")}><Icon name="arrowdown" size={14} />Fund</button>
+          <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
           <button className="btn sm ghost" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
@@ -217,32 +222,33 @@ export default function Wallets() {
       )}
 
       {modal === "fund" && (
-        <Modal title="Fund wallets" sub={`Send SOL from one wallet to ${selManaged.filter((id) => id !== fundFrom).length} selected wallet(s)`} onClose={() => setModal(null)}
+        <Modal title="Fund wallets" sub={`Send ${coin} on ${chainOf(selNet).name} from one wallet to ${selManaged.filter((id) => id !== fundFrom).length} selected wallet(s)`} onClose={() => setModal(null)}
           foot={<><button className="btn ghost" onClick={() => setModal(null)}>Cancel</button>
             <button className="btn" disabled={!fundFrom || !(+fundAmount > 0) || selManaged.filter((id) => id !== fundFrom).length === 0}
-              onClick={() => { setModal(null); setDialog({ title: "Fund wallets", path: "/wallets/fund",
+              onClick={() => { setModal(null); setDialog({ title: "Fund wallets", path: "/wallets/fund", network: selNet ?? "solana",
                 body: { funder_wallet_id: fundFrom, allocations: selManaged.filter((id) => id !== fundFrom).map((id) => ({ wallet_id: id, sol: +fundAmount })) } }); }}>
               Review<Icon name="arrowright" size={14} /></button></>}>
           <Field label="Send from">
             <select value={fundFrom} onChange={(e) => setFundFrom(e.target.value)}>
               <option value="">Choose a wallet…</option>
-              {[...managed].sort((a, b) => Number(!!funderOf(b.id)) - Number(!!funderOf(a.id))).map((w) => (
-                <option key={w.id} value={w.id}>{funderOf(w.id) ? "★ " : ""}{w.label || "Wallet"} · {short(w.address)}{w.balance_sol !== undefined ? ` · ${fmt(w.balance_sol)} SOL` : ""}</option>
+              {managed.filter((w) => w.network === selNet).sort((a, b) => Number(!!funderOf(b.id)) - Number(!!funderOf(a.id))).map((w) => (
+                <option key={w.id} value={w.id}>{funderOf(w.id) ? "★ " : ""}{w.label || "Wallet"} · {short(w.address)}{w.balance_sol !== undefined ? ` · ${fmt(w.balance_sol)} ${coin}` : ""}</option>
               ))}
             </select>
           </Field>
-          <Field label="Amount per wallet"><UnitInput unit="SOL" value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} /></Field>
-          <Callout>Total: <b className="num">{fmt(+fundAmount * selManaged.filter((id) => id !== fundFrom).length)} SOL</b> plus network fees. You'll see the full preview before anything is sent.</Callout>
+          <Field label="Amount per wallet"><UnitInput unit={coin} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} /></Field>
+          <Callout>Total: <b className="num">{fmt(+fundAmount * selManaged.filter((id) => id !== fundFrom).length)} {coin}</b> plus network fees. You'll see the full preview before anything is sent.</Callout>
         </Modal>
       )}
 
       {modal === "withdraw" && (
-        <Modal title="Withdraw SOL" sub={`Sweep all SOL from ${selManaged.length} wallet(s), keeping a little for fees`} onClose={() => setModal(null)}
+        <Modal title={`Withdraw ${coin}`} sub={`Sweep all ${coin} on ${chainOf(selNet).name} from ${selManaged.length} wallet(s), keeping a little for fees`} onClose={() => setModal(null)}
           foot={<><button className="btn ghost" onClick={() => setModal(null)}>Cancel</button>
-            <button className="btn" disabled={dest.trim().length < 32}
-              onClick={() => { setModal(null); setDialog({ title: "Withdraw SOL", path: "/wallets/withdraw", body: { wallet_ids: selManaged, destination: dest.trim(), all: true } }); }}>
+            <button className="btn" disabled={evmSel ? !/^0x[0-9a-fA-F]{40}$/.test(dest.trim()) : dest.trim().length < 32}
+              onClick={() => { setModal(null); setDialog({ title: `Withdraw ${coin}`, path: "/wallets/withdraw", network: selNet ?? "solana", body: { wallet_ids: selManaged, destination: dest.trim(), all: true } }); }}>
               Review<Icon name="arrowright" size={14} /></button></>}>
-          <Field label="Destination address" hint="Double-check this. Transfers can't be reversed."><input className="mono" value={dest} onChange={(e) => setDest(e.target.value)} placeholder="Your main wallet address" autoFocus /></Field>
+          <Field label="Destination address" hint="Double-check this. Transfers can't be reversed."><input className="mono" value={dest} onChange={(e) => setDest(e.target.value)} placeholder={evmSel ? "0x… your main wallet on " + chainOf(selNet).name : "Your main wallet address"} autoFocus /></Field>
+          {evmSel && <Callout icon="info">Send to an address on {chainOf(selNet).name}. The same 0x address works on other EVM chains, but the {coin} only arrives on {chainOf(selNet).name}.</Callout>}
           <Callout tone="warn" icon="shield">Withdrawals need your 2FA code on the next step.</Callout>
         </Modal>
       )}

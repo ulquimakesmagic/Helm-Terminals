@@ -2,6 +2,8 @@
 
 from ..config import get_settings
 from .bags import BagsAdapter
+from .evm import shared_evm
+from .flap import FlapAdapter
 from .base import LaunchpadAdapter
 from .letsbonk import LetsBonkAdapter
 from .pumpfun import PumpFunAdapter
@@ -24,7 +26,20 @@ def _bags() -> LaunchpadAdapter:
                        partner_wallet=s.bags_partner_wallet, partner_config=s.bags_partner_config)
 
 
-IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags}
+def _flap(launchpad_id: str, network: str):
+    def make():
+        s = get_settings()
+        return FlapAdapter(launchpad_id, network, shared_evm(network), upload_url=s.flap_upload_url,
+                           commission_receiver=s.platform_fee_wallet_evm)
+    return make
+
+
+IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
+               "flap-sh": _flap("flap-sh", "bsc"), "flap-sh-robinhood": _flap("flap-sh-robinhood", "robinhood")}
+
+
+def is_evm(adapter) -> bool:
+    return getattr(adapter, "kind", "solana") == "evm"
 
 
 def needs_setup(launchpad_id: str) -> str | None:
@@ -38,8 +53,8 @@ PLANNED = [
     ("meteora-dbc", "solana"), ("printr", "solana"),
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("clanker", "base"), ("bankr", "base"),
-    ("four-meme", "bsc"), ("flap-sh", "bsc"),
-    ("pons", "robinhood"), ("flap-sh-robinhood", "robinhood"),
+    ("four-meme", "bsc"),
+    ("pons", "robinhood"),
     ("uniswap-v2", "ethereum"),
 ]
 

@@ -27,7 +27,11 @@ WEI = 10**18
 
 
 class EvmRPCError(Exception):
-    """The node answered with a JSON-RPC error (e.g. execution reverted)."""
+    """The node answered with a JSON-RPC error (e.g. execution reverted). `data` holds any revert data (hex)."""
+
+    def __init__(self, message: str, data: str | None = None) -> None:
+        super().__init__(message)
+        self.data = data if isinstance(data, str) and data.startswith("0x") else None
 
 
 class EvmRPCUnavailable(Exception):
@@ -141,7 +145,7 @@ class EvmRPC:
                 continue
             self.ring.ok(url)
             if err:
-                raise EvmRPCError(f"{method}: {err.get('message', err)}")
+                raise EvmRPCError(f"{method}: {err.get('message', err)}", err.get("data"))
             return data.get("result")
         raise EvmRPCUnavailable(f"{method} failed on every {EVM_CHAINS[self.network]['name']} RPC endpoint "
                                 f"({'; '.join(problems)})")
@@ -173,6 +177,10 @@ class EvmRPC:
         supply = int(await self.eth_call(token, "0x18160ddd") or "0x0", 16)
         return {"name": name, "symbol": symbol, "decimals": decimals, "total_supply": supply}
 
+    async def erc20_allowance(self, token: str, owner: str, spender: str) -> int:
+        data = "0xdd62ed3e" + _pad_address(owner) + _pad_address(spender)
+        return int(await self.eth_call(token, data) or "0x0", 16)
+
     async def get_code(self, address: str) -> str:
         return await self.call("eth_getCode", [address, "latest"])
 
@@ -180,6 +188,12 @@ class EvmRPC:
 
     async def nonce(self, address: str) -> int:
         return int(await self.call("eth_getTransactionCount", [address, "pending"]), 16)
+
+    async def base_fee(self) -> int | None:
+        """The latest block's base fee in wei, or None on chains without EIP-1559."""
+        block = await self.call("eth_getBlockByNumber", ["latest", False])
+        fee = (block or {}).get("baseFeePerGas")
+        return int(fee, 16) if fee else None
 
     async def gas_price(self) -> int:
         return int(await self.call("eth_gasPrice"), 16)

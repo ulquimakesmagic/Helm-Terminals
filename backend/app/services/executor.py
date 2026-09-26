@@ -27,10 +27,20 @@ class SubmitResult:
 
 
 class Executor:
-    def __init__(self, rpc: SolanaRPC, signer: Signer, confirm_timeout_s: float = 60) -> None:
+    def __init__(self, rpc: SolanaRPC, signer: Signer, confirm_timeout_s: float = 60,
+                 evm_rpcs: dict | None = None) -> None:
         self.rpc = rpc
         self.signer = signer
         self.confirm_timeout_s = confirm_timeout_s
+        self.evm_rpcs = evm_rpcs or {}  # tests inject fake EVM nodes here
+
+    def evm(self, network: str):
+        """Sender for an EVM chain, using the rotating RPC endpoints configured for it."""
+        from ..chains.evm import shared_evm
+        from .evm_exec import EvmSender
+
+        rpc = self.evm_rpcs.get(network) or shared_evm(network)
+        return EvmSender(rpc, self.signer, poll_s=0 if network in self.evm_rpcs else 1.5)
 
     async def submit(
         self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None
@@ -248,3 +258,97 @@ async def run_built(
             await _record(db, job, wallet, f"{kind}_cleanup"[:24], cleanup, None)
         await db.commit()
     return res
+
+
+# --- EVM ------------------------------------------------------------------------------------------
+
+
+async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Wallet, kind: str, plan) -> SubmitResult:
+    """Send a plan's calls in order from one wallet. The last step is the action itself; earlier ones (like an
+    approve) are recorded as `{kind}_{label}`. If an essential step fails, nothing after it is sent."""
+    from .evm_exec import EvmCall
+
+    sender = ex.evm(wallet.network)
+    last = None
+    for i, step in enumerate(plan.steps):
+        res = await sender.send(wallet.address, wallet.signer_ref or "", EvmCall(step.to, step.data, step.value))
+        label = kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24]
+        await _record(db, job, wallet, label, res, None)
+        await db.commit()
+        last = res
+        if res.status != "confirmed" and step.essential:
+            break
+    return last or SubmitResult(None, "failed", "nothing to send")
+
+
+async def run_evm_plan(db: AsyncSession, ex: Executor, job: Job, wallet: Wallet, kind: str, plan) -> SubmitResult:
+    job.status = "submitted"
+    await db.commit()
+    res = await _run_evm_steps(db, ex, job, wallet, kind, plan)
+    _finish(job, [res])
+    await db.commit()
+    return res
+
+
+async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token: str, wallets: list[Wallet],
+                        side: str, amount: float, mode: str, stagger_ms: int, slippage_pct: float) -> None:
+    """Buys spend `amount` native coin per wallet; sells sell `amount` percent of each wallet's tokens."""
+    from ..chains.base import EvmTradeRequest
+
+    job.status = "submitted"
+    await db.commit()
+    sender_rpc = ex.evm(wallets[0].network).rpc
+
+    async def plan_for(w: Wallet):
+        if side == "buy":
+            amt = int(round(amount * 10**18))
+        else:
+            amt = await sender_rpc.erc20_balance(token, w.address) * int(round(amount * 100)) // 10_000
+        try:
+            return await adapter.prepare_trade(EvmTradeRequest(token, w.address, side, amt, slippage_pct)), None
+        except AdapterError as e:
+            return None, str(e)
+
+    async def one(w: Wallet) -> SubmitResult:
+        plan, err = await plan_for(w)
+        if plan is None:
+            res = SubmitResult(None, "failed", err)
+            await _record(db, job, w, side, res, None)
+            await db.commit()
+            return res
+        return await _run_evm_steps(db, ex, job, w, side, plan)
+
+    results = []
+    if mode == "parallel":
+        # Different wallets never share a nonce, so they can go at once. DB writes stay on one session in order.
+        plans = await asyncio.gather(*(plan_for(w) for w in wallets))
+        from .evm_exec import EvmCall
+        sender = ex.evm(wallets[0].network)
+
+        async def fire(w, plan):
+            out = []
+            for step in plan.steps:
+                r = await sender.send(w.address, w.signer_ref or "", EvmCall(step.to, step.data, step.value))
+                out.append((step, r))
+                if r.status != "confirmed" and step.essential:
+                    break
+            return out
+
+        runs = await asyncio.gather(*(fire(w, p) if p else asyncio.sleep(0, result=err) for w, (p, err) in zip(wallets, plans)))
+        for w, (plan, err), run in zip(wallets, plans, runs):
+            if plan is None:
+                res = SubmitResult(None, "failed", err)
+                await _record(db, job, w, side, res, None)
+                results.append(res)
+                continue
+            for i, (step, r) in enumerate(run):
+                await _record(db, job, w, side if i == len(plan.steps) - 1 else f"{side}_{step.label}", r, None)
+            results.append(run[-1][1])
+        await db.commit()
+    else:
+        for i, w in enumerate(wallets):
+            if i and stagger_ms:
+                await asyncio.sleep(stagger_ms / 1000)
+            results.append(await one(w))
+    _finish(job, results)
+    await db.commit()

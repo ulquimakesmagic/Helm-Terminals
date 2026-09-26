@@ -20,6 +20,7 @@ const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
   irreversible: "Irreversible", launchpad: "Launchpad", destination: "Destination", wallets: "Wallets", wallet: "Wallet",
+  network: "Chain", coin: "Coin", total: "Total", max_gas: "Max gas", max_gas_each: "Max gas per transfer",
   percent: "Percent", tokens: "Tokens", side: "Side", amount: "Amount", mode: "Mode", name: "Name", symbol: "Ticker",
 };
 const KIND_LABEL: Record<string, string> = {
@@ -41,6 +42,7 @@ function Value({ k, v, network }: { k: string; v: unknown; network?: string }): 
               <div key={i} className="row nowrap" style={{ gap: 10 }}>
                 {isAddr(o.address) && <Address address={o.address} network={network} />}
                 {typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} {cur}</span>}
+                {typeof o.amount === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.amount, 6)} {cur}</span>}
               </div>
             );
           }
@@ -53,9 +55,10 @@ function Value({ k, v, network }: { k: string; v: unknown; network?: string }): 
   if (isAddr(v)) return <Address address={v} type={k === "mint" ? "token" : "account"} network={network} />;
   if (typeof v === "boolean") return <span className={v && k === "irreversible" ? "bad" : ""} style={{ fontWeight: 600 }}>{v ? "Yes" : "No"}</span>;
   if (typeof v === "number") {
-    const unit = k.endsWith("_sol") ? ` ${cur}` : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
+    const unit = k.endsWith("_sol") || ["total", "max_gas", "max_gas_each"].includes(k) ? ` ${cur}` : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
     return <span className="num" style={{ fontWeight: 600 }}>{fmt(v, 6)}{unit}</span>;
   }
+  if (k === "network") return <span style={{ fontWeight: 600 }}>{chainOf(String(v)).name}</span>;
   if (k === "side") return <span className={`badge cap ${v === "buy" ? "good" : "bad"}`}>{String(v)}</span>;
   return <span>{String(v ?? "—")}</span>;
 }

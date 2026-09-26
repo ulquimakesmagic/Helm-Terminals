@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     evm_rpc_ethereum: str = ""
     evm_rpc_robinhood: str = ""
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
+    flap_upload_url: str = "https://funcs.flap.sh/api/upload"
     # Bags (bags.fm). Get an API key at https://dev.bags.fm. Without one, Bags shows as "needs setup".
     bags_api_key: str = ""
     bags_api_url: str = "https://public-api-v2.bags.fm/api/v1"
@@ -65,6 +66,9 @@ class Settings(BaseSettings):
     # transaction and shown in every preview. 0 turns fees off.
     platform_fee_bps: int = 0
     platform_fee_wallet: str = ""
+    # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
+    # commission to it). Optional.
+    platform_fee_wallet_evm: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
     referral_share_bps: int = 2500
     referral_code_max_uses: int = 1000
