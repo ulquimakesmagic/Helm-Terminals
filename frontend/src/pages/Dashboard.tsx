@@ -6,7 +6,7 @@ import ReferralCard from "../components/Referrals";
 import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
 import { coverage } from "../components/Launchpads";
 import { ActivityRow, FeedItem } from "../components/feed";
-import { Callout, Card, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, ChainDot } from "../components/ui";
+import { Callout, Card, Empty, Icon, Loading, Seg, Skeleton, Stat, StatusBadge, ChainDot } from "../components/ui";
 import { useSession } from "../session";
 
 type Period = "all" | "1y" | "1m" | "7d" | "1d";
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [wallets, setWallets] = useState<any[] | null>(null);
   const [launches, setLaunches] = useState<any[] | null>(null);
   const [feed, setFeed] = useState<ActivityRow[] | null>(null);
+  const [automations, setAutomations] = useState<any[] | null>(null);
   const [pads, setPads] = useState<Pad[]>([]);
   const [error, setError] = useState("");
 
@@ -29,10 +30,12 @@ export default function Dashboard() {
     api<any[]>("/launches").then(setLaunches).catch(() => setLaunches([]));
     api<Pad[]>("/launchpads").then(setPads).catch(() => undefined);
     api<ActivityRow[]>("/activity?limit=7").then(setFeed).catch(() => setFeed([]));
+    api<any[]>("/automations").then(setAutomations).catch(() => setAutomations([]));
   }, []);
 
   const managed = wallets?.filter((w) => w.kind === "managed") ?? [];
   const live = launches?.filter((l) => l.status === "live") ?? [];
+  const activePlans = automations?.filter((a) => ["scheduled", "executing", "paused"].includes(a.status)) ?? [];
 
   const steps: [boolean, string, string, string][] = [
     [managed.length > 0, "Create your first wallets", "/wallets", "Wallets"],
@@ -44,13 +47,25 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader
-        title="Dashboard"
-        sub="Your launches across every chain, net flow and recent account activity."
-        actions={<>
-          <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>
-        </>}
-      />
+      <section className="dash-hero">
+        <div className="dash-hero-copy">
+          <div className="eyebrow"><span className="dot" />MULTICHAIN CONTROL ROOM</div>
+          <h1>Your launch desk,<br /><span className="grad-text">at a glance.</span></h1>
+          <p>Track launches, wallet exposure and scheduled orders from one clear workspace.</p>
+          <div className="row dash-hero-actions">
+            <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>
+            <Link to="/automation" className="btn secondary"><Icon name="calendar" size={15} />Automation</Link>
+          </div>
+        </div>
+        <div className="dash-orbit" aria-hidden="true">
+          <div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" />
+          <span className="orbit-core"><Icon name="globe" size={28} /></span>
+          <span className="orbit-node node-a"><Icon name="rocket" size={14} /></span>
+          <span className="orbit-node node-b"><Icon name="wallet" size={14} /></span>
+          <span className="orbit-node node-c"><Icon name="activity" size={14} /></span>
+        </div>
+        <div className="dash-hero-footer"><span><strong>{live.length}</strong> live launches</span><span><strong>{activePlans.length}</strong> active plans</span><span><strong>{wallets?.length ?? "—"}</strong> wallets</span></div>
+      </section>
       {error && <Callout tone="err">{error}</Callout>}
 
       <div className="grid g-stats">
@@ -60,6 +75,7 @@ export default function Dashboard() {
         ) : <div className="card stat"><Skeleton h={12} w={90} /><Skeleton h={26} w={140} /></div>}
         <Stat label="Launches" icon="rocket" value={data ? data.total_launches : "–"} hint={`${live.length} live now`} />
         <Stat label="Managed wallets" icon="wallet" value={wallets ? managed.length : "–"} hint={`${(wallets?.length ?? 0) - managed.length} watch-only`} />
+        <Stat label="Automation plans" icon="calendar" value={automations ? activePlans.length : "–"} hint={`${automations?.filter((a) => a.status === "completed").length ?? 0} completed`} />
         <Stat label="Referral earnings" icon="gift" value={data ? fmt(data.referral.earned_sol + data.referral.owed_sol, 4) : "–"} unit={data ? "SOL" : undefined} hint={`${data?.referral.referred_users ?? 0} ${data?.referral.referred_users === 1 ? "person" : "people"} referred`} />
       </div>
 
@@ -134,6 +150,18 @@ export default function Dashboard() {
             {!feed ? <Loading /> : feed.length === 0 ? <Empty icon="activity" title="Nothing yet" /> : (
               <div className="feed">{feed.map((a) => <FeedItem key={a.id} a={a} />)}</div>
             )}
+          </Card>
+
+          <Card title="Automation" icon="calendar" sub="Finite plans with visible limits" actions={<Link to="/automation" className="btn sm ghost">Open desk<Icon name="arrowright" size={13} /></Link>}>
+            {!automations ? <Loading rows={2} /> : activePlans.length === 0 ? (
+              <div className="automation-empty-row"><span className="rule-icon"><Icon name="calendar" size={15} /></span><span className="grow"><strong>No active plans</strong><small>Build a capped schedule for a live Solana launch.</small></span><Link to="/automation" className="btn sm secondary">Create</Link></div>
+            ) : activePlans.slice(0, 2).map((a) => (
+              <div className="automation-empty-row" key={a.id}>
+                <span className="rule-icon"><Icon name="zap" size={15} /></span>
+                <span className="grow"><strong>{a.launch_name || "Launch"} <span className="muted">${a.launch_symbol}</span></strong><small>{a.runs_completed} / {a.total_orders} buys · {fmt(a.planned_trade_sol, 3)} SOL planned</small></span>
+                <StatusBadge status={a.status} />
+              </div>
+            ))}
           </Card>
 
           <ReferralCard data={data?.referral ?? null} onChange={load} />

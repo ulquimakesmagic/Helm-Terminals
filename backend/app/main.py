@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI, Request
@@ -12,7 +13,7 @@ from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import auth, launches, misc, profile, telegram, wallets
+from .routes import auth, automations, launches, misc, profile, telegram, wallets
 from .signing import get_signer
 
 
@@ -20,7 +21,18 @@ from .signing import get_signer
 async def lifespan(app: FastAPI):
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
     await create_all()
-    yield
+    worker = None
+    if get_settings().automation_worker_enabled:
+        from .services.automation_runner import automation_worker
+
+        worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
+    try:
+        yield
+    finally:
+        if worker:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
 
 
 def create_app() -> FastAPI:
@@ -32,7 +44,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (auth.router, wallets.router, launches.router, misc.router, telegram.router, profile.router):
+    for r in (auth.router, wallets.router, launches.router, automations.router, misc.router, telegram.router, profile.router):
         app.include_router(r)
 
     # Upstream failures (RPC down, launchpad API changed, signer unreachable) become clear 502s. These are
@@ -70,7 +82,8 @@ def create_app() -> FastAPI:
             rpc = shared_rpc(s.solana_rpc_url).ring.summary()
         except ValueError:
             rpc = {"count": 0, "resting": 0}
-        return {"ok": True, "env": s.env, "signer": s.signer, "rpc_endpoints": rpc["count"], "rpc_resting": rpc["resting"],
+        return {"ok": True, "env": s.env, "signer": s.signer, "automations_enabled": s.automation_worker_enabled,
+                "rpc_endpoints": rpc["count"], "rpc_resting": rpc["resting"],
                 "bags_keys": len(parse_list(s.bags_api_key)),
                 "evm_rpc": {n: {"endpoints": len(parse_list(getattr(s, f"evm_rpc_{n}", ""))) or 0,
                                 "public_fallback": not parse_list(getattr(s, f"evm_rpc_{n}", ""))} for n in EVM_CHAINS}}

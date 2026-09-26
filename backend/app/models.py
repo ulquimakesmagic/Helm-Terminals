@@ -135,6 +135,31 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Automation(Base):
+    """A finite, user-authorized one-way trade schedule. It is never a volume target or trading loop."""
+    __tablename__ = "automations"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("launches.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    side: Mapped[str] = mapped_column(String(8), default="buy")
+    wallet_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    order_sol: Mapped[float] = mapped_column(default=0.0)
+    sell_percent: Mapped[float] = mapped_column(default=0.0)
+    total_orders: Mapped[int] = mapped_column(Integer, default=1)
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
+    slippage_pct: Mapped[float] = mapped_column(default=5.0)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    runs_completed: Mapped[int] = mapped_column(Integer, default=0)
+    last_job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64))
+    preflight_hash: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
+
+
 class Watch(Base):
     __tablename__ = "watchlist"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)

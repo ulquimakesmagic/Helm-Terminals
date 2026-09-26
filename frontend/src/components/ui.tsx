@@ -211,13 +211,14 @@ export function SearchInput(props: React.InputHTMLAttributes<HTMLInputElement>) 
 /* ---------------------------------------------------------------- status */
 const STATUS_TONE: Record<string, string> = {
   live: "good", confirmed: "good", draft: "", planned: "", archived: "", failed: "bad",
+  completed: "good", cancelled: "", scheduled: "info", paused: "warn", executing: "warn",
   deploying: "warn", submitted: "warn", pending: "warn", partial: "warn", running: "warn", available: "good",
   managed: "info", watch: "", imported: "violet",
 };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
   const tone = STATUS_TONE[status] ?? "";
-  const pulse = ["deploying", "submitted", "pending", "running"].includes(status);
+  const pulse = ["deploying", "submitted", "pending", "running", "executing"].includes(status);
   return <span className={`badge cap ${tone} ${pulse ? "pulse" : ""}`}><span className="dot" />{label ?? status.replace(/_/g, " ")}</span>;
 }
 

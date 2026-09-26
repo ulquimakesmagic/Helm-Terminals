@@ -26,6 +26,9 @@ const KINDS: Record<string, Meta> = {
   "claim_fees.confirmed": { icon: "coins", tone: "good", label: "Creator fee claim confirmed", group: "transactions" },
   "burn.confirmed": { icon: "flame", tone: "bad", label: "Token burn confirmed", group: "transactions" },
   "send_tokens.confirmed": { icon: "send", tone: "warn", label: "Token send confirmed", group: "transactions" },
+  "automation.scheduled": { icon: "calendar", tone: "info", label: "Scheduled buys created", group: "transactions" },
+  "automation.order_confirmed": { icon: "checkcircle", tone: "good", label: "Scheduled buy confirmed", group: "transactions" },
+  "automation.order_failed": { icon: "alert", tone: "bad", label: "Scheduled buys stopped", group: "transactions" },
 };
 
 export function kindMeta(kind: string): Meta {
@@ -37,6 +40,8 @@ function detail(a: ActivityRow): string {
   if (a.kind === "wallets.created" && p.count) return `${p.count} wallet${p.count === 1 ? "" : "s"} on ${p.network ?? "solana"}`;
   if (a.kind === "launch.created" && p.launchpad) return `on ${p.launchpad}`;
   if (a.kind === "launch.imported" && typeof p.mint === "string") return `mint ${short(p.mint)}`;
+  if (a.kind === "automation.scheduled") return `${String(p.orders ?? "")} buys · ${String(p.wallet_count ?? "")} wallets`;
+  if (a.kind.startsWith("automation.order_") && p.order_number) return `Order ${p.order_number}`;
   return "";
 }
 
@@ -51,6 +56,7 @@ export function FeedItem({ a }: { a: ActivityRow }) {
         <div className="muted small row" style={{ gap: 6 }}>
           {d && <span>{d}</span>}
           {a.ref_type === "launch" && a.ref_id && <Link to={`/launches/${a.ref_id}`}>Open launch</Link>}
+          {a.ref_type === "automation" && <Link to="/automation">Open automation</Link>}
         </div>
       </div>
       <span className="muted small nowrap" title={parseDate(a.created_at).toLocaleString()}>{relTime(a.created_at)}</span>

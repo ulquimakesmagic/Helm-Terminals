@@ -5,6 +5,7 @@ import { Icon, IconName, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import Automation from "./pages/Automation";
 import Wallets from "./pages/Wallets";
 import Launches from "./pages/Launches";
 import Workspace from "./pages/Workspace";
@@ -16,13 +17,13 @@ import PublicProfile from "./pages/PublicProfile";
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
-  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"]] },
+  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/automation", "Automation", "calendar"]] },
   { group: "Monitor", items: [["/tracker", "Tracker", "radar"], ["/activity", "Activity", "activity"]] },
   { group: "Account", items: [["/profile", "Profile", "user"], ["/settings", "Settings", "settings"]] },
 ];
 
 const TITLES: Record<string, string> = {
-  "": "Dashboard", launches: "Launches", wallets: "Wallets", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings",
+  "": "Dashboard", launches: "Launches", wallets: "Wallets", automation: "Automation", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="/" element={<Private><Dashboard /></Private>} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
+        <Route path="/automation" element={<Private><Automation /></Private>} />
         <Route path="/wallets" element={<Private><Wallets /></Private>} />
         <Route path="/tracker" element={<Private><Tracker /></Private>} />
         <Route path="/activity" element={<Private><Activity /></Private>} />

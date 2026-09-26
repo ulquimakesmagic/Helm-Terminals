@@ -151,6 +151,7 @@ export default function Workspace() {
         }
         actions={<>
           {updated && <span className="muted small hide-sm row" style={{ gap: 6 }}><span className="badge good pulse" style={{ padding: "2px 6px" }}><span className="dot" /></span>auto-refresh · {updated.toLocaleTimeString()}</span>}
+          {live && <Link to={`/automation?launch=${id}`} className="btn secondary"><Icon name="calendar" size={14} />Schedule trades</Link>}
           <button className="btn secondary" onClick={load}><Icon name="refresh" size={14} /></button>
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
             .then(() => { toast("good", l.status === "archived" ? "Launch restored" : "Launch archived"); load(); }).catch((e) => toast("bad", errMsg(e)))}>

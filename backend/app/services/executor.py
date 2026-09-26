@@ -4,6 +4,7 @@ Nothing is sent unless simulation succeeds. Failures are recorded as failures, n
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from solders.keypair import Keypair
@@ -135,8 +136,9 @@ async def run_trade(
     stagger_ms: int,
     slippage_pct: float,
     plan: FeePlan | None = None,
+    execution_guard: Callable[[], Awaitable[bool]] | None = None,
 ) -> None:
-    """Manual, user-initiated trades from wallets the user controls.
+    """Trades from wallets the user controls, whether manually confirmed or part of a capped schedule.
 
     If a fee plan is active, the fee (and the referrer's share) is added to the trade transaction itself, so a
     failed trade never costs a fee. If it can't fit, it is sent as a separate transfer right after a confirmed trade.
@@ -186,6 +188,8 @@ async def run_trade(
                 raw = append_sol_transfers(built.raw, Pubkey.from_string(w.address), transfers)
             except (TxTooLarge, ValueError):
                 fee.mode = "follow_up"
+        if execution_guard and not await execution_guard():
+            return [(side, SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent."), None)], None
         before = await ex.rpc.get_balance(w.address)
         res = await ex.submit(raw, refs, built.extra_signers)
         delta = None

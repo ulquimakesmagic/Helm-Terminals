@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     bot_session_ttl_minutes: int = 30
     link_code_ttl_minutes: int = 10
     bot_daily_buy_limit_sol: float = 5.0  # cap on buys placed through the bot in any rolling 24 hours
+
+    # Finite scheduled buys. The worker uses row locks so multiple API instances do not claim one run twice.
+    automation_worker_enabled: bool = True
+    automation_poll_seconds: float = Field(default=5.0, gt=0, le=60)
+    automation_max_budget_sol: float = Field(default=10.0, gt=0, le=100)
 
     run_jobs_inline: bool = False  # tests: await jobs in the request instead of a background task
     cors_origins: str = "http://localhost:5173"

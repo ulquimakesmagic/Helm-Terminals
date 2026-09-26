@@ -54,9 +54,13 @@ cd ../frontend && npm run build # type-check + production build
 
 ## Status
 
-Implemented: auth + TOTP, wallets/folders/funders, fund and withdraw, launch drafts, clone/import, Pump.fun deploy,
-manual buy/sell (stagger or parallel), claim creator fees, burn, send, supply transparency panel, dashboard, P&L card
-export, tracker, activity log, spend preflight + idempotency + simulate-before-send.
+Implemented: auth + TOTP, wallets/folders/funders, fund and withdraw, launch drafts, clone/import, manual buy/sell,
+finite one-way scheduled buys and staged sells, claim creator fees, burn, send, supply transparency, dashboard, P&L card export, tracker,
+activity log, spend previews + idempotency + simulate-before-send. Launchpad adapters cover Pump.fun, LetsBonk,
+Meteora DBC, Bags, Clanker, Four.meme, flap.sh, Pons and Uniswap V2; some require server credentials or have
+route-specific limits.
 
-Not yet: Streamflow lock (returns 501), swap quote asset, EVM chains, and every launchpad other than Pump.fun
-(each is one adapter file; see the roadmap in the spec).
+Still planned: Streamflow lock (the endpoint returns 501), additional adapters, and broader chain support for
+scheduled automation. Scheduled trades are Solana-only and finite. Buys are budget-capped; staged sells use a
+disclosed percentage of each wallet's then-current token balance. Both stop after any failed or uncertain order.
+They are not a volume-generation feature. See `docs/SPEC.md` for the product boundary and roadmap.

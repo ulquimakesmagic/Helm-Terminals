@@ -23,6 +23,7 @@ holdings look like many independent holders, or to make trading look like organi
 | Launch | Draft, review, deploy. Clone metadata from an existing token. Import an existing token by address |
 | Launchpads | Adapter registry. Pump.fun implemented end to end. Others are one adapter file each (section 8) |
 | Live workspace | Holdings per wallet, balances, manual buy/sell (single wallet or selected wallets, staggered or parallel), transactions feed |
+| Automation | Finite scheduled-buy plans on Solana: selected attached wallets, fixed order count, interval, slippage cap, total notional cap, pause/cancel, stop on failure |
 | Token ops | Claim creator fees, lock supply (Streamflow), burn, send tokens, swap quote asset |
 | Tracker | Watchlist of external wallet addresses with labels and bookmarks |
 | Reporting | Dashboard (P&L, launches, referral), P&L card export |
@@ -39,13 +40,17 @@ boundary is a product decision and not an omission.
 | --- | --- |
 | Block-0 layered bundling (Front MEV, Back MEV, temp holders, presets tuned for "less sniper" or "less top-trader visibility") | Spreads one party's supply over many wallets and delays specifically so bubble maps and holder analytics understate concentration |
 | Wallet Marketplace (aged wallets filtered by CEX funding source, timezone, funding gap) | Sells wallets whose history is chosen to look like independent organic users |
-| Volume Bot, Generate Activity | Same wallets trade against each other to hit a volume target with randomised timing so it looks organic |
+| Volume Bot, Generate Activity | Same wallets trade against each other to hit a volume target with randomised timing so it looks organic. Helm does not create artificial volume or self-trading loops. |
 | Cleanup (bundle wallets sell into fresh wallets) and Streamflow airdrop cleanup | Rotates supply from a concentrated set into new-looking wallets |
 | Nuke / Sniper Guard auto-dump | Automated mass sell of every wallet on a trigger. Also a rug-pull primitive |
 | Bubble Maps "detection mode" estimates | Only useful for tuning the above |
 
-What replaces them: a single dev buy at launch, manual user-initiated trades, and a **Supply Transparency**
-panel (section 7) that shows the user's own wallets, in aggregate, next to the token's real holder distribution.
+What replaces them: a single dev buy at launch, manual user-initiated trades, finite scheduled buys for bounded
+accumulation, finite staged sells for user-directed exits, and a **Supply Transparency** panel (section 7) that
+shows the user's own wallets, in aggregate, next to the token's real holder distribution. Scheduled buys have a
+fixed order count and maximum trade notional; staged sells apply a fixed percentage to each wallet's then-current
+remaining balance. Each order uses the existing simulation and job audit path, and a failed or uncertain order
+stops the remaining plan. Neither direction can be combined into an automated buy/sell loop.
 
 ## 3. Architecture
 
@@ -60,6 +65,7 @@ React (Vite, TS)  <--HTTPS/WS-->  FastAPI  ---> Postgres (SQLAlchemy 2, Alembic)
                                      +--> Chain adapters: Solana (solders + RPC), later EVM
                                      +--> Launchpad adapters: pumpfun, ...
                                      +--> Data: Helius (RPC, DAS, webhooks), Jupiter (quotes/swaps)
+                                     +--> Scheduled-buy worker: persisted plans, claimed with DB row locks
 ```
 
 Key decisions:
@@ -83,6 +89,8 @@ launches(id, user_id, network, launchpad, status[draft|deploying|live|failed|arc
          name, symbol, description, image_uri, socials jsonb, mint_address, launchpad_params jsonb,
          dev_wallet_id, dev_buy_amount, created_at, deployed_at, archived_at)
 launch_wallets(launch_id, wallet_id, role[dev|holder|funder])
+automations(id, user_id, launch_id, status, wallet_ids json, order_sol, total_orders, interval_seconds,
+            slippage_pct, next_run_at, runs_completed, last_job_id, idempotency_key, error)
 jobs(id, user_id, launch_id, kind, params jsonb, status, idempotency_key, created_at, updated_at)
 transactions(id, job_id, wallet_id, signature, status, error, slot, fee_lamports, created_at)
 positions(launch_id, wallet_id, token_amount, cost_basis, realized_pnl, updated_at)
@@ -108,6 +116,8 @@ POST /launches/{id}/archive    POST /launches/{id}/restore
 
 GET  /launches/{id}/workspace  (holdings, balances, transactions, transparency panel)
 POST /launches/{id}/trade      (buy/sell; wallets[], mode=stagger|parallel; returns preflight unless confirm=true)
+POST /launches/{id}/automations/dca  (finite scheduled buys; preflight, then confirm)
+GET  /automations             POST /automations/{id}/pause|resume|cancel
 POST /launches/{id}/claim-fees POST /launches/{id}/lock   POST /launches/{id}/burn   POST /launches/{id}/send
 
 GET  /dashboard                GET /activity             GET/POST/DELETE /tracker
@@ -189,9 +199,11 @@ interface that changes over time, so treat this as an ongoing roadmap, not a v1 
 1. Auth, wallets, signer, dashboard shell (scaffold complete)
 2. Pump.fun create + dev buy + workspace holdings (scaffold has adapter and routes; needs mainnet test with small amounts)
 3. Manual multi-wallet trading, fees, claim rewards, P&L cards
-4. Streamflow lock, burn, send, swap quote asset
-5. Second and third launchpad adapters, then EVM
-6. Hardening: Turnkey policy templates, monitoring, load test, external security review
+4. One-way scheduled trade automations (Solana only in v1; finite buys and staged sells; one worker is started by
+   the API, row claims use database locks; uncertain executions fail closed and are never replayed)
+5. Streamflow lock, burn, send, swap quote asset
+6. Second and third launchpad adapters, then broader automated execution on EVM
+7. Hardening: Turnkey policy templates, monitoring, load test, external security review
 
 ## 11. Telegram bot (terminal)
 
