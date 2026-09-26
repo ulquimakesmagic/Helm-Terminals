@@ -143,7 +143,7 @@ export default function Workspace() {
             <span>
               <span className="row" style={{ gap: 10 }}>{l.name}<StatusBadge status={l.status} />{l.imported && <span className="badge violet">imported</span>}</span>
               <span className="row small muted" style={{ fontWeight: 400, fontSize: 13, gap: 10, marginTop: 2 }}>
-                <span className="mono">${l.symbol}</span>·<ChainBadge network={l.network} />·<span>{padName(l.launchpad)}</span>
+                <span className="mono">${l.symbol}</span>·<ChainBadge network={l.network} />·<span>{padName(l.launchpad)}</span>{l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
                 {l.mint_address && <>·<Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
               </span>
             </span>

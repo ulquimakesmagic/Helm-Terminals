@@ -17,12 +17,13 @@ export function LaunchpadDirectory({ pads, onPick, picked }: { pads: Pad[]; onPi
           <div className="pad-grid">
             {list.map((p) => {
               const live = p.status === "available";
+              const setup = p.status === "setup_required";
               return (
                 <button key={p.id} type="button" className={`pad-tile ${picked === p.id ? "on" : ""}`}
                   disabled={!live || !onPick} style={!onPick && live ? { cursor: "default", opacity: 1 } : undefined}
-                  onClick={() => onPick?.(p)}>
+                  title={p.reason ?? (live ? undefined : "Coming soon")} onClick={() => onPick?.(p)}>
                   <span className="grow truncate" style={{ fontWeight: 600 }}>{padName(p.id)}</span>
-                  <span className={`badge ${live ? "good" : ""}`}><span className="dot" />{live ? "Live" : "Soon"}</span>
+                  <span className={`badge ${live ? "good" : setup ? "warn" : ""}`}><span className="dot" />{live ? "Live" : setup ? "Needs setup" : "Soon"}</span>
                 </button>
               );
             })}

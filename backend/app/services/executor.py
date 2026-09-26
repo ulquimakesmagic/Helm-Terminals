@@ -216,3 +216,35 @@ async def run_single(
     _finish(job, [res])
     await db.commit()
     return res
+
+
+async def run_built(
+    db: AsyncSession,
+    ex: Executor,
+    job: Job,
+    wallet: Wallet | None,
+    kind: str,
+    built: BuiltTx,
+    refs: dict[str, str],
+) -> SubmitResult:
+    """Run a launchpad action that may need setup transactions first (e.g. Bags' fee-share config).
+
+    Setup transactions go in order; if one fails, nothing more is sent and the job fails.
+    """
+    job.status = "submitted"
+    await db.commit()
+    for raw in built.pre:
+        res = await ex.submit(raw, refs)
+        await _record(db, job, wallet, f"{kind}_setup"[:24], res, None)
+        if res.status != "confirmed":
+            _finish(job, [res])
+            await db.commit()
+            return res
+    await db.commit()
+    res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers)
+    if res.status == "confirmed":
+        for raw in built.post:
+            cleanup = await ex.submit(raw, refs)
+            await _record(db, job, wallet, f"{kind}_cleanup"[:24], cleanup, None)
+        await db.commit()
+    return res

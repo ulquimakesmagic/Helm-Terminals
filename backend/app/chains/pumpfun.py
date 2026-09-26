@@ -17,6 +17,7 @@ class PumpFunAdapter:
     id = "pumpfun"
     network = "solana"
     quote_assets = ["SOL"]
+    create_pool = "pump"
 
     def __init__(
         self,
@@ -81,7 +82,7 @@ class PumpFunAdapter:
                 "amount": req.dev_buy_sol,
                 "slippage": req.slippage_pct,
                 "priorityFee": req.priority_fee_sol,
-                "pool": "pump",
+                "pool": self.create_pool,
             }
         )
         return BuiltTx(raw=raw, extra_signers=[mint], mint=str(mint.pubkey()))

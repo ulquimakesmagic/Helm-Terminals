@@ -388,3 +388,94 @@ async def test_watch_and_tracker_accept_evm_addresses(client):
     assert bad.status_code == 400
     sol_on_evm = await client.post("/wallets/watch", json={"network": "ethereum", "address": "11111111111111111111111111111111"}, headers=h)
     assert sol_on_evm.status_code == 400
+
+
+async def test_launchpads_list_shows_letsbonk_live_and_bags_needing_a_key(client):
+    pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
+    assert pads["letsbonk"]["status"] == "available" and pads["letsbonk"]["network"] == "solana"
+    assert pads["bags"]["status"] == "setup_required" and "BAGS_API_KEY" in pads["bags"]["reason"]
+    h = await signup(client, "bagsless@example.com")
+    r = await client.post("/launches", json={"launchpad": "bags", "name": "B", "symbol": "B"}, headers=h)
+    assert r.status_code == 400 and "API key" in r.json()["detail"]
+
+
+async def test_failed_setup_transaction_stops_the_launch(client, fake_rpc):
+    """If a launchpad's setup transaction (like Bags' fee-share config) fails, the launch itself is never sent."""
+    from app.chains import registry
+    from .conftest import FakeAdapter
+
+    class WithSetup(FakeAdapter):
+        async def build_create_tx(self, req):
+            built = await super().build_create_tx(req)
+            built.pre = [await self._simple_raw(req.dev_pubkey)]
+            return built
+
+        async def _simple_raw(self, who):
+            from solders.hash import Hash
+            from solders.pubkey import Pubkey
+            from app.chains.solana import build_unsigned, sol_transfer_ix
+            p = Pubkey.from_string(who)
+            return build_unsigned(p, [sol_transfer_ix(p, p, 2)], str(Hash.default()))
+
+    registry._cache["pumpfun"] = WithSetup()
+    calls = {"n": 0}
+    real = fake_rpc.simulate
+
+    async def fail_first(tx):
+        calls["n"] += 1
+        return "config failed" if calls["n"] == 1 else await real(tx)
+
+    fake_rpc.simulate = fail_first
+    h = await signup(client, "setup@example.com")
+    dev = (await make_wallets(client, h))[0]
+    lid = (await client.post("/launches", json={"name": "S", "symbol": "S", "dev_wallet_id": dev["id"]}, headers=h)).json()["id"]
+    _, r = await confirm(client, h, f"/launches/{lid}/deploy", {})
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "failed" and [t["kind"] for t in job["transactions"]] == ["deploy_setup"]
+    assert fake_rpc.sent == []  # nothing reached the chain
+    assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "failed"
+
+
+async def test_pair_token_launch_needs_bags_eligibility_and_a_supported_token(client, fake_rpc):
+    from app.chains import registry
+    from .conftest import FakeAdapter
+
+    NVDA = str(__import__("solders.keypair", fromlist=["Keypair"]).Keypair().pubkey())
+
+    class FakeBags(FakeAdapter):
+        id = "bags"
+
+        async def supported_quotes(self):
+            return [{"mint": NVDA, "symbol": "NVDAx", "name": "NVIDIA xStock", "decimals": 8, "image": None}]
+
+        async def build_create_tx(self, req):
+            built = await super().build_create_tx(req)
+            self.seen_options = req.options
+            return built
+
+    fake = FakeBags()
+    registry._cache["bags"] = fake
+    s = get_settings()
+    s.bags_api_key = "test-key"
+    try:
+        assets = (await client.get("/launchpads/bags/quote-assets")).json()
+        assert [a["symbol"] for a in assets["assets"]] == ["SOL", "NVDAx"] and "US" in assets["notice"]
+
+        h = await signup(client, "stocks@example.com")
+        dev = (await make_wallets(client, h))[0]
+        base = {"launchpad": "bags", "name": "Chip Cat", "symbol": "CHIP", "image_b64": "iVBORw0KGgo=",
+                "dev_wallet_id": dev["id"], "quote_mint": NVDA}
+        assert (await client.post("/launches", json=base, headers=h)).status_code == 400  # not confirmed eligible
+        assert (await client.post("/launches", json={**base, "eligibility_confirmed": True, "quote_mint": "So1nope"},
+                                  headers=h)).status_code == 400  # unsupported pair
+        assert (await client.post("/launches", json={**base, "launchpad": "pumpfun", "eligibility_confirmed": True},
+                                  headers=h)).status_code == 400  # only Bags pairs with other tokens
+        r = await client.post("/launches", json={**base, "eligibility_confirmed": True}, headers=h)
+        assert r.status_code == 201 and r.json()["quote"]["symbol"] == "NVDAx"
+
+        pre, d = await confirm(client, h, f"/launches/{r.json()['id']}/deploy", {})
+        assert pre["preflight"]["paired_with"].startswith("NVDAx") and "no bonding curve" in pre["preflight"]["pool"]
+        assert fake.seen_options["quote"]["mint"] == NVDA  # the adapter was told what to pair with
+    finally:
+        s.bags_api_key = ""
+        registry._cache.pop("bags", None)

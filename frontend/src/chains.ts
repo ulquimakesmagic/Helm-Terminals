@@ -54,7 +54,10 @@ export const PAD_NAMES: Record<string, string> = {
 };
 export const padName = (id: string) => PAD_NAMES[id] ?? id;
 
-export interface Pad { id: string; network: string; status: string; quote_assets?: string[] }
+export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string }
+
+/** Launchpads that need a token image to launch. */
+export const NEEDS_IMAGE = new Set(["letsbonk", "bags"]);
 
 /** Launchpads grouped by chain, in display order. */
 export function padsByChain(pads: Pad[]) {

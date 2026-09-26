@@ -38,6 +38,7 @@ class ClaimRequest:
     wallet_pubkey: str
     mint: str | None = None
     priority_fee_sol: float = 0.0005
+    options: dict = field(default_factory=dict)  # the launch's launchpad_params (e.g. its quote asset)
 
 
 @dataclass
@@ -45,6 +46,12 @@ class BuiltTx:
     raw: bytes  # unsigned serialized VersionedTransaction
     extra_signers: list[Keypair] = field(default_factory=list)
     mint: str | None = None
+    # Transactions that must land first, in order (e.g. a launchpad's fee-share config before its launch).
+    # Signed by the same wallet. If any fails, the main transaction is not sent.
+    pre: list[bytes] = field(default_factory=list)
+    # Non-essential clean-up sent after the main transaction confirms (e.g. deactivating a lookup table).
+    # Failures here are recorded but never fail the action.
+    post: list[bytes] = field(default_factory=list)
 
 
 class LaunchpadAdapter(Protocol):

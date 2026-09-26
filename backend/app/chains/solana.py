@@ -138,6 +138,29 @@ def build_unsigned(payer: Pubkey, instructions: list[Instruction], blockhash: st
     return bytes(tx)
 
 
+_B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def b58decode(s: str) -> bytes:
+    n = 0
+    for ch in s:
+        n = n * 58 + _B58.index(ch)
+    body = n.to_bytes((n.bit_length() + 7) // 8, "big") if n else b""
+    return b"\x00" * (len(s) - len(s.lstrip("1"))) + body
+
+
+def decode_tx(s: str) -> bytes:
+    """Launchpad APIs return serialized transactions as base58 or base64; accept either."""
+    try:
+        raw = b58decode(s)
+        VersionedTransaction.from_bytes(raw)
+        return raw
+    except Exception:
+        raw = base64.b64decode(s)
+        VersionedTransaction.from_bytes(raw)
+        return raw
+
+
 MAX_TX_BYTES = 1232
 
 
@@ -265,13 +288,16 @@ async def sign_versioned(
     n = msg.header.num_required_signatures
     msg_bytes = to_bytes_versioned(msg)
     extra_map = {str(k.pubkey()): k for k in extra}
+    existing = list(tx.signatures)
     sigs: list[Signature] = []
-    for key in list(msg.account_keys)[:n]:
+    for i, key in enumerate(list(msg.account_keys)[:n]):
         k = str(key)
         if k in extra_map:
             sigs.append(extra_map[k].sign_message(msg_bytes))
         elif k in refs:
             sigs.append(Signature.from_bytes(await signer.sign_message(refs[k], msg_bytes)))
+        elif i < len(existing) and existing[i] != Signature.default():
+            sigs.append(existing[i])  # already signed by the launchpad (e.g. a mint key it generated)
         else:
             raise SigningError(f"no signer available for required signer {k}")
     return bytes(VersionedTransaction.populate(msg, sigs))

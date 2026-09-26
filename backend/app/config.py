@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
+    letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
+    # Bags (bags.fm). Get an API key at https://dev.bags.fm. Without one, Bags shows as "needs setup".
+    bags_api_key: str = ""
+    bags_api_url: str = "https://public-api-v2.bags.fm/api/v1"
+    # Optional Bags partner key: Bags pays this wallet its partner share of fees on tokens launched via Helm.
+    bags_partner_wallet: str = ""
+    bags_partner_config: str = ""
 
     # Optional platform fee on sells. 0 disables it. Always shown in the preflight.
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade

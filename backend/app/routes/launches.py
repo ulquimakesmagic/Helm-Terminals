@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
-from ..chains.registry import IMPLEMENTED, get_adapter, list_launchpads
+from ..chains.registry import IMPLEMENTED, get_adapter, list_launchpads, needs_setup
 from ..chains.solana import (
     LAMPORTS_PER_SOL, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
     token_transfer_checked_ix,
@@ -20,7 +20,7 @@ from ..deps import (
     two_fa_warnings, valid_address,
 )
 from ..models import Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
-from ..services.executor import Executor, run_single, run_trade
+from ..services.executor import Executor, run_built, run_single, run_trade
 from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
 from ..services.transparency import compute_transparency
@@ -36,6 +36,7 @@ def _launch_out(l: Launch) -> dict:
         "symbol": l.symbol, "description": l.description, "socials": l.socials, "mint_address": l.mint_address,
         "dev_wallet_id": l.dev_wallet_id, "dev_buy_sol": l.dev_buy_sol, "imported": l.imported,
         "has_image": l.image_blob is not None, "created_at": l.created_at.isoformat(),
+        "quote": (l.launchpad_params or {}).get("quote"),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
     }
 
@@ -50,6 +51,28 @@ async def _owned_launch(db: AsyncSession, user: User, launch_id: str) -> Launch:
 @router.get("/launchpads")
 async def launchpads():
     return list_launchpads()
+
+
+SOL_QUOTE = {"mint": "So11111111111111111111111111111111111111112", "symbol": "SOL", "name": "Solana",
+             "decimals": 9, "kind": "native", "pool": "Bonding curve"}
+PAIR_NOTICE = ("Pair tokens can include tokenized stocks (for example xStocks). Tokenized stocks give price exposure, "
+               "not ownership of the shares, and are not available to people in the US, UK, Canada, Australia or "
+               "sanctioned countries.")
+
+
+@router.get("/launchpads/{launchpad_id}/quote-assets")
+async def quote_assets(launchpad_id: str):
+    """What a new launch on this launchpad can be paired with. SOL always; Bags also offers pair tokens."""
+    if launchpad_id not in IMPLEMENTED:
+        raise HTTPException(404, "unknown launchpad")
+    out = [SOL_QUOTE]
+    if launchpad_id == "bags" and not needs_setup("bags"):
+        try:
+            pairs = await get_adapter("bags").supported_quotes()
+        except AdapterError as e:
+            return {"assets": out, "error": str(e), "notice": PAIR_NOTICE}
+        out += [{**t, "kind": "pair", "pool": "Meteora pool, no bonding curve"} for t in pairs]
+    return {"assets": out, "notice": PAIR_NOTICE if len(out) > 1 else None}
 
 
 @router.get("/launchpads/{launchpad_id}/options")
@@ -69,12 +92,16 @@ class CreateLaunch(BaseModel):
     dev_wallet_id: str | None = None
     dev_buy_sol: float = Field(default=0.0, ge=0, le=100)
     slippage_pct: float = Field(default=10.0, ge=0, le=50)
+    quote_mint: str | None = None  # pair the token with this instead of SOL (Bags only)
+    eligibility_confirmed: bool = False  # required for pair-token launches (tokenized-stock restrictions)
 
 
 @router.post("/launches", status_code=201)
 async def create_launch(body: CreateLaunch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     if body.launchpad not in IMPLEMENTED:
         raise HTTPException(400, f"launchpad '{body.launchpad}' is not implemented yet")
+    if (reason := needs_setup(body.launchpad)):
+        raise HTTPException(400, reason)
     image = None
     if body.image_b64:
         try:
@@ -84,13 +111,30 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
         if len(image) > MAX_IMAGE_BYTES:
             raise HTTPException(400, "image too large (max 2 MB)")
     network = get_adapter(body.launchpad).network
+    params: dict = {"slippage_pct": body.slippage_pct}
+    if body.quote_mint and body.quote_mint != SOL_QUOTE["mint"]:
+        if body.launchpad != "bags":
+            raise HTTPException(400, "pairing with a token other than SOL is only available on Bags")
+        if not body.eligibility_confirmed:
+            raise HTTPException(400, "confirm you are eligible to use tokenized-stock pairs before creating this launch")
+        if body.dev_buy_sol:
+            raise HTTPException(400, "pair-token launches don't support a dev buy yet; set it to 0")
+        try:
+            pairs = await get_adapter("bags").supported_quotes()
+        except AdapterError as e:
+            raise HTTPException(502, f"could not load Bags pair tokens: {e}")
+        quote = next((t for t in pairs if t["mint"] == body.quote_mint), None)
+        if not quote:
+            raise HTTPException(400, "Bags does not support that pair token")
+        params["quote"] = {k: quote[k] for k in ("mint", "symbol", "name", "decimals", "image")}
+        params["eligibility_confirmed_at"] = utcnow().isoformat()
     if body.dev_wallet_id:
         dev = await owned_wallet(db, user, body.dev_wallet_id)
         if dev.network != network:
             raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {network}")
     l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
                description=body.description, image_blob=image, socials=body.socials, dev_wallet_id=body.dev_wallet_id,
-               dev_buy_sol=body.dev_buy_sol, launchpad_params={"slippage_pct": body.slippage_pct})
+               dev_buy_sol=body.dev_buy_sol, launchpad_params=params)
     db.add(l)
     await log_activity(db, user.id, "launch.created", "launch", l.id, {"launchpad": body.launchpad})
     await db.commit()
@@ -233,10 +277,30 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     warnings = []
     if bal < int(need * LAMPORTS_PER_SOL):
         warnings.append(f"Dev wallet has {bal / LAMPORTS_PER_SOL:.4f} SOL; needs about {need:.4f} SOL (dev buy + rent and fees).")
-    pf = build_preflight("deploy", {
+    if adapter.options_schema().get("requires_image") and not l.image_blob:
+        warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
+    if (reason := needs_setup(l.launchpad)):
+        warnings.append(reason)
+    summary = {
         "launch_id": l.id, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "platform_fee": "none on deploy",
-    }, warnings)
+    }
+    quote = (l.launchpad_params or {}).get("quote")
+    if l.launchpad == "bags" and quote:
+        s = get_settings()
+        summary["paired_with"] = f"{quote['symbol']} ({quote.get('name') or quote['mint']})"
+        summary["pool"] = f"Meteora DAMM v2 pool, no bonding curve; liquidity is locked; a 2% pool fee accrues in {quote['symbol']}"
+        summary["creator_fees"] = f"Your share of pool fees is paid in {quote['symbol']} and claimed on bags.fm for now"
+        if s.bags_partner_wallet:
+            summary["partner_share"] = "Bags pays Helm a partner share of this pool's fees (from Bags' side, not yours)"
+        summary["steps"] = "up to 4 transactions: lookup table, token, launch, then lookup-table clean-up"
+    elif l.launchpad == "bags":
+        s = get_settings()
+        summary["creator_fees"] = "100% of this token's creator fees go to your dev wallet"
+        if s.bags_partner_wallet and s.bags_partner_config:
+            summary["partner_share"] = "Bags pays Helm a partner share of this token's trading fees (from Bags' side, not yours)"
+        summary["steps"] = "2 transactions: fee-share setup, then the launch"
+    pf = build_preflight("deploy", summary, warnings)
     if not body.confirm:
         return pf
     if warnings:
@@ -251,7 +315,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
             launch = await session.get(Launch, l.id)
             req = CreateRequest(name=l.name, symbol=l.symbol, description=l.description, image_bytes=l.image_blob,
                                 socials=l.socials or {}, dev_pubkey=dev.address, dev_buy_sol=l.dev_buy_sol,
-                                slippage_pct=slippage)
+                                slippage_pct=slippage, options=dict(l.launchpad_params or {}))
             try:
                 built = await adapter.build_create_tx(req)
             except AdapterError as e:
@@ -259,8 +323,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                 launch.status = "failed"
                 await session.commit()
                 return
-            res = await run_single(session, ex, j, dev, "deploy", built.raw, {dev.address: dev.signer_ref or ""},
-                                   built.extra_signers)
+            res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", built.mint, utcnow()
             else:
@@ -368,12 +431,18 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
     job, created = await begin_spend(db, user, body, pf, "claim_fees", l.id, pf["preflight"])
     if created:
         async def work(session, j):
-            built = await adapter.build_claim_fees_tx(ClaimRequest(wallet_pubkey=w.address, mint=l.mint_address))
-            if built is None:
-                j.status = "failed"
+            try:
+                built = await adapter.build_claim_fees_tx(ClaimRequest(wallet_pubkey=w.address, mint=l.mint_address,
+                                                                       options=dict(l.launchpad_params or {})))
+            except AdapterError as e:
+                j.status, j.params = "failed", {**j.params, "error": str(e)}
                 await session.commit()
                 return
-            await run_single(session, ex, j, w, "claim_fees", built.raw, {w.address: w.signer_ref or ""})
+            if built is None:
+                j.status, j.params = "failed", {**j.params, "error": "nothing to claim"}
+                await session.commit()
+                return
+            await run_built(session, ex, j, w, "claim_fees", built, {w.address: w.signer_ref or ""})
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
