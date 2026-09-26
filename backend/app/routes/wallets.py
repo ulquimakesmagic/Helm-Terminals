@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from solders.pubkey import Pubkey
@@ -42,6 +44,7 @@ class WatchWallet(BaseModel):
     network: str = "solana"
     address: str
     label: str = ""
+    folder_id: str | None = None
 
 
 @router.get("/wallets")
@@ -69,9 +72,7 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
     if body.network != "solana" and body.network not in EVM_CHAINS:
         raise HTTPException(400, f"unsupported network {body.network}")
     if body.folder_id:
-        f = await db.get(Folder, body.folder_id)
-        if not f or f.user_id != user.id:
-            raise HTTPException(404, "folder not found")
+        await _owned_folder(db, user, body.folder_id)
     created = []
     for i in range(body.count):
         label = f"{body.label_prefix} {i + 1}" if body.count > 1 else body.label_prefix
@@ -89,7 +90,15 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
 async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     if not valid_address_for(body.network, body.address):
         raise HTTPException(400, f"invalid {body.network} address")
-    w = Wallet(user_id=user.id, network=body.network, address=body.address, kind="watch", label=body.label)
+    if body.folder_id:
+        await _owned_folder(db, user, body.folder_id)
+    address = body.address.strip()
+    existing = (await db.execute(select(Wallet).where(
+        Wallet.user_id == user.id, Wallet.network == body.network, Wallet.address == address))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(409, "that address is already in your wallets")
+    w = Wallet(user_id=user.id, network=body.network, address=address, kind="watch", label=body.label,
+               folder_id=body.folder_id)
     db.add(w)
     await db.commit()
     return _wallet_out(w)
@@ -103,29 +112,109 @@ class FolderBody(BaseModel):
     color: str = "#6366f1"
 
 
+def _folder_out(f: Folder, count: int = 0) -> dict:
+    return {"id": f.id, "name": f.name, "color": f.color, "wallet_count": count}
+
+
+async def _user_folders(db: AsyncSession, user: User) -> list[Folder]:
+    return list((await db.execute(select(Folder).where(Folder.user_id == user.id).order_by(Folder.name))).scalars())
+
+
+async def _owned_folder(db: AsyncSession, user: User, folder_id: str) -> Folder:
+    f = await db.get(Folder, folder_id)
+    if not f or f.user_id != user.id:
+        raise HTTPException(404, "folder not found")
+    return f
+
+
 @router.get("/folders")
 async def list_folders(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(Folder).where(Folder.user_id == user.id))).scalars().all()
-    return [{"id": f.id, "name": f.name, "color": f.color} for f in rows]
+    folders = await _user_folders(db, user)
+    counts: dict[str, int] = {}
+    for fid in (await db.execute(select(Wallet.folder_id).where(Wallet.user_id == user.id))).scalars():
+        if fid:
+            counts[fid] = counts.get(fid, 0) + 1
+    return [_folder_out(f, counts.get(f.id, 0)) for f in folders]
+
+
+_folder_locks: dict[str, asyncio.Lock] = {}
 
 
 @router.post("/folders", status_code=201)
 async def create_folder(body: FolderBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    f = Folder(user_id=user.id, name=body.name, color=body.color)
-    db.add(f)
-    await db.commit()
-    return {"id": f.id, "name": f.name, "color": f.color}
+    name = " ".join(body.name.split())
+    if not name:
+        raise HTTPException(400, "folder name can't be empty")
+    # One folder create at a time per user, so a double-click can't slip two identical folders past the check.
+    async with _folder_locks.setdefault(user.id, asyncio.Lock()):
+        if any(f.name.lower() == name.lower() for f in await _user_folders(db, user)):
+            raise HTTPException(409, f'you already have a folder called "{name}"')
+        f = Folder(user_id=user.id, name=name, color=body.color)
+        db.add(f)
+        await db.commit()
+    return _folder_out(f)
 
 
 @router.patch("/folders/{folder_id}")
 async def update_folder(folder_id: str, body: FolderBody, user: User = Depends(current_user),
                         db: AsyncSession = Depends(get_db)):
-    f = await db.get(Folder, folder_id)
-    if not f or f.user_id != user.id:
-        raise HTTPException(404, "folder not found")
-    f.name, f.color = body.name, body.color
+    f = await _owned_folder(db, user, folder_id)
+    name = " ".join(body.name.split())
+    if any(o.id != f.id and o.name.lower() == name.lower() for o in await _user_folders(db, user)):
+        raise HTTPException(409, f'you already have a folder called "{name}"')
+    f.name, f.color = name, body.color
     await db.commit()
-    return {"id": f.id, "name": f.name, "color": f.color}
+    return _folder_out(f)
+
+
+@router.delete("/folders/{folder_id}")
+async def delete_folder(folder_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Delete a folder. Its wallets are never deleted: they just move to "No folder"."""
+    f = await _owned_folder(db, user, folder_id)
+    wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.folder_id == f.id))).scalars().all()
+    for w in wallets:
+        w.folder_id = None
+    await db.flush()
+    await db.delete(f)
+    await log_activity(db, user.id, "folder.deleted", payload={"name": f.name, "wallets_unfiled": len(wallets)})
+    await db.commit()
+    return {"deleted": f.id, "wallets_unfiled": len(wallets)}
+
+
+@router.post("/folders/merge-duplicates")
+async def merge_duplicate_folders(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Folders with the same name (ignoring case) are merged into the oldest one; wallets move with them."""
+    groups: dict[str, list[Folder]] = {}
+    for f in (await db.execute(select(Folder).where(Folder.user_id == user.id).order_by(Folder.id))).scalars():
+        groups.setdefault(f.name.strip().lower(), []).append(f)
+    removed = moved = 0
+    for same in groups.values():
+        keep, extra = same[0], same[1:]
+        for f in extra:
+            for w in (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.folder_id == f.id))).scalars():
+                w.folder_id = keep.id
+                moved += 1
+            await db.flush()
+            await db.delete(f)
+            removed += 1
+    await db.commit()
+    return {"removed": removed, "wallets_moved": moved}
+
+
+class MoveWallets(BaseModel):
+    wallet_ids: list[str] = Field(min_length=1, max_length=500)
+    folder_id: str | None = None  # None = no folder
+
+
+@router.post("/wallets/move")
+async def move_wallets(body: MoveWallets, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    if body.folder_id:
+        await _owned_folder(db, user, body.folder_id)
+    for wid in body.wallet_ids:
+        w = await owned_wallet(db, user, wid, managed=False)
+        w.folder_id = body.folder_id
+    await db.commit()
+    return {"moved": len(body.wallet_ids), "folder_id": body.folder_id}
 
 
 # --- funders -------------------------------------------------------------------------------------
