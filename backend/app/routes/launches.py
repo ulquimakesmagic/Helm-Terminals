@@ -456,7 +456,19 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
     if not body.confirm:
         return pf
     job, created = await begin_spend(db, user, body, pf, "claim_fees", l.id, pf["preflight"])
-    if created:
+    if created and is_evm(adapter):
+        async def work(session, j):
+            try:
+                plan = await adapter.prepare_claim(ClaimRequest(wallet_pubkey=w.address, mint=l.mint_address,
+                                                                options=dict(l.launchpad_params or {})))
+            except AdapterError as e:
+                j.status, j.params = "failed", {**j.params, "error": str(e)}
+                await session.commit()
+                return
+            await run_evm_plan(session, ex, j, w, "claim_fees", plan)
+
+        await run_job(job.id, work)
+    elif created:
         async def work(session, j):
             try:
                 built = await adapter.build_claim_fees_tx(ClaimRequest(wallet_pubkey=w.address, mint=l.mint_address,
@@ -651,23 +663,30 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     params = dict(l.launchpad_params or {})
     gas = await sender.max_gas_cost(EVM_DEPLOY_GAS)
     dev_buy = int(round(l.dev_buy_sol * WEI))
+    launch_fee = 0
+    if hasattr(adapter, "launch_fee"):
+        try:
+            launch_fee = await adapter.launch_fee()
+        except Exception:
+            launch_fee = 0
     bal = await sender.rpc.get_balance(dev.address)
     warnings = []
-    if bal < dev_buy + gas:
-        warnings.append(f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {(dev_buy + gas) / WEI:.6f} {coin} "
-                        f"(dev buy plus gas).")
+    if bal < dev_buy + launch_fee + gas:
+        warnings.append(f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {(dev_buy + launch_fee + gas) / WEI:.6f} "
+                        f"{coin} (dev buy, launch fee and gas).")
     if adapter.options_schema().get("requires_image") and not l.image_blob:
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
-    tax = int(params.get("tax_rate_pct") or 0)
     summary = {
         "launch_id": l.id, "network": l.network, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "max_gas": gas / WEI,
-        "token_type": f"tax token: {tax}% on every buy and sell for a year, paid to your dev wallet" if tax
-        else "standard token, no tax",
         "platform_fee": "none on deploy",
     }
-    if tax and getattr(adapter, "commission_receiver", ""):
-        summary["commission"] = "Helm is this token's commission receiver on Flap and earns Flap's launchpad commission on it"
+    if hasattr(adapter, "deploy_notes"):
+        summary.update(adapter.deploy_notes(params))
+    if hasattr(adapter, "deploy_warnings"):
+        warnings += adapter.deploy_warnings(l.dev_buy_sol, params)
+    if launch_fee:
+        summary["launch_fee"] = f"{launch_fee / WEI:g} {coin}, paid to {l.launchpad}"
     pf = build_preflight("deploy", summary, warnings)
     if not body.confirm:
         return pf
@@ -680,9 +699,17 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
 
         async def work(session, j):
             launch = await session.get(Launch, l.id)
+            opts = dict(params)
+            if l.image_blob:
+                opts["logo_url"] = f"{get_settings().public_api_url.rstrip('/')}/public/launch-images/{l.id}"
+            from ..services.evm_exec import sign_text
+
+            async def sign_login(message: str) -> str:
+                return await sign_text(ex.signer, dev.signer_ref or "", message)
+
             req = CreateRequest(name=l.name, symbol=l.symbol, description=l.description, image_bytes=l.image_blob,
                                 socials=l.socials or {}, dev_pubkey=dev.address, dev_buy_sol=l.dev_buy_sol,
-                                slippage_pct=params.get("slippage_pct", 10.0), options=params)
+                                slippage_pct=params.get("slippage_pct", 10.0), options=opts, sign_text=sign_login)
             try:
                 plan = await adapter.prepare_create(req)
             except AdapterError as e:
@@ -691,8 +718,13 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 await session.commit()
                 return
             res = await run_evm_plan(session, ex, j, dev, "deploy", plan)
+            token = plan.token
+            if res.status == "confirmed" and plan.resolve_token:
+                token = await plan.resolve_token(getattr(res, "logs", None) or []) or token
+            if res.status == "confirmed" and not token:
+                j.params = {**j.params, "error": "launched, but the token address couldn't be read; check the explorer"}
             if res.status == "confirmed":
-                launch.status, launch.mint_address, launch.deployed_at = "live", plan.token, utcnow()
+                launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
             else:
                 launch.status = "failed"
             await session.commit()
@@ -717,7 +749,8 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
         "amount_unit": f"{coin} per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "max_gas_each": gas / WEI,
-        "platform_fee": "none on this chain yet",
+        "platform_fee": (f"none on bonding-curve trades; {ex.dex.fee_note} if the trade is routed through a DEX"
+                         if ex.dex.fee_bps else "none"),
     }, warnings)
     if not body.confirm:
         return pf
@@ -769,3 +802,18 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+@router.get("/public/launch-images/{launch_id}")
+async def launch_image(launch_id: str, db: AsyncSession = Depends(get_db)):
+    """Token logo for launchpads that store an image URL on-chain (e.g. Pons). Only served once the launch is
+    being deployed or is live, and only its image, nothing else about it."""
+    from fastapi import Response
+
+    l = await db.get(Launch, launch_id)
+    if not l or not l.image_blob or l.status not in ("deploying", "live"):
+        raise HTTPException(404, "not found")
+    head = l.image_blob[:12]
+    kind = ("image/png" if head.startswith(b"\x89PNG") else "image/gif" if head[:4] == b"GIF8"
+            else "image/webp" if head[8:12] == b"WEBP" else "image/jpeg")
+    return Response(l.image_blob, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable"})

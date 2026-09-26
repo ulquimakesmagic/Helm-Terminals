@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from eth_account._utils.legacy_transactions import encode_transaction, serializable_unsigned_transaction_from_dict
 from eth_account.typed_transactions import TypedTransaction
+from eth_utils import to_checksum_address
 
 from ..chains.evm import EvmRPC, EvmRPCError
 from ..signing.base import Signer, SigningError
@@ -36,6 +37,8 @@ class EvmResult:
     status: str  # confirmed | failed | timeout
     error: str | None = None
     gas_cost_wei: int | None = None
+    logs: list | None = None  # receipt logs, for reading events such as a new token's address
+    contract_address: str | None = None  # set when the transaction deployed a contract
 
 
 class EvmSender:
@@ -74,7 +77,7 @@ class EvmSender:
         tx = {"chainId": self.rpc.chain_id, "nonce": sender_nonce, "gas": gas, "value": call.value, "data": call.data,
               **fees}
         if call.to:
-            tx["to"] = call.to
+            tx["to"] = to_checksum_address(call.to)  # the signer rejects addresses that aren't checksummed
         if "maxFeePerGas" in tx:
             tx["type"] = 2
         return tx
@@ -119,7 +122,20 @@ class EvmSender:
             if rec:
                 cost = int(rec.get("gasUsed", "0x0"), 16) * int(rec.get("effectiveGasPrice", "0x0"), 16)
                 if rec.get("status") == "0x1":
-                    return EvmResult(tx_hash, "confirmed", None, cost)
+                    return EvmResult(tx_hash, "confirmed", None, cost, rec.get("logs") or [], rec.get("contractAddress"))
                 return EvmResult(tx_hash, "failed", "transaction reverted on-chain", cost)
             await asyncio.sleep(self.poll_s)
         return EvmResult(tx_hash, "timeout", "not confirmed in time; check the explorer before retrying")
+
+
+def eip191_digest(message: str) -> bytes:
+    from eth_utils import keccak
+
+    data = message.encode()
+    return keccak(b"\x19Ethereum Signed Message:\n" + str(len(data)).encode() + data)
+
+
+async def sign_text(signer: Signer, signer_ref: str, message: str) -> str:
+    """personal_sign-style signature (r || s || v with v = 27/28), as wallets and launchpad APIs expect."""
+    y, r, s = await signer.sign_digest(signer_ref, eip191_digest(message))
+    return "0x" + r.to_bytes(32, "big").hex() + s.to_bytes(32, "big").hex() + bytes([27 + y]).hex()

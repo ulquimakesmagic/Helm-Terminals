@@ -14,6 +14,14 @@ interface Launch {
   imported: boolean; created_at: string; dev_buy_sol: number; description: string;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
+function optLabel(key: string, o: string | number): string {
+  if (key === "tax_rate_pct") return o === 0 ? "No tax (standard token)" : `${o}% tax on buys and sells`;
+  if (key === "creator_tax_pct") return o === 0 ? "No creator tax" : `${o}% creator tax on trades`;
+  if (key === "lp_share_pct") return o === 100 ? "100% of supply into the pool" : `${o}% into the pool, ${100 - +o}% kept`;
+  if (key === "lp_tokens") return o === "burn" ? "Burn LP tokens (lock liquidity for good)" : "Keep LP tokens (can remove liquidity)";
+  return String(o);
+}
+
 interface OptField { key: string; type: string; label?: string; hint?: string; options?: (string | number)[]; default?: unknown }
 
 type Filter = "all" | "live" | "draft" | "archived";
@@ -42,6 +50,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   const [eligible, setEligible] = useState(false);
   const [extra, setExtra] = useState<OptField[]>([]);
   const [opts, setOpts] = useState<Record<string, unknown>>({});
+  const [buyLabel, setBuyLabel] = useState("Dev buy");
   const pad = pads.find((p) => p.id === f.launchpad);
   const quote = quotes.find((q) => q.mint === quoteMint);
   const paired = !!quote && quote.kind !== "native";
@@ -55,6 +64,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
     // Launchpad-specific settings (e.g. Flap's trading tax). Dev buy and slippage have their own inputs.
     setExtra([]); setOpts({});
     api<{ fields?: OptField[] }>(`/launchpads/${f.launchpad}/options`).then((r) => {
+      setBuyLabel((r.fields ?? []).find((x) => x.key === "dev_buy_sol")?.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy");
       const fields = (r.fields ?? []).filter((x) => x.type === "select");
       setExtra(fields);
       setOpts(Object.fromEntries(fields.map((x) => [x.key, x.default])));
@@ -139,13 +149,13 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
             {wallets.filter((w) => w.network === chain.id).map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-        {!paired && <Field label="Dev buy" style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
+        {!paired && <Field label={buyLabel} style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
       </div>
       {extra.map((x) => (
         <Field key={x.key} label={x.label ?? x.key} hint={x.hint}>
           <select value={String(opts[x.key] ?? "")} onChange={(e) => setOpts({ ...opts, [x.key]: Number.isNaN(+e.target.value) ? e.target.value : +e.target.value })}>
             {(x.options ?? []).map((o) => (
-              <option key={String(o)} value={String(o)}>{x.key === "tax_rate_pct" ? (o === 0 ? "No tax (standard token)" : `${o}% tax on buys and sells`) : String(o)}</option>
+              <option key={String(o)} value={String(o)}>{optLabel(x.key, o)}</option>
             ))}
           </select>
         </Field>

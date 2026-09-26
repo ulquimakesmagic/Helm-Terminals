@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Awaitable, Callable, Protocol
 
 from solders.keypair import Keypair
 
@@ -20,6 +20,9 @@ class CreateRequest:
     slippage_pct: float = 10.0
     priority_fee_sol: float = 0.0005
     options: dict = field(default_factory=dict)
+    # EVM only: sign a plain-text sign-in message (EIP-191) with the dev wallet, for launchpads whose API needs a
+    # wallet login before creating (Four.meme). Returns the 0x signature. Never used to sign transactions.
+    sign_text: "Callable[[str], Awaitable[str]] | None" = None
 
 
 @dataclass
@@ -74,10 +77,15 @@ class LaunchpadAdapter(Protocol):
 @dataclass
 class EvmStep:
     label: str  # shown in the job log, e.g. "approve", "swap"
-    to: str
+    to: str | None  # None deploys a contract (data = creation code)
     data: bytes
     value: int = 0  # wei
     essential: bool = True  # if an essential step fails, later steps are not sent
+    # Build the calldata only when this step is about to be sent (e.g. a sell whose minimum output is simulated
+    # after its approve has landed). May return (to, data) when the target is only known then. Raises AdapterError.
+    build: Callable[[], Awaitable[bytes | tuple[str, bytes]]] | None = None
+    # Called with the step's result once it confirms (e.g. to capture a deployed contract's address).
+    after: Callable[[object], None] | None = None
 
 
 @dataclass
@@ -85,6 +93,8 @@ class EvmPlan:
     steps: list[EvmStep]
     token: str | None = None  # the token address (known before sending, e.g. from CREATE2)
     notes: dict = field(default_factory=dict)  # extra facts for the preview (token type, commission, ...)
+    # Read the new token's address from the confirmed launch (its receipt logs), when it can't be known upfront.
+    resolve_token: Callable[[list[dict]], Awaitable[str | None]] | None = None
 
 
 @dataclass
@@ -105,4 +115,4 @@ class EvmLaunchpadAdapter(Protocol):
     def options_schema(self) -> dict: ...
     async def prepare_create(self, req: CreateRequest) -> EvmPlan: ...
     async def prepare_trade(self, req: EvmTradeRequest) -> EvmPlan: ...
-    async def build_claim_fees_tx(self, req: ClaimRequest) -> None: ...
+    async def prepare_claim(self, req: ClaimRequest) -> EvmPlan: ...

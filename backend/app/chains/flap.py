@@ -26,6 +26,7 @@ from eth_utils import keccak, to_checksum_address
 
 from ..chains.evm import EvmRPC, EvmRPCError
 from .base import AdapterError, ClaimRequest, CreateRequest, EvmPlan, EvmStep, EvmTradeRequest
+from .kyber import Graduated
 
 ZERO = "0x0000000000000000000000000000000000000000"
 MAX_UINT = 2**256 - 1
@@ -138,6 +139,14 @@ class FlapAdapter:
             "requires_image": True,
         }
 
+    def deploy_notes(self, params: dict) -> dict:
+        tax = int(params.get("tax_rate_pct") or 0)
+        notes = {"token_type": f"tax token: {tax}% on every buy and sell for a year, paid to your dev wallet" if tax
+                 else "standard token, no tax"}
+        if tax and self.commission_receiver:
+            notes["commission"] = "Helm is this token's commission receiver on Flap and earns Flap's launchpad commission on it"
+        return notes
+
     # --- metadata -----------------------------------------------------------------------------
 
     async def upload_metadata(self, req: CreateRequest) -> str:
@@ -222,8 +231,8 @@ class FlapAdapter:
         try:
             ret = await self.rpc.call("eth_call", [{"from": sender, "to": self.portal, "data": "0x" + data.hex()}, "latest"])
         except EvmRPCError as e:
-            raise AdapterError("Flap can't quote this token. It has probably moved to a DEX, and DEX trading "
-                               f"for Flap tokens isn't in Helm yet ({explain(e)[:120]})")
+            # Flap's Portal stops quoting once a token has moved to a DEX: route it through the DEX instead.
+            raise Graduated(f"Flap's curve can't quote this token ({explain(e)[:120]}); it has probably moved to a DEX")
         return int(ret, 16)
 
     def encode_swap(self, token_in: str, token_out: str, amount: int, min_out: int) -> bytes:
@@ -247,6 +256,6 @@ class FlapAdapter:
         steps.append(EvmStep("sell", self.portal, self.encode_swap(req.token, ZERO, req.amount_wei, int(out * (1 - slip)))))
         return EvmPlan(steps, token=req.token, notes={"expected_native_wei": out})
 
-    async def build_claim_fees_tx(self, req: ClaimRequest) -> None:
+    async def prepare_claim(self, req: ClaimRequest) -> EvmPlan:
         raise AdapterError("Flap has nothing to claim here: tax on tax tokens is paid to your dev wallet automatically, "
                            "and standard tokens have no creator fee.")

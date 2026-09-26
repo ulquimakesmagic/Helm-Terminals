@@ -335,8 +335,8 @@ async def test_import_clone_archive_restore_tracker_dashboard(client, fake_rpc):
 async def test_planned_launchpads_are_listed_but_not_deployable(client):
     h = await signup(client)
     pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
-    assert pads["pumpfun"]["status"] == "available" and pads["clanker"]["status"] == "planned"
-    r = await client.post("/launches", json={"launchpad": "clanker", "name": "x", "symbol": "x"}, headers=h)
+    assert pads["pumpfun"]["status"] == "available" and pads["bankr"]["status"] == "planned"
+    r = await client.post("/launches", json={"launchpad": "bankr", "name": "x", "symbol": "x"}, headers=h)
     assert r.status_code == 400
     assert (await client.post("/launches/x/lock", headers=h)).status_code == 501
 

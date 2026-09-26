@@ -28,11 +28,24 @@ class SubmitResult:
 
 class Executor:
     def __init__(self, rpc: SolanaRPC, signer: Signer, confirm_timeout_s: float = 60,
-                 evm_rpcs: dict | None = None) -> None:
+                 evm_rpcs: dict | None = None, dex=None) -> None:
         self.rpc = rpc
         self.signer = signer
         self.confirm_timeout_s = confirm_timeout_s
         self.evm_rpcs = evm_rpcs or {}  # tests inject fake EVM nodes here
+        self._dex = dex
+
+    @property
+    def dex(self):
+        """DEX aggregator for EVM tokens that trade on a DEX (graduated launchpad tokens, Uniswap V2 launches)."""
+        if self._dex is None:
+            from ..chains.kyber import KyberSwap
+            from ..config import get_settings
+
+            s = get_settings()
+            self._dex = KyberSwap(s.kyber_api_url, s.kyber_client_id, fee_bps=s.platform_fee_bps,
+                                  fee_receiver=s.platform_fee_wallet_evm)
+        return self._dex
 
     def evm(self, network: str):
         """Sender for an EVM chain, using the rotating RPC endpoints configured for it."""
@@ -271,7 +284,21 @@ async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Walle
     sender = ex.evm(wallet.network)
     last = None
     for i, step in enumerate(plan.steps):
-        res = await sender.send(wallet.address, wallet.signer_ref or "", EvmCall(step.to, step.data, step.value))
+        to, data = step.to, step.data
+        try:
+            if step.build:
+                built = await step.build()
+                if built is None:  # the step decided there's nothing to do (e.g. no fees in that token)
+                    continue
+                to, data = built if isinstance(built, tuple) else (to, built)
+        except AdapterError as e:
+            res = SubmitResult(None, "failed", str(e))
+            await _record(db, job, wallet, kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24], res, None)
+            await db.commit()
+            return res
+        res = await sender.send(wallet.address, wallet.signer_ref or "", EvmCall(to, data, step.value))
+        if res.status == "confirmed" and step.after:
+            step.after(res)
         label = kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24]
         await _record(db, job, wallet, label, res, None)
         await db.commit()
@@ -304,8 +331,18 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
             amt = int(round(amount * 10**18))
         else:
             amt = await sender_rpc.erc20_balance(token, w.address) * int(round(amount * 100)) // 10_000
+        from ..chains.kyber import Graduated
+
         try:
-            return await adapter.prepare_trade(EvmTradeRequest(token, w.address, side, amt, slippage_pct)), None
+            try:
+                return await adapter.prepare_trade(EvmTradeRequest(token, w.address, side, amt, slippage_pct)), None
+            except Graduated as g:
+                # Off the launchpad's curve: trade it on the DEX where it now lives.
+                try:
+                    return await ex.dex.prepare_trade(w.network, sender_rpc, token, w.address, side, amt,
+                                                      slippage_pct), None
+                except AdapterError as e:
+                    return None, f"{g}; DEX route failed: {e}"
         except AdapterError as e:
             return None, str(e)
 
@@ -328,7 +365,15 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
         async def fire(w, plan):
             out = []
             for step in plan.steps:
-                r = await sender.send(w.address, w.signer_ref or "", EvmCall(step.to, step.data, step.value))
+                to, data = step.to, step.data
+                try:
+                    if step.build:
+                        built = await step.build()
+                        to, data = built if isinstance(built, tuple) else (to, built)
+                except AdapterError as e:
+                    out.append((step, SubmitResult(None, "failed", str(e))))
+                    break
+                r = await sender.send(w.address, w.signer_ref or "", EvmCall(to, data, step.value))
                 out.append((step, r))
                 if r.status != "confirmed" and step.essential:
                     break

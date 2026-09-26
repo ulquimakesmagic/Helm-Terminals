@@ -4,6 +4,10 @@ from ..config import get_settings
 from .bags import BagsAdapter
 from .evm import shared_evm
 from .flap import FlapAdapter
+from .clanker import ClankerAdapter
+from .fourmeme import FourMemeAdapter
+from .pons import PonsAdapter
+from .uniswap_v2 import UniswapV2Adapter
 from .base import LaunchpadAdapter
 from .letsbonk import LetsBonkAdapter
 from .pumpfun import PumpFunAdapter
@@ -34,8 +38,20 @@ def _flap(launchpad_id: str, network: str):
     return make
 
 
+def _clanker(launchpad_id: str, network: str):
+    def make():
+        s = get_settings()
+        return ClankerAdapter(launchpad_id, network, shared_evm(network), platform_wallet=s.platform_fee_wallet_evm,
+                              platform_reward_bps=s.clanker_platform_reward_bps)
+    return make
+
+
 IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
-               "flap-sh": _flap("flap-sh", "bsc"), "flap-sh-robinhood": _flap("flap-sh-robinhood", "robinhood")}
+               "flap-sh": _flap("flap-sh", "bsc"), "flap-sh-robinhood": _flap("flap-sh-robinhood", "robinhood"),
+               "pons": lambda: PonsAdapter(shared_evm("robinhood")),
+               "uniswap-v2": lambda: UniswapV2Adapter(shared_evm("ethereum")),
+               "four-meme": lambda: FourMemeAdapter(shared_evm("bsc")),
+               "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood")}
 
 
 def is_evm(adapter) -> bool:
@@ -52,10 +68,7 @@ def needs_setup(launchpad_id: str) -> str | None:
 PLANNED = [
     ("meteora-dbc", "solana"), ("printr", "solana"),
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
-    ("clanker", "base"), ("bankr", "base"),
-    ("four-meme", "bsc"),
-    ("pons", "robinhood"),
-    ("uniswap-v2", "ethereum"),
+    ("bankr", "base"),
 ]
 
 _cache: dict[str, LaunchpadAdapter] = {}

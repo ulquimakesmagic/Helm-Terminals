@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     evm_rpc_robinhood: str = ""
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"
+    # DEX trading on EVM chains (graduated launchpad tokens, Uniswap V2 launches) goes through KyberSwap's aggregator.
+    kyber_api_url: str = "https://aggregator-api.kyberswap.com"
+    kyber_client_id: str = "HelmTerminals"
+    # Public base URL of this API. Launchpads that store an image URL on-chain (Pons) get the token image from here.
+    public_api_url: str = "https://api.helmterminals.xyz"
     # Bags (bags.fm). Get an API key at https://dev.bags.fm. Without one, Bags shows as "needs setup".
     bags_api_key: str = ""
     bags_api_url: str = "https://public-api-v2.bags.fm/api/v1"
@@ -69,6 +74,9 @@ class Settings(BaseSettings):
     # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
     # commission to it). Optional.
     platform_fee_wallet_evm: str = ""
+    # Share of a Clanker token's LP rewards paid to PLATFORM_FEE_WALLET_EVM, in bps (1000 = 10%, max 2000).
+    # 0 = all rewards to the creator. Always shown in the deploy preview.
+    clanker_platform_reward_bps: int = 0
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
     referral_share_bps: int = 2500
     referral_code_max_uses: int = 1000
