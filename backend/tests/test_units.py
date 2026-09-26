@@ -130,3 +130,42 @@ def test_database_url_is_normalised_for_async_driver():
     assert Settings(database_url="postgres://u:p@h:5432/d").database_url == "postgresql+asyncpg://u:p@h:5432/d"
     assert Settings(database_url="postgresql://u:p@h/d").database_url == "postgresql+asyncpg://u:p@h/d"
     assert Settings(database_url="postgresql+asyncpg://u:p@h/d").database_url == "postgresql+asyncpg://u:p@h/d"
+
+
+def test_fee_transfers_are_spliced_into_a_lookup_table_transaction():
+    """The fee must ride inside the launchpad's own transaction, which often loads accounts from lookup tables."""
+    from solders.address_lookup_table_account import AddressLookupTableAccount
+    from solders.hash import Hash
+    from solders.instruction import AccountMeta, Instruction
+    from solders.keypair import Keypair
+    from solders.message import MessageV0
+    from solders.pubkey import Pubkey
+    from solders.signature import Signature
+    from solders.system_program import decode_transfer
+    from solders.transaction import VersionedTransaction
+
+    from app.chains.solana import SYSTEM_PROGRAM, append_sol_transfers
+
+    payer, prog, a, b, ro = Keypair(), Pubkey.new_unique(), Pubkey.new_unique(), Pubkey.new_unique(), Pubkey.new_unique()
+    alt = AddressLookupTableAccount(Pubkey.new_unique(), [a, b])
+    ix = Instruction(prog, b"\x01\x02", [AccountMeta(payer.pubkey(), True, True), AccountMeta(a, False, True),
+                                         AccountMeta(b, False, False), AccountMeta(ro, False, False)])
+    m = MessageV0.try_compile(payer.pubkey(), [ix], [alt], Hash.default())
+    raw = bytes(VersionedTransaction.populate(m, [Signature.default()]))
+    fee, ref = Pubkey.new_unique(), Pubkey.new_unique()
+
+    m2 = VersionedTransaction.from_bytes(append_sol_transfers(raw, payer.pubkey(), [(fee, 1000), (ref, 250)])).message
+    keys = list(m2.account_keys)
+    lut = m2.address_table_lookups[0]
+    loaded = [[a, b][i] for i in list(lut.writable_indexes) + list(lut.readonly_indexes)]
+    res = lambda i: keys[i] if i < len(keys) else loaded[i - len(keys)]  # noqa: E731
+
+    orig = m2.instructions[0]  # untouched apart from remapped indexes
+    assert keys[orig.program_id_index] == prog and [res(i) for i in orig.accounts] == [payer.pubkey(), a, b, ro]
+    for t, (dst, n) in zip(m2.instructions[1:], [(fee, 1000), (ref, 250)]):
+        assert keys[t.program_id_index] == SYSTEM_PROGRAM and [res(i) for i in t.accounts] == [payer.pubkey(), dst]
+        d = decode_transfer(Instruction(SYSTEM_PROGRAM, t.data, [AccountMeta(payer.pubkey(), True, True),
+                                                                 AccountMeta(dst, False, True)]))
+        assert d["lamports"] == n
+    assert m2.is_maybe_writable(keys.index(fee)) and not m2.is_maybe_writable(keys.index(ro))
+    assert not m2.is_maybe_writable(keys.index(SYSTEM_PROGRAM))

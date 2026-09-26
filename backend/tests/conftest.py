@@ -59,6 +59,11 @@ class FakeRPC:
     async def simulate(self, tx):
         return self.sim_error
 
+    async def simulate_balance_after(self, tx, address):
+        if self.sim_error:
+            return None
+        return await self.get_balance(address) + self.next_delta
+
     async def send(self, tx):
         self.sent.append(tx)
         payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])

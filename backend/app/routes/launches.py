@@ -21,6 +21,7 @@ from ..deps import (
 )
 from ..models import Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
 from ..services.executor import Executor, run_single, run_trade
+from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
 from ..services.transparency import compute_transparency
 
@@ -306,10 +307,12 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
         raise HTTPException(400, "sell amount is a percentage (1-100)")
     wallets = await _attached_wallets(db, user, l, body.wallet_ids)
     s = get_settings()
+    plan = await fee_plan_for(db, user, l.network)
     warnings = []
     if body.side == "buy":
+        fee_sol = body.amount * plan.bps / 10_000 if plan.active else 0.0
         for w in wallets:
-            if await rpc.get_balance(w.address) < int((body.amount + 0.01) * LAMPORTS_PER_SOL):
+            if await rpc.get_balance(w.address) < int((body.amount + fee_sol + 0.01) * LAMPORTS_PER_SOL):
                 warnings.append(f"{w.address} has too little SOL for a {body.amount} SOL buy plus fees.")
     if body.side == "buy" and getattr(user, "channel", "web") == "bot":
         # Cap how much a hijacked or mistaken chat session can spend on buys. Larger orders go through the web app.
@@ -323,7 +326,7 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
             warnings.append(
                 f"Telegram daily buy limit: {spent:.2f} of {s.bot_daily_buy_limit_sol:.2f} SOL used in the last 24h; "
                 f"this order adds {new:.2f} SOL. Use the web app for larger orders.")
-    fee_note = f"{s.platform_fee_bps / 100:.2f}% of SOL received" if body.side == "sell" and s.platform_fee_bps else "none"
+    fee_note = describe(plan, body.side, body.amount if body.side == "buy" else None)
     pf = build_preflight("trade", {
         "launch_id": l.id, "mint": l.mint_address, "side": body.side, "amount": body.amount,
         "amount_unit": "SOL per wallet" if body.side == "buy" else "% of each wallet's tokens",
@@ -341,8 +344,7 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
 
         async def work(session, j):
             await run_trade(session, ex, adapter, j, l.mint_address, wallets, body.side, amount,
-                            body.side == "buy", body.mode, body.stagger_ms, body.slippage_pct,
-                            s.platform_fee_bps, s.platform_fee_wallet)
+                            body.side == "buy", body.mode, body.stagger_ms, body.slippage_pct, plan)
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}

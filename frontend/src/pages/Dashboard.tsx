@@ -2,17 +2,17 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
 import AreaChart from "../components/Chart";
+import ReferralCard from "../components/Referrals";
 import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
 import { coverage } from "../components/Launchpads";
 import { ActivityRow, FeedItem } from "../components/feed";
-import { Callout, Card, CopyButton, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, ChainDot, useToast } from "../components/ui";
+import { Callout, Card, Empty, Icon, Loading, PageHeader, Seg, Skeleton, Stat, StatusBadge, ChainDot } from "../components/ui";
 import { useSession } from "../session";
 
 type Period = "all" | "1y" | "1m" | "7d" | "1d";
 const PERIODS: [Period, string][] = [["1d", "24H"], ["7d", "7D"], ["1m", "30D"], ["1y", "1Y"], ["all", "All"]];
 
 export default function Dashboard() {
-  const toast = useToast();
   const { me, tg } = useSession();
   const [period, setPeriod] = useState<Period>("all");
   const [data, setData] = useState<any>(null);
@@ -33,7 +33,6 @@ export default function Dashboard() {
 
   const managed = wallets?.filter((w) => w.kind === "managed") ?? [];
   const live = launches?.filter((l) => l.status === "live") ?? [];
-  const referralUses = data?.referral.codes.reduce((s: number, c: any) => s + c.uses, 0) ?? 0;
 
   const steps: [boolean, string, string, string][] = [
     [managed.length > 0, "Create your first wallets", "/wallets", "Wallets"],
@@ -61,7 +60,7 @@ export default function Dashboard() {
         ) : <div className="card stat"><Skeleton h={12} w={90} /><Skeleton h={26} w={140} /></div>}
         <Stat label="Launches" icon="rocket" value={data ? data.total_launches : "–"} hint={`${live.length} live now`} />
         <Stat label="Managed wallets" icon="wallet" value={wallets ? managed.length : "–"} hint={`${(wallets?.length ?? 0) - managed.length} watch-only`} />
-        <Stat label="Referral signups" icon="gift" value={data ? referralUses : "–"} hint={`${data?.referral.codes.length ?? 0} active codes`} />
+        <Stat label="Referral earnings" icon="gift" value={data ? fmt(data.referral.earned_sol + data.referral.owed_sol, 4) : "–"} unit={data ? "SOL" : undefined} hint={`${data?.referral.referred_users ?? 0} ${data?.referral.referred_users === 1 ? "person" : "people"} referred`} />
       </div>
 
       <div className="grid g-main">
@@ -137,27 +136,7 @@ export default function Dashboard() {
             )}
           </Card>
 
-          <Card title="Referrals" icon="gift" actions={
-            <button className="btn sm secondary" onClick={() => api("/referrals", { method: "POST", body: {} }).then(() => { toast("good", "Referral code created"); load(); }).catch((e) => toast("bad", errMsg(e)))}>
-              <Icon name="plus" size={13} />New code
-            </button>} flush>
-            {!data ? <Loading rows={2} /> : data.referral.codes.length === 0 ? (
-              <Empty icon="gift" title="No referral codes" text="Create a code to invite other people to Helm Terminals." />
-            ) : (
-              <div className="feed">
-                {data.referral.codes.map((c: any) => (
-                  <div key={c.code} className="feed-item" style={{ alignItems: "center" }}>
-                    <span className="mono" style={{ fontSize: 14, fontWeight: 600, letterSpacing: "0.06em" }}>{c.code}</span>
-                    <CopyButton text={c.code} />
-                    <div className="grow">
-                      <div className="bar thin"><div style={{ width: `${Math.min(100, (c.uses / Math.max(1, c.max_uses)) * 100)}%` }} /></div>
-                    </div>
-                    <span className="muted small num">{c.uses}/{c.max_uses}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          <ReferralCard data={data?.referral ?? null} onChange={load} />
         </div>
       </div>
     </>

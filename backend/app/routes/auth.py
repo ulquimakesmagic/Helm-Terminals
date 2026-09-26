@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..db import get_db
 from ..deps import current_user, log_activity, web_user
-from ..models import Session, User, utcnow
+from ..models import Referral, ReferralLink, Session, User, utcnow
 from ..security import (
     check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
     token_hash, totp_uri, verify_password,
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class Register(BaseModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=200)
+    referral_code: str | None = Field(default=None, max_length=16)
 
 
 class Login(BaseModel):
@@ -37,9 +38,18 @@ async def register(body: Register, db: AsyncSession = Depends(get_db)):
     email = body.email.lower()
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(409, "email already registered")
+    ref = None
+    if body.referral_code:
+        ref = (await db.execute(select(Referral).where(Referral.code == body.referral_code.strip().upper()))).scalar_one_or_none()
+        if not ref or ref.uses >= ref.max_uses:
+            raise HTTPException(400, "referral code is invalid or used up")
     user = User(email=email, password_hash=hash_password(body.password))
     db.add(user)
-    await log_activity(db, user.id, "account.created")
+    await db.flush()
+    if ref:
+        ref.uses += 1
+        db.add(ReferralLink(referred_user_id=user.id, referrer_user_id=ref.owner_user_id, code=ref.code))
+    await log_activity(db, user.id, "account.created", payload={"referred": bool(ref)})
     await db.commit()
     return {"id": user.id, "email": user.email}
 

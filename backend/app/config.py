@@ -12,6 +12,20 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     session_ttl_hours: int = 24 * 7
 
+    @field_validator("platform_fee_bps")
+    @classmethod
+    def _fee_cap(cls, v: int) -> int:
+        if not 0 <= v <= 500:
+            raise ValueError("platform_fee_bps must be between 0 and 500 (5%)")
+        return v
+
+    @field_validator("referral_share_bps")
+    @classmethod
+    def _share_cap(cls, v: int) -> int:
+        if not 0 <= v <= 10_000:
+            raise ValueError("referral_share_bps must be between 0 and 10000")
+        return v
+
     @field_validator("database_url")
     @classmethod
     def _async_driver(cls, v: str) -> str:
@@ -34,8 +48,13 @@ class Settings(BaseSettings):
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
 
     # Optional platform fee on sells. 0 disables it. Always shown in the preflight.
+    # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
+    # transaction and shown in every preview. 0 turns fees off.
     platform_fee_bps: int = 0
     platform_fee_wallet: str = ""
+    # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
+    referral_share_bps: int = 2500
+    referral_code_max_uses: int = 1000
 
     # Transparency panel: warn when user-controlled wallets hold more than this share of supply.
     controlled_supply_warn_pct: float = 20.0

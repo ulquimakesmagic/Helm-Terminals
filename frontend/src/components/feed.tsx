@@ -12,6 +12,7 @@ const KINDS: Record<string, Meta> = {
   "2fa.enabled": { icon: "shield", tone: "good", label: "Two-factor authentication turned on", group: "security" },
   "telegram.linked": { icon: "telegram", tone: "info", label: "Telegram linked", group: "security" },
   "telegram.unlinked": { icon: "telegram", tone: "", label: "Telegram unlinked", group: "security" },
+  "referral.payout_set": { icon: "gift", tone: "info", label: "Referral payout address set", group: "security" },
   "wallets.created": { icon: "wallet", tone: "info", label: "Wallets created", group: "wallets" },
   "launch.created": { icon: "rocket", tone: "info", label: "Launch draft created", group: "launches" },
   "launch.imported": { icon: "download", tone: "violet", label: "Token imported", group: "launches" },

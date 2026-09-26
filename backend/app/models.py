@@ -185,7 +185,48 @@ class Referral(Base):
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     code: Mapped[str] = mapped_column(String(16), unique=True)
     uses: Mapped[int] = mapped_column(Integer, default=0)
-    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    max_uses: Mapped[int] = mapped_column(Integer, default=1000)
+
+
+class ReferralLink(Base):
+    """Who referred whom. One row per referred user, written once at sign-up."""
+    __tablename__ = "referral_links"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    referred_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
+    referrer_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    code: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PayoutAddress(Base):
+    """Where a user's referral earnings are paid, per network."""
+    __tablename__ = "payout_addresses"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    network: Mapped[str] = mapped_column(String(16), default="solana")
+    address: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "network"),)
+
+
+class FeeRecord(Base):
+    """One trading fee: what the platform and the referrer received, and how it was paid."""
+    __tablename__ = "fee_records"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    payer_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    wallet_id: Mapped[str | None] = mapped_column(ForeignKey("wallets.id"), nullable=True)
+    network: Mapped[str] = mapped_column(String(16), default="solana")
+    side: Mapped[str] = mapped_column(String(8))
+    basis_lamports: Mapped[int] = mapped_column(BigInteger)  # the SOL amount the fee was computed on
+    platform_lamports: Mapped[int] = mapped_column(BigInteger, default=0)
+    referrer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    referral_lamports: Mapped[int] = mapped_column(BigInteger, default=0)
+    referral_status: Mapped[str] = mapped_column(String(12), default="none")  # none | paid | owed
+    mode: Mapped[str] = mapped_column(String(12), default="in_tx")  # in_tx | follow_up
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # confirmed | failed
+    signature: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 def _declare_fk_dependencies() -> None:

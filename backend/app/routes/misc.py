@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.solana import LAMPORTS_PER_SOL
 from ..db import get_db
-from ..deps import current_user, valid_address_for
-from ..models import Activity, Job, Launch, Referral, Transaction, User, Watch, utcnow
+from ..config import get_settings
+from ..deps import current_user, log_activity, valid_address_for, web_user
+from ..models import (
+    Activity, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Watch, utcnow,
+)
 
 router = APIRouter(tags=["misc"])
 PERIODS = {"all": None, "1y": timedelta(days=365), "1m": timedelta(days=30), "7d": timedelta(days=7), "1d": timedelta(days=1)}
@@ -36,23 +39,70 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
     for day in sorted(daily):
         cum += daily[day]
         series.append({"date": day, "daily_sol": daily[day] / LAMPORTS_PER_SOL, "cumulative_sol": cum / LAMPORTS_PER_SOL})
-    codes = (await db.execute(select(Referral).where(Referral.owner_user_id == user.id))).scalars().all()
     return {
         "period": period,
         "total_launches": launches,
         "net_sol_flow": cum / LAMPORTS_PER_SOL,
         "series": series,
-        "referral": {"codes": [{"code": c.code, "uses": c.uses, "max_uses": c.max_uses} for c in codes]},
+        "referral": await referral_summary(db, user),
         "note": "Net SOL flow from confirmed on-chain transactions, including fees. Unsold token holdings are not valued.",
     }
 
 
 @router.post("/referrals", status_code=201)
 async def create_referral(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    r = Referral(owner_user_id=user.id, code=secrets.token_hex(4).upper())
+    r = Referral(owner_user_id=user.id, code=secrets.token_hex(4).upper(), max_uses=get_settings().referral_code_max_uses)
     db.add(r)
     await db.commit()
     return {"code": r.code}
+
+
+async def referral_summary(db: AsyncSession, user: User) -> dict:
+    s = get_settings()
+    codes = (await db.execute(select(Referral).where(Referral.owner_user_id == user.id))).scalars().all()
+    referred = (await db.execute(select(func.count(ReferralLink.id)).where(
+        ReferralLink.referrer_user_id == user.id))).scalar_one()
+    rows = (await db.execute(select(FeeRecord.referral_status, func.coalesce(func.sum(FeeRecord.referral_lamports), 0))
+                             .where(FeeRecord.referrer_user_id == user.id, FeeRecord.status == "confirmed")
+                             .group_by(FeeRecord.referral_status))).all()
+    by_status = {st: int(v) for st, v in rows}
+    payout = (await db.execute(select(PayoutAddress).where(
+        PayoutAddress.user_id == user.id, PayoutAddress.network == "solana"))).scalar_one_or_none()
+    return {
+        "codes": [{"code": c.code, "uses": c.uses, "max_uses": c.max_uses} for c in codes],
+        "referred_users": referred,
+        "earned_sol": by_status.get("paid", 0) / LAMPORTS_PER_SOL,
+        "owed_sol": by_status.get("owed", 0) / LAMPORTS_PER_SOL,
+        "payout_address": payout.address if payout else None,
+        "share_pct": s.referral_share_bps / 100 if s.platform_fee_bps else 0,
+        "fee_pct": s.platform_fee_bps / 100,
+    }
+
+
+@router.get("/referrals")
+async def referrals(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    return await referral_summary(db, user)
+
+
+class PayoutBody(BaseModel):
+    address: str
+    network: str = "solana"
+
+
+@router.put("/referrals/payout")
+async def set_payout(body: PayoutBody, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+    """Web only: a stolen chat session must not be able to redirect someone's earnings."""
+    if body.network != "solana" or not valid_address_for("solana", body.address):
+        raise HTTPException(400, "invalid solana address")
+    row = (await db.execute(select(PayoutAddress).where(
+        PayoutAddress.user_id == user.id, PayoutAddress.network == body.network))).scalar_one_or_none()
+    if row:
+        row.address = body.address
+    else:
+        db.add(PayoutAddress(user_id=user.id, network=body.network, address=body.address))
+    await log_activity(db, user.id, "referral.payout_set", payload={"address": body.address})
+    await db.commit()
+    return await referral_summary(db, user)
 
 
 @router.get("/activity")

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
 import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
 import { coverage } from "../components/Launchpads";
@@ -16,7 +16,9 @@ const FEATURES: [Parameters<typeof Icon>[0]["name"], string, string][] = [
 export default function Auth() {
   const nav = useNavigate();
   const { refresh } = useSession();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [params] = useSearchParams();
+  const [ref, setRef] = useState((params.get("ref") ?? "").toUpperCase());
+  const [mode, setMode] = useState<"login" | "register">(params.get("ref") ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -33,7 +35,7 @@ export default function Auth() {
     setBusy(true);
     setError("");
     try {
-      if (mode === "register") await api("/auth/register", { body: { email, password } });
+      if (mode === "register") await api("/auth/register", { body: { email, password, referral_code: ref.trim() || undefined } });
       const r = await api("/auth/login", { body: { email, password, totp: totp || undefined } });
       setToken(r.token);
       refresh();
@@ -107,6 +109,11 @@ export default function Auth() {
                   </button>
                 </div>
               </Field>
+              {mode === "register" && (
+                <Field label="Referral code" extra="optional">
+                  <input className="mono" value={ref} onChange={(e) => setRef(e.target.value.toUpperCase())} placeholder="e.g. 43E9C262" maxLength={16} />
+                </Field>
+              )}
               {mode === "register" && password.length > 0 && (
                 <div className="stack tight">
                   <div className={`bar thin ${password.length >= 14 ? "good" : ""}`}><div style={{ width: `${Math.min(100, (password.length / 16) * 100)}%` }} /></div>
