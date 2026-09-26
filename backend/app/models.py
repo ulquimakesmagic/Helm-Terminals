@@ -229,6 +229,22 @@ class FeeRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Profile(Base):
+    """How a user presents themselves. Private by default; a public page only exists once they opt in."""
+    __tablename__ = "profiles"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
+    display_name: Mapped[str] = mapped_column(String(40), default="")
+    handle: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
+    bio: Mapped[str] = mapped_column(String(280), default="")
+    x_handle: Mapped[str] = mapped_column(String(16), default="")
+    telegram_handle: Mapped[str] = mapped_column(String(32), default="")
+    website: Mapped[str] = mapped_column(String(120), default="")
+    avatar_hue: Mapped[int] = mapped_column(Integer, default=265)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 def _declare_fk_dependencies() -> None:
     """Tell SQLAlchemy's unit of work which table depends on which.
 

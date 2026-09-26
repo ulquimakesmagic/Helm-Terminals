@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..db import get_db
 from ..deps import current_user, log_activity, web_user
-from ..models import Referral, ReferralLink, Session, User, utcnow
+from ..models import Profile, Referral, ReferralLink, Session, User, utcnow
 from ..security import (
     check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
     token_hash, totp_uri, verify_password,
@@ -100,9 +100,12 @@ async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSessi
 
 
 @router.get("/me")
-async def me(user: User = Depends(current_user)):
+async def me(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
     return {"id": user.id, "email": user.email, "totp_enabled": user.totp_enabled,
-            "created_at": user.created_at.isoformat()}
+            "created_at": user.created_at.isoformat(),
+            "display_name": p.display_name if p else user.email.split("@")[0][:40],
+            "handle": p.handle if p else None, "avatar_hue": p.avatar_hue if p else 265}
 
 
 @router.get("/sessions")

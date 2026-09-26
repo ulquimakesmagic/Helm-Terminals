@@ -11,15 +11,18 @@ import Workspace from "./pages/Workspace";
 import Tracker from "./pages/Tracker";
 import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
+import Profile from "./pages/Profile";
+import PublicProfile from "./pages/PublicProfile";
+import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
   { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"]] },
   { group: "Monitor", items: [["/tracker", "Tracker", "radar"], ["/activity", "Activity", "activity"]] },
-  { group: "Account", items: [["/settings", "Settings", "settings"]] },
+  { group: "Account", items: [["/profile", "Profile", "user"], ["/settings", "Settings", "settings"]] },
 ];
 
 const TITLES: Record<string, string> = {
-  "": "Dashboard", launches: "Launches", wallets: "Wallets", tracker: "Tracker", activity: "Activity", settings: "Settings",
+  "": "Dashboard", launches: "Launches", wallets: "Wallets", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -59,13 +62,15 @@ function Shell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <div className="me">
-            <div className="avatar">{(me?.email ?? "?").slice(0, 1).toUpperCase()}</div>
-            <div className="grow">
-              <div className="truncate">{me?.email ?? "…"}</div>
+            <Link to="/profile" className="me-link" title="Your profile">
+              <ProfileAvatar name={me?.display_name || me?.email || "?"} hue={me?.avatar_hue ?? 265} size={32} radius={9} />
+            </Link>
+            <Link to="/profile" className="grow me-link" style={{ minWidth: 0 }}>
+              <div className="truncate" style={{ color: "var(--text)", fontWeight: 550 }}>{me?.display_name || me?.email || "…"}</div>
               <div className="muted small row nowrap" style={{ gap: 6 }}>
                 <Icon name="telegram" size={12} />{tg?.linked ? "Telegram linked" : "Telegram not linked"}
               </div>
-            </div>
+            </Link>
             <button className="icon-btn" title="Sign out" onClick={() => { setToken(null); nav("/login"); }}>
               <Icon name="logout" size={15} />
             </button>
@@ -115,7 +120,9 @@ export default function App() {
         <Route path="/wallets" element={<Private><Wallets /></Private>} />
         <Route path="/tracker" element={<Private><Tracker /></Private>} />
         <Route path="/activity" element={<Private><Activity /></Private>} />
+        <Route path="/profile" element={<Private><Profile /></Private>} />
         <Route path="/settings" element={<Private><Settings /></Private>} />
+        <Route path="/u/:handle" element={<PublicProfile />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </SessionProvider>

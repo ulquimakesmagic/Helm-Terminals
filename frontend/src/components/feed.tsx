@@ -13,6 +13,7 @@ const KINDS: Record<string, Meta> = {
   "telegram.linked": { icon: "telegram", tone: "info", label: "Telegram linked", group: "security" },
   "telegram.unlinked": { icon: "telegram", tone: "", label: "Telegram unlinked", group: "security" },
   "referral.payout_set": { icon: "gift", tone: "info", label: "Referral payout address set", group: "security" },
+  "profile.updated": { icon: "user", tone: "", label: "Profile updated", group: "security" },
   "wallets.created": { icon: "wallet", tone: "info", label: "Wallets created", group: "wallets" },
   "launch.created": { icon: "rocket", tone: "info", label: "Launch draft created", group: "launches" },
   "launch.imported": { icon: "download", tone: "violet", label: "Token imported", group: "launches" },
