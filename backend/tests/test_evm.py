@@ -99,3 +99,26 @@ def test_blank_config_falls_back_to_the_public_endpoint():
         EvmRPC("solana", "https://x")
 
 
+
+
+async def test_header_key_moved_out_of_url():
+    import httpx
+    from app.chains.evm import EvmRPC, split_header_key
+
+    assert split_header_key("https://x.io") == ("https://x.io", {})
+    assert split_header_key("https://base-mainnet.gateway.tatum.io?xApiKey=K1") == (
+        "https://base-mainnet.gateway.tatum.io", {"x-api-key": "K1"})
+    assert split_header_key("https://a.io/rpc?foo=1&x-api-key=K2") == ("https://a.io/rpc?foo=1", {"x-api-key": "K2"})
+
+    seen = []
+
+    def handler(req: httpx.Request):
+        seen.append((str(req.url), req.headers.get("x-api-key")))
+        body = req.read().decode()
+        result = hex(8453) if "eth_chainId" in body else hex(5)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": result})
+
+    rpc = EvmRPC("base", "https://base-mainnet.gateway.tatum.io?xApiKey=SECRET",
+                 client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert await rpc.get_balance("0x" + "1" * 40) == 5
+    assert all(u == "https://base-mainnet.gateway.tatum.io" and k == "SECRET" for u, k in seen)

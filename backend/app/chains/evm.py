@@ -9,6 +9,8 @@ chain (an easy copy-paste mistake) is refused for an hour, so Helm never reads b
 on the wrong network. Errors name endpoints by position only; URLs (which often embed API keys) never appear.
 """
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 import httpx
 
 from ..keyring import KeyRing, parse_list, retry_after
@@ -51,6 +53,23 @@ def _decode_string(data: str) -> str:
     return raw[64 : 64 + length].decode("utf-8", "replace")
 
 
+_HEADER_KEY_PARAMS = ("xApiKey", "x-api-key", "x_api_key")
+
+
+def split_header_key(url: str) -> tuple[str, dict[str, str]]:
+    """Providers like Tatum want the key in an `x-api-key` header. Write it in the URL as
+    `https://base-mainnet.gateway.tatum.io?xApiKey=KEY` and Helm moves it into the header."""
+    parsed = urlsplit(url)
+    if not parsed.query:
+        return url, {}
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    key = next((v for k, v in pairs if k in _HEADER_KEY_PARAMS and v), None)
+    if not key:
+        return url, {}
+    rest = urlencode([(k, v) for k, v in pairs if k not in _HEADER_KEY_PARAMS])
+    return urlunsplit(parsed._replace(query=rest)), {"x-api-key": key}
+
+
 class EvmRPC:
     def __init__(self, network: str, urls: str | list[str], client: httpx.AsyncClient | None = None) -> None:
         if network not in EVM_CHAINS:
@@ -65,7 +84,9 @@ class EvmRPC:
         self.using_public_fallback = not parse_list(urls)
 
     async def _post(self, url: str, method: str, params: list) -> httpx.Response:
-        return await self._client.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+        target, headers = split_header_key(url)
+        return await self._client.post(target, headers=headers,
+                                       json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 
     async def _verify(self, url: str) -> str | None:
         """Return a problem description if this endpoint isn't the chain it's configured for."""
