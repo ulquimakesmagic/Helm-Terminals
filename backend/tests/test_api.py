@@ -479,3 +479,45 @@ async def test_pair_token_launch_needs_bags_eligibility_and_a_supported_token(cl
     finally:
         s.bags_api_key = ""
         registry._cache.pop("bags", None)
+
+
+async def test_import_explains_rpc_outage_vs_unknown_token(client, fake_rpc):
+    from app.chains.solana import RPCError
+
+    h = await signup(client, "importer@example.com")
+    mint = str(__import__("solders.keypair", fromlist=["Keypair"]).Keypair().pubkey())
+
+    async def not_a_mint(m):
+        raise RPCError("getTokenSupply: Invalid param: not a Token mint")
+
+    fake_rpc.get_token_supply = not_a_mint
+    r = await client.post("/launches/import", json={"mint": mint}, headers=h)
+    assert r.status_code == 404 and "isn't a token mint" in r.json()["detail"]
+
+    async def blocked(m):
+        raise ConnectionError("403 Forbidden")
+
+    fake_rpc.get_token_supply = blocked
+    r = await client.post("/launches/import", json={"mint": mint}, headers=h)
+    assert r.status_code == 502 and "SOLANA_RPC_URL" in r.json()["detail"]
+
+
+async def test_evm_watch_wallet_balance_is_in_its_own_coin(client, fake_rpc, monkeypatch):
+    from app.routes import wallets as wroutes
+
+    class FakeEvm:
+        async def get_balance(self, addr):
+            return 2 * 10**18 + 5 * 10**17
+
+    monkeypatch.setattr(wroutes, "shared_evm", lambda network: FakeEvm())
+    h = await signup(client, "evmbal@example.com")
+    await client.post("/wallets/watch", json={"network": "robinhood", "address": "0x" + "ab" * 20}, headers=h)
+    ws = (await client.get("/wallets?with_balances=true", headers=h)).json()
+    rh = next(w for w in ws if w["network"] == "robinhood")
+    assert rh["balance"] == 2.5
+
+
+async def test_health_reports_rpc_setup_per_chain(client):
+    health = (await client.get("/health")).json()
+    assert set(health["evm_rpc"]) == {"base", "bsc", "ethereum", "robinhood"}
+    assert health["evm_rpc"]["robinhood"]["public_fallback"] is True

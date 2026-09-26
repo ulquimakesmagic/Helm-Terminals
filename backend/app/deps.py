@@ -7,7 +7,7 @@ from solders.pubkey import Pubkey
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .chains.solana import SolanaRPC
+from .chains.solana import SolanaRPC, shared_rpc
 from .config import get_settings
 from .db import get_db, get_sessionmaker
 from .models import Activity, Job, Session, User, Wallet, utcnow
@@ -18,7 +18,7 @@ from .signing import get_signer
 
 @lru_cache
 def get_rpc() -> SolanaRPC:
-    return SolanaRPC(get_settings().solana_rpc_url)
+    return shared_rpc(get_settings().solana_rpc_url)
 
 
 def get_executor(rpc: SolanaRPC = Depends(get_rpc), signer=Depends(get_signer)) -> Executor:

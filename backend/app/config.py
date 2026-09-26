@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
+    # EVM RPC URLs per chain, each a comma-separated list rotated like SOLANA_RPC_URL. Blank = public endpoint
+    # (rate-limited; fine for testing). Every URL's chain ID is checked before use.
+    evm_rpc_base: str = ""
+    evm_rpc_bsc: str = ""
+    evm_rpc_ethereum: str = ""
+    evm_rpc_robinhood: str = ""
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     # Bags (bags.fm). Get an API key at https://dev.bags.fm. Without one, Bags shows as "needs setup".
     bags_api_key: str = ""

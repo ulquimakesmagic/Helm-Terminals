@@ -15,6 +15,7 @@ from solders.signature import Signature
 from solders.system_program import TransferParams, transfer
 from solders.transaction import VersionedTransaction
 
+from ..keyring import KeyRing, parse_list, retry_after
 from ..signing.base import Signer, SigningError
 
 TOKEN_PROGRAM = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
@@ -24,21 +25,66 @@ LAMPORTS_PER_SOL = 1_000_000_000
 
 
 class RPCError(Exception):
-    pass
+    """The node answered with a JSON-RPC error (e.g. not a token mint). Rotating won't help."""
+
+
+class RPCUnavailable(Exception):
+    """No configured endpoint gave a usable answer (rate limits, outages, bad keys). Never contains a URL."""
 
 
 class SolanaRPC:
-    def __init__(self, url: str, client: httpx.AsyncClient | None = None) -> None:
-        self.url = url
+    """JSON-RPC client over one or more endpoints (SOLANA_RPC_URL may be a comma-separated list).
+
+    Requests rotate across endpoints; a rate-limited or failing one is rested and the next is tried. A JSON-RPC
+    error is the node's real answer and is returned as-is, not retried.
+    """
+
+    def __init__(self, url: str | list[str], client: httpx.AsyncClient | None = None) -> None:
+        urls = parse_list(url)
+        if not urls:
+            raise ValueError("no Solana RPC URL configured")
+        self.ring = KeyRing(urls, cooldown_s=30)
+        self.ring.kind = "RPC endpoint"
         self._client = client or httpx.AsyncClient(timeout=30)
 
+    @property
+    def url(self) -> str:
+        return self.ring.items[0]
+
     async def _call(self, method: str, params: list) -> dict | list | int | str | None:
-        r = await self._client.post(self.url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-        r.raise_for_status()
-        data = r.json()
-        if "error" in data:
-            raise RPCError(f"{method}: {data['error']}")
-        return data["result"]
+        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        problems: list[str] = []
+        for url in self.ring.order():
+            name = self.ring.label(url)
+            try:
+                r = await self._client.post(url, json=payload)
+            except httpx.HTTPError as e:
+                self.ring.fail(url)
+                problems.append(f"{name}: {type(e).__name__}")
+                continue
+            if r.status_code == 429 or r.status_code >= 500:
+                self.ring.fail(url, retry_after(r.headers, 30 if r.status_code == 429 else 15))
+                problems.append(f"{name}: HTTP {r.status_code}")
+                continue
+            if r.status_code in (401, 403):
+                self.ring.fail(url, 600)  # bad or exhausted key: rest it longer
+                problems.append(f"{name}: HTTP {r.status_code} (key rejected)")
+                continue
+            if r.status_code != 200:
+                self.ring.fail(url)
+                problems.append(f"{name}: HTTP {r.status_code}")
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                self.ring.fail(url)
+                problems.append(f"{name}: invalid response")
+                continue
+            self.ring.ok(url)
+            if "error" in data:
+                raise RPCError(f"{method}: {data['error']}")
+            return data["result"]
+        raise RPCUnavailable(f"{method} failed on every RPC endpoint ({'; '.join(problems)})")
 
     async def get_balance(self, address: str) -> int:
         res = await self._call("getBalance", [address, {"commitment": "confirmed"}])
@@ -301,3 +347,14 @@ async def sign_versioned(
         else:
             raise SigningError(f"no signer available for required signer {k}")
     return bytes(VersionedTransaction.populate(msg, sigs))
+
+
+_shared: dict[tuple[str, ...], SolanaRPC] = {}
+
+
+def shared_rpc(url: str) -> SolanaRPC:
+    """One client per configured endpoint list, so rotation and rest periods persist across requests."""
+    key = tuple(parse_list(url))
+    if key not in _shared:
+        _shared[key] = SolanaRPC(list(key))
+    return _shared[key]

@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .chains.base import AdapterError
-from .chains.solana import RPCError
+from .chains.solana import RPCError, RPCUnavailable, shared_rpc
+from .chains.evm import EVM_CHAINS, EvmRPCUnavailable
+from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
@@ -46,6 +48,14 @@ def create_app() -> FastAPI:
     async def _rpc_err(_: Request, exc: RPCError):
         return _upstream(502, f"solana rpc error: {str(exc)[:200]}")
 
+    @app.exception_handler(RPCUnavailable)
+    async def _rpc_down(_: Request, exc: RPCUnavailable):
+        return _upstream(502, f"Solana RPC unavailable: {str(exc)[:300]}")
+
+    @app.exception_handler(EvmRPCUnavailable)
+    async def _evm_down(_: Request, exc: EvmRPCUnavailable):
+        return _upstream(502, f"EVM RPC unavailable: {str(exc)[:300]}")
+
     @app.exception_handler(AdapterError)
     async def _adapter_err(_: Request, exc: AdapterError):
         return _upstream(502, f"launchpad error: {str(exc)[:200]}")
@@ -56,7 +66,14 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"ok": True, "env": s.env, "signer": s.signer}
+        try:
+            rpc = shared_rpc(s.solana_rpc_url).ring.summary()
+        except ValueError:
+            rpc = {"count": 0, "resting": 0}
+        return {"ok": True, "env": s.env, "signer": s.signer, "rpc_endpoints": rpc["count"], "rpc_resting": rpc["resting"],
+                "bags_keys": len(parse_list(s.bags_api_key)),
+                "evm_rpc": {n: {"endpoints": len(parse_list(getattr(s, f"evm_rpc_{n}", ""))) or 0,
+                                "public_fallback": not parse_list(getattr(s, f"evm_rpc_{n}", ""))} for n in EVM_CHAINS}}
 
     return app
 

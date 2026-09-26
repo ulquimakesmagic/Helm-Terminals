@@ -21,6 +21,7 @@ import time
 import httpx
 
 from .base import AdapterError, BuiltTx, ClaimRequest, CreateRequest, TradeRequest
+from ..keyring import KeyRing, parse_list, retry_after
 from .solana import LAMPORTS_PER_SOL, SolanaRPC, decode_tx
 
 WSOL = "So11111111111111111111111111111111111111112"
@@ -41,7 +42,7 @@ class BagsAdapter:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.api_url = api_url.rstrip("/")
-        self.api_key = api_key
+        self.keys = KeyRing(parse_list(api_key), cooldown_s=60)  # BAGS_API_KEY may list several keys
         self.rpc = rpc
         self.partner_wallet = partner_wallet
         self.partner_config = partner_config
@@ -61,19 +62,39 @@ class BagsAdapter:
     # --- HTTP -----------------------------------------------------------------------------------
 
     async def _call(self, method: str, path: str, **kw) -> object:
-        headers = {"x-api-key": self.api_key, **kw.pop("headers", {})}
-        try:
-            r = await self._client.request(method, f"{self.api_url}{path}", headers=headers, **kw)
-        except httpx.HTTPError as e:
-            raise AdapterError(f"Bags API unreachable: {e}") from e
-        try:
-            data = r.json()
-        except ValueError:
-            raise AdapterError(f"Bags API {r.status_code}: {r.text[:200]}")
-        if r.status_code != 200 or not data.get("success"):
-            msg = data.get("error") or data.get("response") or r.text[:200]
-            raise AdapterError(f"Bags API {r.status_code}: {msg}")
-        return data["response"]
+        """Call the Bags API, rotating keys: a rate-limited or rejected key is rested and the next one is tried."""
+        if not self.keys:
+            raise AdapterError("Bags API key is not configured")
+        extra_headers = kw.pop("headers", {})
+        problems: list[str] = []
+        for key in self.keys.order():
+            name = self.keys.label(key)
+            try:
+                r = await self._client.request(method, f"{self.api_url}{path}",
+                                               headers={"x-api-key": key, **extra_headers}, **kw)
+            except httpx.HTTPError as e:
+                self.keys.fail(key, 15)
+                problems.append(f"{name}: {type(e).__name__}")
+                continue
+            if r.status_code == 429 or r.status_code >= 500:
+                self.keys.fail(key, retry_after(r.headers, 60 if r.status_code == 429 else 15))
+                problems.append(f"{name}: HTTP {r.status_code}")
+                continue
+            if r.status_code in (401, 403):
+                self.keys.fail(key, 600)
+                problems.append(f"{name}: HTTP {r.status_code} (key rejected)")
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                raise AdapterError(f"Bags API {r.status_code}: {r.text[:200]}")
+            if r.status_code != 200 or not data.get("success"):
+                # A real answer about this request (bad input etc.): another key won't change it.
+                msg = data.get("error") or data.get("response") or r.text[:200]
+                raise AdapterError(f"Bags API {r.status_code}: {msg}")
+            self.keys.ok(key)
+            return data["response"]
+        raise AdapterError("Bags API unavailable on every key (" + "; ".join(problems) + ")")
 
     # --- pair tokens --------------------------------------------------------------------------
 

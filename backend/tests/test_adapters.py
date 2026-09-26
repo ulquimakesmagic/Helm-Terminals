@@ -155,7 +155,7 @@ async def test_bags_claim_returns_every_claim_transaction_in_order():
 async def test_bags_api_errors_become_adapter_errors():
     a = BagsAdapter(api_key="k", api_url="https://bags.test/api/v1",
                     client=client_for(lambda r: httpx.Response(401, json={"success": False, "error": "bad key"})))
-    with pytest.raises(AdapterError, match="bad key"):
+    with pytest.raises(AdapterError, match="key rejected"):
         await a.build_buy_tx(TradeRequest("M", str(DEV), "buy", 0.1, True))
 
 
@@ -210,3 +210,71 @@ async def test_bags_pair_launch_claims_point_to_bags():
     a = BagsAdapter(api_key="k", client=client_for(lambda r: httpx.Response(500)))
     with pytest.raises(AdapterError, match="bags.fm"):
         await a.build_claim_fees_tx(ClaimRequest(wallet_pubkey=str(DEV), mint="M", options={"quote": {"mint": "Q", "symbol": "TSLAx"}}))
+
+
+# --- key and endpoint rotation -------------------------------------------------------------------
+
+
+async def test_rpc_rotates_past_rate_limited_endpoint_and_never_leaks_urls():
+    from app.chains.solana import RPCError, RPCUnavailable, SolanaRPC
+
+    hits = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        hits.append(req.url.host)
+        if req.url.host == "a.test":
+            return httpx.Response(429, headers={"retry-after": "5"})
+        if req.url.host == "b.test":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {"value": 7}})
+        return httpx.Response(500)
+
+    rpc = SolanaRPC("https://a.test/?api-key=SECRET1, https://b.test/?api-key=SECRET2", client=client_for(handler))
+    assert await rpc.get_balance(str(DEV)) == 7
+    hits.clear()
+    assert await rpc.get_balance(str(DEV)) == 7
+    assert hits == ["b.test"]  # a.test is resting after its 429
+
+    def all_down(req):
+        return httpx.Response(503)
+
+    down = SolanaRPC(["https://x.test/?api-key=SECRET3", "https://y.test/?api-key=SECRET4"], client=client_for(all_down))
+    with pytest.raises(RPCUnavailable) as e:
+        await down.get_balance(str(DEV))
+    assert "SECRET" not in str(e.value) and "x.test" not in str(e.value) and "RPC endpoint 1 of 2" in str(e.value)
+
+    def node_error(req):
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "error": {"code": -32602, "message": "not a mint"}})
+
+    calls = []
+    answer = SolanaRPC(["https://p.test", "https://q.test"], client=client_for(lambda r: calls.append(1) or node_error(r)))
+    with pytest.raises(RPCError):
+        await answer.get_token_supply(str(DEV))
+    assert len(calls) == 1  # a real answer from the node isn't retried elsewhere
+
+
+async def test_bags_rotates_keys_and_rests_rejected_ones():
+    used = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        key = req.headers["x-api-key"]
+        used.append(key)
+        if key == "k1":
+            return httpx.Response(429)
+        if key == "k2":
+            return httpx.Response(401, json={"success": False, "error": "revoked"})
+        return httpx.Response(200, json={"success": True, "response": {"tokens": []}})
+
+    a = BagsAdapter(api_key="k1,k2 , k3", api_url="https://bags.test/api/v1", client=client_for(handler))
+    assert await a.supported_quotes() == []
+    assert set(used) == {"k1", "k2", "k3"} and used[-1] == "k3"
+    a._quotes = None
+    used.clear()
+    await a.supported_quotes()
+    assert used == ["k3"]  # k1 rate-limited and k2 rejected are both resting
+
+
+def test_parse_list_handles_commas_newlines_and_duplicates():
+    from app.keyring import parse_list
+
+    assert parse_list(" a, b\nc,,a ") == ["a", "b", "c"]
+    assert parse_list("") == [] and parse_list(None) == []

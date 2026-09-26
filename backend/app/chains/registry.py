@@ -5,7 +5,7 @@ from .bags import BagsAdapter
 from .base import LaunchpadAdapter
 from .letsbonk import LetsBonkAdapter
 from .pumpfun import PumpFunAdapter
-from .solana import SolanaRPC
+from .solana import shared_rpc
 
 
 def _pumpfun() -> LaunchpadAdapter:
@@ -20,7 +20,7 @@ def _letsbonk() -> LaunchpadAdapter:
 
 def _bags() -> LaunchpadAdapter:
     s = get_settings()
-    return BagsAdapter(api_key=s.bags_api_key, api_url=s.bags_api_url, rpc=SolanaRPC(s.solana_rpc_url),
+    return BagsAdapter(api_key=s.bags_api_key, api_url=s.bags_api_url, rpc=shared_rpc(s.solana_rpc_url),
                        partner_wallet=s.bags_partner_wallet, partner_config=s.bags_partner_config)
 
 

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
 from ..chains.registry import IMPLEMENTED, get_adapter, list_launchpads, needs_setup
 from ..chains.solana import (
-    LAMPORTS_PER_SOL, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
+    LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
     token_transfer_checked_ix,
 )
 from ..config import get_settings
@@ -185,8 +185,14 @@ async def import_token(body: ImportBody, user: User = Depends(current_user), db:
         raise HTTPException(400, "invalid solana mint")
     try:
         await rpc.get_token_supply(body.mint)
-    except Exception:
-        raise HTTPException(404, "token not found on chain")
+    except RPCError as e:
+        # The node answered: the address exists but isn't a token mint, or doesn't exist at all.
+        raise HTTPException(404, f"that address isn't a token mint on Solana mainnet ({str(e)[:120]})")
+    except Exception as e:
+        # The node didn't answer properly (rate limit, blocked, bad URL): not the user's fault.
+        detail = str(e)[:200] if isinstance(e, RPCUnavailable) else type(e).__name__  # never echo URLs or keys
+        raise HTTPException(502, f"couldn't reach the Solana RPC to check this token ({detail}). "
+                                 "Check SOLANA_RPC_URL on the server; the public endpoint often blocks cloud hosts.")
     name, symbol = body.mint[:6], "TKN"
     try:
         meta = ((await rpc.get_asset(body.mint)).get("content") or {}).get("metadata") or {}

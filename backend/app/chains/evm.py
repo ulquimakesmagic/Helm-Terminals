@@ -1,0 +1,197 @@
+"""EVM JSON-RPC client for Base, BNB Chain, Ethereum and Robinhood Chain.
+
+Each chain takes one or more RPC URLs (comma-separated, e.g. several Alchemy/QuickNode/Infura keys). Requests
+rotate across them with the same rules as the Solana client: a rate-limited, failing or key-rejected endpoint is
+rested and the next one is used; a JSON-RPC error is the node's real answer and is not retried.
+
+Safety: before an endpoint is used for the first time, its chain ID is checked. A URL that points at the wrong
+chain (an easy copy-paste mistake) is refused for an hour, so Helm never reads balances or sends transactions
+on the wrong network. Errors name endpoints by position only; URLs (which often embed API keys) never appear.
+"""
+
+import httpx
+
+from ..keyring import KeyRing, parse_list, retry_after
+
+# chain id, native coin, and a public fallback RPC used when no URL is configured (fine for testing only)
+EVM_CHAINS: dict[str, dict] = {
+    "base": {"chain_id": 8453, "native": "ETH", "name": "Base", "public_rpc": "https://mainnet.base.org"},
+    "bsc": {"chain_id": 56, "native": "BNB", "name": "BNB Chain", "public_rpc": "https://bsc-dataseed.bnbchain.org"},
+    "ethereum": {"chain_id": 1, "native": "ETH", "name": "Ethereum", "public_rpc": "https://ethereum-rpc.publicnode.com"},
+    "robinhood": {"chain_id": 4663, "native": "ETH", "name": "Robinhood Chain",
+                  "public_rpc": "https://rpc.mainnet.chain.robinhood.com"},
+}
+WEI = 10**18
+
+
+class EvmRPCError(Exception):
+    """The node answered with a JSON-RPC error (e.g. execution reverted)."""
+
+
+class EvmRPCUnavailable(Exception):
+    """No endpoint for this chain gave a usable answer. Never contains a URL."""
+
+
+def _hex(n: int) -> str:
+    return hex(n)
+
+
+def _pad_address(addr: str) -> str:
+    return addr.lower().removeprefix("0x").rjust(64, "0")
+
+
+def _decode_string(data: str) -> str:
+    """ABI-decode a `string` return value (also tolerates old bytes32-style tokens)."""
+    raw = bytes.fromhex(data.removeprefix("0x"))
+    if len(raw) == 32:
+        return raw.rstrip(b"\x00").decode("utf-8", "replace")
+    if len(raw) < 64:
+        return ""
+    length = int.from_bytes(raw[32:64], "big")
+    return raw[64 : 64 + length].decode("utf-8", "replace")
+
+
+class EvmRPC:
+    def __init__(self, network: str, urls: str | list[str], client: httpx.AsyncClient | None = None) -> None:
+        if network not in EVM_CHAINS:
+            raise ValueError(f"unknown EVM network {network}")
+        self.network = network
+        self.chain_id = EVM_CHAINS[network]["chain_id"]
+        items = parse_list(urls) or [EVM_CHAINS[network]["public_rpc"]]
+        self.ring = KeyRing(items, cooldown_s=30)
+        self.ring.kind = f"{EVM_CHAINS[network]['name']} RPC endpoint"
+        self._client = client or httpx.AsyncClient(timeout=30)
+        self._verified: set[str] = set()
+        self.using_public_fallback = not parse_list(urls)
+
+    async def _post(self, url: str, method: str, params: list) -> httpx.Response:
+        return await self._client.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+
+    async def _verify(self, url: str) -> str | None:
+        """Return a problem description if this endpoint isn't the chain it's configured for."""
+        r = await self._post(url, "eth_chainId", [])
+        if r.status_code != 200:
+            return f"HTTP {r.status_code}"
+        got = int(r.json().get("result", "0x0"), 16)
+        if got != self.chain_id:
+            return f"wrong chain (id {got}, expected {self.chain_id})"
+        self._verified.add(url)
+        return None
+
+    async def call(self, method: str, params: list | None = None):
+        params = params or []
+        problems: list[str] = []
+        for url in self.ring.order():
+            name = self.ring.label(url)
+            try:
+                if url not in self._verified:
+                    bad = await self._verify(url)
+                    if bad:
+                        self.ring.fail(url, 3600 if "wrong chain" in bad else 30)
+                        problems.append(f"{name}: {bad}")
+                        continue
+                r = await self._post(url, method, params)
+            except (httpx.HTTPError, ValueError) as e:
+                self.ring.fail(url)
+                problems.append(f"{name}: {type(e).__name__}")
+                continue
+            if r.status_code == 429 or r.status_code >= 500:
+                self.ring.fail(url, retry_after(r.headers, 30 if r.status_code == 429 else 15))
+                problems.append(f"{name}: HTTP {r.status_code}")
+                continue
+            if r.status_code in (401, 403):
+                self.ring.fail(url, 600)
+                problems.append(f"{name}: HTTP {r.status_code} (key rejected)")
+                continue
+            if r.status_code != 200:
+                self.ring.fail(url)
+                problems.append(f"{name}: HTTP {r.status_code}")
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                self.ring.fail(url)
+                problems.append(f"{name}: invalid response")
+                continue
+            err = data.get("error")
+            if err and (err.get("code") in (-32005, 429) or "rate" in str(err.get("message", "")).lower()):
+                self.ring.fail(url, 30)  # some providers signal rate limits inside a 200 response
+                problems.append(f"{name}: rate limited")
+                continue
+            self.ring.ok(url)
+            if err:
+                raise EvmRPCError(f"{method}: {err.get('message', err)}")
+            return data.get("result")
+        raise EvmRPCUnavailable(f"{method} failed on every {EVM_CHAINS[self.network]['name']} RPC endpoint "
+                                f"({'; '.join(problems)})")
+
+    # --- reads ------------------------------------------------------------------------------
+
+    async def get_chain_id(self) -> int:
+        return int(await self.call("eth_chainId"), 16)
+
+    async def get_balance(self, address: str) -> int:
+        """Native balance in wei."""
+        return int(await self.call("eth_getBalance", [address, "latest"]), 16)
+
+    async def block_number(self) -> int:
+        return int(await self.call("eth_blockNumber"), 16)
+
+    async def eth_call(self, to: str, data: str, sender: str | None = None) -> str:
+        tx = {"to": to, "data": data, **({"from": sender} if sender else {})}
+        return await self.call("eth_call", [tx, "latest"])
+
+    async def erc20_balance(self, token: str, owner: str) -> int:
+        return int(await self.eth_call(token, "0x70a08231" + _pad_address(owner)) or "0x0", 16)
+
+    async def erc20_meta(self, token: str) -> dict:
+        """name, symbol, decimals and total supply of an ERC-20 token."""
+        name = _decode_string(await self.eth_call(token, "0x06fdde03"))
+        symbol = _decode_string(await self.eth_call(token, "0x95d89b41"))
+        decimals = int(await self.eth_call(token, "0x313ce567") or "0x0", 16)
+        supply = int(await self.eth_call(token, "0x18160ddd") or "0x0", 16)
+        return {"name": name, "symbol": symbol, "decimals": decimals, "total_supply": supply}
+
+    async def get_code(self, address: str) -> str:
+        return await self.call("eth_getCode", [address, "latest"])
+
+    # --- sending (used by EVM launchpad adapters) ----------------------------------------------
+
+    async def nonce(self, address: str) -> int:
+        return int(await self.call("eth_getTransactionCount", [address, "pending"]), 16)
+
+    async def gas_price(self) -> int:
+        return int(await self.call("eth_gasPrice"), 16)
+
+    async def max_priority_fee(self) -> int:
+        try:
+            return int(await self.call("eth_maxPriorityFeePerGas"), 16)
+        except EvmRPCError:
+            return 0
+
+    async def estimate_gas(self, tx: dict) -> int:
+        return int(await self.call("eth_estimateGas", [tx]), 16)
+
+    async def send_raw(self, raw_hex: str) -> str:
+        return await self.call("eth_sendRawTransaction", [raw_hex])
+
+    async def receipt(self, tx_hash: str) -> dict | None:
+        return await self.call("eth_getTransactionReceipt", [tx_hash])
+
+
+_shared: dict[tuple[str, tuple[str, ...]], EvmRPC] = {}
+
+
+def evm_rpc_urls(network: str) -> str:
+    from ..config import get_settings
+
+    return getattr(get_settings(), f"evm_rpc_{network}", "") or ""
+
+
+def shared_evm(network: str) -> EvmRPC:
+    """One client per chain and URL list, so rotation state and chain-ID checks persist across requests."""
+    urls = evm_rpc_urls(network)
+    key = (network, tuple(parse_list(urls)))
+    if key not in _shared:
+        _shared[key] = EvmRPC(network, urls)
+    return _shared[key]

@@ -13,6 +13,7 @@ from ..deps import (
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single
 from ..services.preflight import build_preflight
+from ..chains.evm import EVM_CHAINS, WEI, shared_evm
 from ..signing import get_signer
 
 router = APIRouter(tags=["wallets"])
@@ -23,7 +24,9 @@ def _wallet_out(w: Wallet, balance: int | None = None) -> dict:
     out = {"id": w.id, "network": w.network, "address": w.address, "kind": w.kind, "label": w.label,
            "folder_id": w.folder_id}
     if balance is not None:
-        out["balance_sol"] = balance / LAMPORTS_PER_SOL
+        native = balance / (LAMPORTS_PER_SOL if w.network == "solana" else WEI)
+        out["balance"] = native  # in the chain's own coin: SOL, ETH or BNB
+        out["balance_sol"] = native  # kept for older clients; same value
     return out  # signer_ref is never returned
 
 
@@ -47,11 +50,14 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
     out = []
     for w in rows:
         bal = None
-        if with_balances and w.network == "solana":
+        if with_balances:
             try:
-                bal = await rpc.get_balance(w.address)
+                if w.network == "solana":
+                    bal = await rpc.get_balance(w.address)
+                elif w.network in EVM_CHAINS:
+                    bal = await shared_evm(w.network).get_balance(w.address)
             except Exception:
-                bal = None
+                bal = None  # one chain being down shouldn't hide the rest
         out.append(_wallet_out(w, bal))
     return out
 
