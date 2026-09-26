@@ -55,6 +55,8 @@ class BuiltTx:
     # Non-essential clean-up sent after the main transaction confirms (e.g. deactivating a lookup table).
     # Failures here are recorded but never fail the action.
     post: list[bytes] = field(default_factory=list)
+    # Send the signed main transaction through the launchpad's own endpoint instead of our RPC (Jupiter Studio).
+    submit_via: "Callable[[bytes], Awaitable[None]] | None" = None
 
 
 class LaunchpadAdapter(Protocol):

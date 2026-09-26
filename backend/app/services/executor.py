@@ -56,16 +56,29 @@ class Executor:
         return EvmSender(rpc, self.signer, poll_s=0 if network in self.evm_rpcs else 1.5)
 
     async def submit(
-        self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None
+        self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None
     ) -> SubmitResult:
+        """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
+        endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
+        transaction is still tracked on-chain by its fee payer's signature."""
         try:
-            signed = await sign_versioned(raw, self.signer, refs, extra or [])
+            signed = await sign_versioned(raw, self.signer, refs, extra or [], allow_missing=submit_via is not None)
         except SigningError as e:
             return SubmitResult(None, "failed", f"signing: {e}")
-        sim_err = await self.rpc.simulate(signed)
+        sim_err = (await self.rpc.simulate(signed) if submit_via is None
+                   else await self.rpc.simulate(signed, sig_verify=False))
         if sim_err:
             return SubmitResult(None, "failed", f"simulation failed: {sim_err}")
-        sig = await self.rpc.send(signed)
+        if submit_via is not None:
+            from solders.transaction import VersionedTransaction
+
+            sig = str(VersionedTransaction.from_bytes(signed).signatures[0])
+            try:
+                await submit_via(signed)
+            except AdapterError as e:
+                return SubmitResult(None, "failed", str(e))
+        else:
+            sig = await self.rpc.send(signed)
         status, err = await self.rpc.confirm(sig, timeout_s=self.confirm_timeout_s)
         return SubmitResult(sig, status, err)
 
@@ -227,11 +240,12 @@ async def run_single(
     raw: bytes,
     refs: dict[str, str],
     extra: list[Keypair] | None = None,
+    submit_via=None,
 ) -> SubmitResult:
     job.status = "submitted"
     await db.commit()
     before = await ex.rpc.get_balance(wallet.address) if wallet else None
-    res = await ex.submit(raw, refs, extra)
+    res = await ex.submit(raw, refs, extra, submit_via=submit_via) if submit_via else await ex.submit(raw, refs, extra)
     delta = None
     if res.status == "confirmed" and wallet is not None and before is not None:
         delta = await ex.rpc.get_balance(wallet.address) - before
@@ -264,7 +278,7 @@ async def run_built(
             await db.commit()
             return res
     await db.commit()
-    res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers)
+    res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers, built.submit_via)
     if res.status == "confirmed":
         for raw in built.post:
             cleanup = await ex.submit(raw, refs)

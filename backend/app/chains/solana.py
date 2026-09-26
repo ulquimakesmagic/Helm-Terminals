@@ -128,11 +128,11 @@ class SolanaRPC:
         """DAS getAsset (Helius and compatible RPCs)."""
         return await self._call("getAsset", {"id": mint})  # type: ignore[return-value,arg-type]
 
-    async def simulate(self, tx_bytes: bytes) -> str | None:
+    async def simulate(self, tx_bytes: bytes, sig_verify: bool = True) -> str | None:
         b64 = base64.b64encode(tx_bytes).decode()
         res = await self._call(
             "simulateTransaction",
-            [b64, {"encoding": "base64", "sigVerify": True, "commitment": "confirmed"}],
+            [b64, {"encoding": "base64", "sigVerify": sig_verify, "commitment": "confirmed"}],
         )
         err = res["value"]["err"]  # type: ignore[index]
         return None if err is None else str(err)
@@ -323,8 +323,10 @@ async def sign_versioned(
     signer: Signer,
     refs: dict[str, str],
     extra: Sequence[Keypair] = (),
+    allow_missing: bool = False,
 ) -> bytes:
-    """Fill every required signature slot.
+    """Fill every required signature slot. With `allow_missing`, slots nobody here can sign stay empty (for
+    launchpads that add their own signature when they submit).
 
     `refs` maps a base58 address to a signer_ref (a wallet the user controls through the Signer).
     `extra` are ephemeral keypairs held by the app for this transaction only (e.g. a new token mint).
@@ -344,6 +346,8 @@ async def sign_versioned(
             sigs.append(Signature.from_bytes(await signer.sign_message(refs[k], msg_bytes)))
         elif i < len(existing) and existing[i] != Signature.default():
             sigs.append(existing[i])  # already signed by the launchpad (e.g. a mint key it generated)
+        elif allow_missing and i > 0:  # the fee payer (slot 0) must always be ours
+            sigs.append(Signature.default())
         else:
             raise SigningError(f"no signer available for required signer {k}")
     return bytes(VersionedTransaction.populate(msg, sigs))

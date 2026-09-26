@@ -6,6 +6,7 @@ from .evm import shared_evm
 from .flap import FlapAdapter
 from .clanker import ClankerAdapter
 from .fourmeme import FourMemeAdapter
+from .meteora_dbc import MeteoraDbcAdapter
 from .pons import PonsAdapter
 from .uniswap_v2 import UniswapV2Adapter
 from .base import LaunchpadAdapter
@@ -51,6 +52,9 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                "pons": lambda: PonsAdapter(shared_evm("robinhood")),
                "uniswap-v2": lambda: UniswapV2Adapter(shared_evm("ethereum")),
                "four-meme": lambda: FourMemeAdapter(shared_evm("bsc")),
+               "meteora-dbc": lambda: MeteoraDbcAdapter(get_settings().jupiter_api_key,
+                                                        shared_rpc(get_settings().solana_rpc_url),
+                                                        get_settings().jupiter_api_url),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood")}
 
 
@@ -62,11 +66,13 @@ def needs_setup(launchpad_id: str) -> str | None:
     """Why an implemented launchpad can't be used on this server yet, or None if it can."""
     if launchpad_id == "bags" and not get_settings().bags_api_key:
         return "Bags needs an API key (BAGS_API_KEY) on the server"
+    if launchpad_id == "meteora-dbc" and not get_settings().jupiter_api_key:
+        return "Meteora DBC launches go through Jupiter Studio, which needs a Jupiter API key (JUPITER_API_KEY)"
     return None
 
 # Roadmap from the spec (section 8). Shown in the UI as "planned" so the scope is visible, not hidden.
 PLANNED = [
-    ("meteora-dbc", "solana"), ("printr", "solana"),
+    ("printr", "solana"),
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("bankr", "base"),
 ]

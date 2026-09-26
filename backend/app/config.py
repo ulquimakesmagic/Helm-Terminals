@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     evm_rpc_robinhood: str = ""
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"
+    # Jupiter API key(s) (free at https://developers.jup.ag/portal), comma-separated to rotate. Enables Meteora DBC
+    # launches through Jupiter Studio. Without one, Meteora DBC shows as "needs setup".
+    jupiter_api_key: str = ""
+    jupiter_api_url: str = "https://api.jup.ag"
     # DEX trading on EVM chains (graduated launchpad tokens, Uniswap V2 launches) goes through KyberSwap's aggregator.
     kyber_api_url: str = "https://aggregator-api.kyberswap.com"
     kyber_client_id: str = "HelmTerminals"

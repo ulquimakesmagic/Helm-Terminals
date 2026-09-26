@@ -306,10 +306,14 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
     if (reason := needs_setup(l.launchpad)):
         warnings.append(reason)
+    if hasattr(adapter, "deploy_warnings"):
+        warnings += adapter.deploy_warnings(l.dev_buy_sol, dict(l.launchpad_params or {}))
     summary = {
         "launch_id": l.id, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "platform_fee": "none on deploy",
     }
+    if hasattr(adapter, "deploy_notes"):
+        summary.update(adapter.deploy_notes(dict(l.launchpad_params or {})))
     quote = (l.launchpad_params or {}).get("quote")
     if l.launchpad == "bags" and quote:
         s = get_settings()

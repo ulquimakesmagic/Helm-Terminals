@@ -18,6 +18,7 @@ function optLabel(key: string, o: string | number): string {
   if (key === "tax_rate_pct") return o === 0 ? "No tax (standard token)" : `${o}% tax on buys and sells`;
   if (key === "creator_tax_pct") return o === 0 ? "No creator tax" : `${o}% creator tax on trades`;
   if (key === "lp_share_pct") return o === 100 ? "100% of supply into the pool" : `${o}% into the pool, ${100 - +o}% kept`;
+  if (key === "dbc_quote") return o === "SOL" ? "SOL (100 → 400 SOL market cap)" : "USDC ($16k → $69k market cap)";
   if (key === "lp_tokens") return o === "burn" ? "Burn LP tokens (lock liquidity for good)" : "Keep LP tokens (can remove liquidity)";
   return String(o);
 }

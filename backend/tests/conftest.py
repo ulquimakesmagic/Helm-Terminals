@@ -56,7 +56,7 @@ class FakeRPC:
     async def get_asset(self, mint):
         return {"content": {"metadata": {"name": "Cloned", "symbol": "CLN", "description": "d"}}}
 
-    async def simulate(self, tx):
+    async def simulate(self, tx, sig_verify=True):
         return self.sim_error
 
     async def simulate_balance_after(self, tx, address):
