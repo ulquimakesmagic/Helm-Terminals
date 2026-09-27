@@ -683,8 +683,8 @@ async def launch_market(launch_id: str, pool_address: str | None = None,
     l = await _owned_launch(db, user, launch_id)
     if l.status != "live" or not l.mint_address:
         return {"status": "pending", "reason": "Market data appears after the token is live and an eligible pool is indexed.",
-                "source": "CoinGecko API (on-chain data powered by GeckoTerminal)",
-                "source_url": "https://www.coingecko.com/en/api", "updated_at": None, "stale": False,
+                "source": "GeckoTerminal Public API",
+                "source_url": "https://www.geckoterminal.com", "updated_at": None, "stale": False,
                 "pairs": [], "selected_pool": None}
     return await get_market_snapshot(l.network, l.mint_address, pool_address)
 
@@ -697,8 +697,8 @@ async def launch_market_ohlcv(launch_id: str, pool_address: str, timeframe: str 
     if l.status != "live" or not l.mint_address:
         return {"status": "pending", "reason": "The token must be live before a market chart is available.",
                 "timeframe": timeframe, "candles": [], "updated_at": None, "stale": False,
-                "source": "CoinGecko API (on-chain data powered by GeckoTerminal)",
-                "source_url": "https://www.coingecko.com/en/api"}
+                "source": "GeckoTerminal Public API",
+                "source_url": "https://www.geckoterminal.com"}
     return await get_pool_ohlcv(l.network, l.mint_address, pool_address, timeframe)
 
 

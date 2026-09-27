@@ -1,29 +1,26 @@
 # Launch workspace market data
 
-The workspace market view uses the CoinGecko API's on-chain DEX endpoints, powered by GeckoTerminal. Helm does not call or embed DEX Screener. Its documented pair API exposes current pair metrics but does not document a candle endpoint, and its published API terms restrict building a product whose primary purpose directly competes with DEX Screener. Helm therefore uses CoinGecko's documented token-pool lookup and pool OHLCV endpoints instead.
+The workspace market view reads third-party DEX market data from the GeckoTerminal Public API. Helm does not use DEX Screener: its documented pair API has no documented OHLCV endpoint, and its API terms restrict products whose primary purpose competes directly with DEX Screener.
 
-## Provider access and attribution
+## Provider access, limits, and attribution
 
-The CoinGecko Onchain API requires an API key. Configure the key only on the backend:
+The backend defaults to `https://api.geckoterminal.com/api/v2`; no API key is required. `GECKOTERMINAL_API_URL` is an optional backend-only override for the public API base URL. The frontend never calls the provider directly and no provider key should be placed in a `VITE_` variable.
 
-```text
-COINGECKO_API_KEY=<licensed CoinGecko API key>
-```
+The public API is in beta and may change. Its current endpoint documentation describes a variable limit of approximately 10 requests per minute; an older official FAQ states 30 requests per minute, so Helm should budget conservatively and handle rate-limit responses. Provider endpoints are cached for about one minute. Helm caches token-pool and OHLCV responses for five minutes, caches network/DEX coverage for twelve hours, and the browser refreshes no more often than every two minutes. The UI shows the time Helm last fetched the market data. There is no SLA for the public API.
 
-The backend defaults to `https://pro-api.coingecko.com/api/v3/onchain`; `COINGECKO_ONCHAIN_API_URL` can override that base URL for an approved compatible endpoint. Do not put the key in a `VITE_` variable, browser code, a checked-in file, or logs. With no key, the market view remains explicitly unavailable. Helm production use requires a CoinGecko plan whose license covers this commercial product and the on-chain endpoints. The UI includes the required “Data provided by CoinGecko” attribution link and names GeckoTerminal as the on-chain data source.
-
-The provider documents its public GeckoTerminal API as beta, with a low and variable rate limit. Helm uses the licensed CoinGecko Onchain API instead, keeps token-pool and OHLCV responses in a short in-process cache, and refreshes the browser view no more often than every two minutes. Current upstream data may still be delayed or unavailable.
+The UI attributes market data to GeckoTerminal and links to its site. The API remains informational: its output never authorizes or feeds trade quotes or transaction execution. Before operating a commercial, user-facing product on the public API, review the current [GeckoTerminal API terms](https://www.geckoterminal.com/terms-conditions) and confirm the permitted use for Helm. Public, no-cost access is not an uptime commitment or an automatic commercial redistribution license.
 
 ## Endpoints used
 
-- `GET /onchain/networks` confirms the provider's current network IDs; `GET /onchain/networks/{network}/dexes` confirms DEX coverage for each chain.
-- `GET /onchain/networks/{network}/tokens/{token_address}/pools` resolves pools using the Helm network and exact launch token address.
-- `GET /onchain/networks/{network}/pools/{pool_address}/ohlcv/{timeframe}` retrieves documented OHLCV candles for the selected pool and exact token address.
+- `GET /networks` checks whether the provider currently lists the mapped network.
+- `GET /networks/{network}/dexes` checks whether the provider reports DEX coverage on that network.
+- `GET /networks/{network}/tokens/{token_address}/pools` resolves pools using Helm's network and exact token address.
+- `GET /networks/{network}/pools/{pool_address}/ohlcv/{timeframe}` retrieves documented OHLCV candles for the selected pool and exact token address.
 
 The four chart ranges map to documented intervals: 1H uses 1-minute candles; 24H uses 5-minute candles; 7D uses hourly candles; 30D uses 4-hour candles. No synthetic candles are generated.
 
 ## Chain mapping and boundaries
 
-Helm currently maps Solana to `solana`, Base (8453) to `base`, BNB Chain (56) to `bsc`, Ethereum (1) to `eth`, and Robinhood Chain (4663) to `robinhood`. CoinGecko's on-chain API identifies networks with provider slugs rather than numeric EVM chain IDs. Helm first checks its canonical EVM chain ID mapping, then confirms the provider slug appears in the provider's network index and that at least one DEX is listed for it. The provider network resource does not expose a numeric EVM chain ID, so this integration does not claim a provider-side numeric chain-ID check. If a slug or DEX coverage is absent, or token lookup returns no matching token address, the UI reports coverage unavailable or no indexed pool.
+Helm maps Solana to `solana`, Base (8453) to `base`, BNB Chain (56) to `bsc`, Ethereum (1) to `eth`, and Robinhood Chain (4663) to `robinhood`. GeckoTerminal identifies networks with provider slugs rather than numeric EVM chain IDs. Helm first checks its canonical EVM chain-ID mapping, then confirms the provider slug appears in the provider's network index and that at least one DEX is listed for it. The provider network resource does not expose a numeric EVM chain ID, so this integration does not claim a provider-side numeric chain-ID check. If a slug or DEX coverage is absent, or token lookup returns no matching token address, the UI reports coverage unavailable or no indexed pool.
 
-Third-party market data is informational. It does not modify or authorize Helm wallet balances, supply transparency, transaction history, quotes, or transaction execution. FDV and market cap are displayed only when separately returned by the provider; one is never calculated from the other.
+Third-party market data is informational and separate from Helm wallet balances, supply transparency, transaction history, quotes, and confirmations. FDV and market cap are displayed only when separately returned by the provider; one is never calculated from the other.

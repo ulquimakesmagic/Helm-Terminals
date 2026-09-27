@@ -1,4 +1,4 @@
-"""Read-only, licensed on-chain market data for live launch workspaces.
+"""Read-only, public on-chain market data for live launch workspaces.
 
 All lookups are keyed by Helm's canonical network and the launch's exact token address. This module is
 intentionally not imported by trade quote or execution services.
@@ -17,16 +17,15 @@ import httpx
 from ..chains.evm import EVM_CHAINS
 from ..config import get_settings
 
-SOURCE = "CoinGecko API (on-chain data powered by GeckoTerminal)"
-SOURCE_URL = "https://www.coingecko.com/en/api"
+SOURCE = "GeckoTerminal Public API"
+SOURCE_URL = "https://www.geckoterminal.com"
 GECKOTERMINAL_URL = "https://www.geckoterminal.com"
-CACHE_TTL_SECONDS = 60
+CACHE_TTL_SECONDS = 5 * 60
 STALE_TTL_SECONDS = 15 * 60
 NETWORK_CACHE_TTL_SECONDS = 12 * 60 * 60
 
-# CoinGecko's Onchain API uses provider network IDs, not EVM chain IDs. Keep the numeric EVM chain IDs
-# beside those IDs so Helm's mapping is explicit and testable; the provider's /networks endpoint confirms
-# whether each provider ID is currently available. The Pro API does not return numeric EVM chain IDs.
+# GeckoTerminal uses provider network IDs, not EVM chain IDs. Keep the numeric EVM chain IDs beside those
+# IDs so Helm's mapping is explicit and testable; the provider's /networks endpoint confirms availability.
 NETWORKS: dict[str, dict[str, Any]] = {
     "solana": {"provider_id": "solana", "chain_id": None, "native": "SOL"},
     "base": {"provider_id": "base", "chain_id": 8453, "native": "ETH"},
@@ -215,7 +214,7 @@ def clear_market_cache() -> None:
 async def _get_json(path: str, *, cache_key: tuple, ttl: int = CACHE_TTL_SECONDS,
                     client: httpx.AsyncClient | None = None, params: dict | None = None) -> tuple[dict, str, bool]:
     settings = get_settings()
-    base_url = settings.coingecko_onchain_api_url.rstrip("/")
+    base_url = settings.geckoterminal_api_url.rstrip("/")
     key = (base_url, *cache_key)
     lock = _cache_locks.setdefault(key, asyncio.Lock())
     async with lock:
@@ -224,7 +223,8 @@ async def _get_json(path: str, *, cache_key: tuple, ttl: int = CACHE_TTL_SECONDS
         if entry and now - entry.fetched_at < ttl:
             return entry.value, datetime.fromtimestamp(time.time() - (now - entry.fetched_at), timezone.utc).isoformat().replace("+00:00", "Z"), False
 
-        headers = {"x-cg-pro-api-key": settings.coingecko_api_key, "accept": "application/json"}
+        # The public API needs no key. Pin a documented response version to reduce beta API surprises.
+        headers = {"accept": "application/json;version=20230203"}
         owns_client = client is None
         http = client or httpx.AsyncClient(timeout=10)
         try:
@@ -263,12 +263,6 @@ def _disabled_or_unsupported(network: str) -> dict | None:
     if error:
         return {"status": "unsupported", "reason": error, "source": SOURCE, "source_url": SOURCE_URL,
                 "updated_at": None, "stale": False, "pairs": [], "selected_pool": None}
-    settings = get_settings()
-    if not settings.coingecko_api_key:
-        return {"status": "unavailable", "reason": "Licensed market-data access is not configured.",
-                "source": SOURCE, "source_url": SOURCE_URL, "network_id": config["provider_id"],
-                "chain_id": config["chain_id"], "updated_at": None, "stale": False, "pairs": [],
-                "selected_pool": None}
     return None
 
 

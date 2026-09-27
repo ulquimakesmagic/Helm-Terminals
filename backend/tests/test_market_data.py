@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from app.chains.evm import EVM_CHAINS
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.services import market_data as market
 from .conftest import signup
 
@@ -52,10 +52,9 @@ def _provider_payload():
             "included": first["included"] + second["included"] + ticker_collision["included"]}
 
 
-def _settings_key(monkeypatch):
+def _settings_url(monkeypatch):
     settings = get_settings()
-    monkeypatch.setattr(settings, "coingecko_api_key", "test-market-key")
-    monkeypatch.setattr(settings, "coingecko_onchain_api_url", "https://provider.test/api/v3/onchain")
+    monkeypatch.setattr(settings, "geckoterminal_api_url", "https://provider.test/api/v2")
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +62,10 @@ def clear_cache():
     market.clear_market_cache()
     yield
     market.clear_market_cache()
+
+
+def test_default_provider_is_the_keyless_public_api():
+    assert Settings(_env_file=None).geckoterminal_api_url == "https://api.geckoterminal.com/api/v2"
 
 
 def test_network_mappings_match_helm_evm_chain_ids():
@@ -75,11 +78,13 @@ def test_network_mappings_match_helm_evm_chain_ids():
 
 @pytest.mark.asyncio
 async def test_snapshot_resolves_by_network_and_exact_token_and_selects_deepest_pool(monkeypatch):
-    _settings_key(monkeypatch)
+    _settings_url(monkeypatch)
     seen = []
 
     def handler(req):
         seen.append(req.url)
+        assert req.headers.get("accept") == "application/json;version=20230203"
+        assert req.headers.get("x-cg-pro-api-key") is None
         if req.url.path.endswith("/networks"):
             return httpx.Response(200, json={"data": [{"id": "solana"}, {"id": "base"}]})
         if req.url.path.endswith("/dexes"):
@@ -110,7 +115,7 @@ async def test_snapshot_resolves_by_network_and_exact_token_and_selects_deepest_
 
 @pytest.mark.asyncio
 async def test_empty_pool_index_and_provider_coverage_are_distinguished(monkeypatch):
-    _settings_key(monkeypatch)
+    _settings_url(monkeypatch)
 
     def empty_handler(req):
         if req.url.path.endswith("/networks"):
@@ -146,7 +151,7 @@ async def test_empty_pool_index_and_provider_coverage_are_distinguished(monkeypa
 
 @pytest.mark.asyncio
 async def test_documented_ohlcv_uses_pool_and_exact_token_address(monkeypatch):
-    _settings_key(monkeypatch)
+    _settings_url(monkeypatch)
     seen = []
 
     def handler(req):
@@ -187,14 +192,23 @@ async def test_documented_ohlcv_uses_pool_and_exact_token_address(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_provider_rate_limit_is_unavailable_and_keyless_access_is_disabled(monkeypatch):
-    settings = get_settings()
-    monkeypatch.setattr(settings, "coingecko_api_key", "")
-    keyless = await market.get_market_snapshot("base", "0x" + "12" * 20)
-    assert keyless["status"] == "unavailable"
-    assert "licensed" in keyless["reason"].lower()
+async def test_public_api_needs_no_key_and_rate_limit_is_graceful(monkeypatch):
+    _settings_url(monkeypatch)
 
-    _settings_key(monkeypatch)
+    def public_handler(req):
+        assert req.headers.get("accept") == "application/json;version=20230203"
+        assert req.headers.get("x-cg-pro-api-key") is None
+        if req.url.path.endswith("/networks"):
+            return httpx.Response(200, json={"data": [{"id": "base"}]})
+        if req.url.path.endswith("/dexes"):
+            return httpx.Response(200, json={"data": [{"id": "base_uniswap_v3"}]})
+        return httpx.Response(200, json={"data": [], "included": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(public_handler)) as client:
+        keyless = await market.get_market_snapshot("base", "0x" + "12" * 20, client=client)
+    assert keyless["status"] == "no_pool"
+
+    market.clear_market_cache()
 
     def handler(req):
         if req.url.path.endswith("/networks"):
@@ -211,7 +225,7 @@ async def test_provider_rate_limit_is_unavailable_and_keyless_access_is_disabled
 
 @pytest.mark.asyncio
 async def test_cached_snapshot_is_marked_stale_during_provider_failure(monkeypatch):
-    _settings_key(monkeypatch)
+    _settings_url(monkeypatch)
 
     def good_handler(req):
         if req.url.path.endswith("/networks"):

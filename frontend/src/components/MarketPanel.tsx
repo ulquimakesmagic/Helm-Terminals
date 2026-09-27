@@ -168,7 +168,7 @@ export default function MarketPanel({ launchId, network, mint, live, symbol, nat
         <div>
           <div className="market-kicker"><Icon name="trend" size={14} />MARKET VIEW</div>
           <h2 id="market-title">Token market</h2>
-          <p className="muted small">Indicative third-party market data · CoinGecko API, powered by GeckoTerminal.</p>
+          <p className="muted small">Indicative third-party market data · GeckoTerminal public API.</p>
         </div>
         <button type="button" className="btn sm secondary" onClick={() => setRefreshKey((n) => n + 1)} disabled={loading}>
           {loading ? <Spinner /> : <Icon name="refresh" size={13} />}Refresh market
@@ -244,8 +244,7 @@ export default function MarketPanel({ launchId, network, mint, live, symbol, nat
             <span><i className="market-data-dot" />Indicative market data · not an execution quote</span>
             <span>FDV and market cap are separate provider fields</span>
             <span className="row nowrap" style={{ gap: 9 }}>
-              <a href={market?.source_url || "https://www.coingecko.com/en/api"} target="_blank" rel="noreferrer">Data provided by CoinGecko <Icon name="ext" size={11} /></a>
-              <a href="https://www.geckoterminal.com/" target="_blank" rel="noreferrer">On-chain via GeckoTerminal <Icon name="ext" size={11} /></a>
+              <a href={market?.source_url || "https://www.geckoterminal.com/"} target="_blank" rel="noreferrer">Market data by GeckoTerminal <Icon name="ext" size={11} /></a>
             </span>
           </div>
           <p className="market-disclaimer">Market data is separate from Helm wallet balances, supply transparency, transaction history, and trade previews. It is never used to authorize or execute trades.</p>
