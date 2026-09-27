@@ -7,6 +7,7 @@ Stablecoins are counted at $1.
 
 import asyncio
 import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -57,15 +58,18 @@ async def _stable_decimals(ex, network: str, token: str) -> int:
 
 async def _chain(ex, network: str, wallets: list[Wallet], sem: asyncio.Semaphore) -> dict:
     stable_symbol, token = STABLES[network]
+    # status: "ok" (every wallet read), "partial" (some read), "unavailable" (none read) or "no_wallets".
+    # Amounts only count wallets that were read, so a zero under "unavailable" means "unknown", not "empty".
     out = {"network": network, "name": chain_name(network), "coin": native_coin(network), "wallets": len(wallets),
            "native": 0.0, "stable_symbol": stable_symbol, "stable": 0.0, "error": None,
-           "top": []}
+           "status": "no_wallets" if not wallets else "ok", "wallets_read": 0, "top": []}
     if not wallets:
         return out
     try:
         dec = await _stable_decimals(ex, network, token)
     except Exception as e:
-        out["error"] = f"{type(e).__name__}"
+        out["error"] = f"Couldn't read {stable_symbol} on {chain_name(network)} ({type(e).__name__})"
+        out["status"] = "unavailable"
         return out
     rows = []
 
@@ -82,8 +86,10 @@ async def _chain(ex, network: str, wallets: list[Wallet], sem: asyncio.Semaphore
 
     results = await asyncio.gather(*(one(w) for w in wallets), return_exceptions=True)
     failed = sum(1 for r in results if isinstance(r, Exception))
+    out["wallets_read"] = len(wallets) - failed
     if failed:
         out["error"] = f"{failed} of {len(wallets)} wallet balances couldn't be read"
+        out["status"] = "unavailable" if failed == len(wallets) else "partial"
     out["native"] = sum(n for _, n, _ in rows)
     out["stable"] = sum(s for _, _, s in rows)
     rows.sort(key=lambda r: -(r[2] + r[1]))
@@ -110,7 +116,10 @@ async def build_portfolio(ex, user_id: str, wallets: list[Wallet], fresh: bool =
         stable_total += c["stable"]
         native_usd += c["native_usd"] or 0
         total += c["usd"]
+    incomplete = [c["network"] for c in chains if c["status"] in ("partial", "unavailable")]
     out = {"chains": chains, "totals": {"usd": total, "stable_usd": stable_total, "native_usd": native_usd},
+           "complete": not incomplete, "incomplete_chains": incomplete,
+           "checked_at": datetime.now(timezone.utc).isoformat(),
            "prices": prices, "priced": bool(prices), "wallets": len(managed),
            "note": "Coins and dollar stablecoins in your managed wallets. Launch tokens are not valued here."}
     _cache[user_id] = (time.monotonic(), out)

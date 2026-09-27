@@ -34,3 +34,39 @@ async def test_portfolio_sums_coins_and_stables_on_every_chain(client, fake_rpc,
         assert "by_chain" in d
     finally:
         app.dependency_overrides.pop(get_executor, None)
+
+
+async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, monkeypatch):
+    async def prices(client=None):
+        return {"SOL": 150.0, "ETH": 3000.0, "BNB": 600.0}
+
+    monkeypatch.setattr(pf_mod, "coin_prices", prices)
+    base, eth = TokenNode("base"), TokenNode("ethereum")
+    bad: set = set()
+
+    async def flaky(token, owner, _orig=base.erc20_balance):
+        if owner.lower() in bad:
+            raise RuntimeError("timeout")
+        return await _orig(token, owner)
+
+    async def broken_meta(token):
+        raise RuntimeError("down")
+
+    base.erc20_balance = flaky
+    eth.erc20_meta = broken_meta
+    pf_mod._decimals.clear()
+    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base, "ethereum": eth})
+    try:
+        h = await signup(client)
+        b1, b2 = (await client.post("/wallets", json={"network": "base", "count": 2}, headers=h)).json()
+        await client.post("/wallets", json={"network": "ethereum", "count": 1}, headers=h)
+        bad.add(b2["address"].lower())
+        p = (await client.get("/portfolio?fresh=true", headers=h)).json()
+        chains = {c["network"]: c for c in p["chains"]}
+        assert chains["base"]["status"] == "partial" and chains["base"]["wallets_read"] == 1
+        assert chains["ethereum"]["status"] == "unavailable" and "Couldn't read" in chains["ethereum"]["error"]
+        assert chains["solana"]["status"] == "no_wallets"
+        assert p["complete"] is False and set(p["incomplete_chains"]) == {"base", "ethereum"} and p["checked_at"]
+    finally:
+        app.dependency_overrides.pop(get_executor, None)
+        pf_mod._decimals.clear()

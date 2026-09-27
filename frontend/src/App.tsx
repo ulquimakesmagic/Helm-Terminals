@@ -29,7 +29,7 @@ const TITLES: Record<string, string> = {
 function Shell({ children }: { children: React.ReactNode }) {
   const nav = useNavigate();
   const loc = useLocation();
-  const { me, health, tg } = useSession();
+  const { me, health, healthChecked, tg } = useSession();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [loc.pathname]);
 
@@ -56,7 +56,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="side-foot">
-          {me && !me.totp_enabled && (
+          {me && !me.totp_enabled && seg !== "" && seg !== "settings" && (
             <div className="nudge">
               <strong><Icon name="shield" size={14} />2FA is off</strong>
               Withdrawals and token sends stay blocked until you turn it on.
@@ -96,9 +96,9 @@ function Shell({ children }: { children: React.ReactNode }) {
               <span className="dot" style={{ background: "var(--warn)" }} />Test signer<span className="hide-sm"> · no real funds</span>
             </span>
           )}
-          <span className="pill hide-sm" role="status">
-            <span className="dot" style={{ background: health ? "var(--good)" : "var(--bad)" }} />
-            {health ? "API online" : "API offline"}
+          <span className={`pill ${health || !healthChecked ? "hide-sm" : ""}`} role="status">
+            <span className="dot" style={{ background: health ? "var(--good)" : healthChecked ? "var(--bad)" : "var(--muted)" }} />
+            {health ? "API online" : healthChecked ? "API unreachable" : "Checking API"}
           </span>
         </header>
         <main className="content" id="main" tabIndex={-1}>{children}</main>

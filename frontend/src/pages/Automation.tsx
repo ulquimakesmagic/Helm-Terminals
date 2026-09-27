@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short } from "../api";
-import { Address, Callout, Card, Empty, Field, Icon, Loading, Metrics, PageHeader, Seg, StatusBadge, useToast } from "../components/ui";
+import { Address, Callout, Card, Empty, Field, Icon, Loading, LoadError, Metrics, PageHeader, Seg, StatusBadge, useToast } from "../components/ui";
 import { chainOf, native } from "../chains";
 
 interface Launch { id: string; name: string; symbol: string; network: string; status: string; mint_address: string | null }
@@ -163,7 +163,7 @@ export default function Automation() {
 
       <div className="grid automation-layout">
         <Card title="Build a trade schedule" icon="zap" sub={`${launch ? chainOf(launch.network).name : "Any chain"} · one launch · selected managed wallets`}>
-          {!launches ? <Loading rows={4} /> : (
+          {error && !launches ? <LoadError what="Launches" error={error} onRetry={() => void load()} /> : !launches ? <Loading rows={4} /> : (
             <div className="automation-form">
               <div className="automation-direction" role="group" aria-label="Schedule direction">
                 <button type="button" className={`btn sm ${side === "buy" ? "" : "secondary"}`} aria-pressed={side === "buy"}
@@ -281,7 +281,7 @@ export default function Automation() {
             <Seg value={planView} onChange={setPlanView} options={[["active", <>Active <span className="muted num">{activePlans.length}</span></>], ["history", <>History <span className="muted num">{(automations?.length ?? 0) - activePlans.length}</span></>]]} />
             <button className="btn icon sm secondary" onClick={() => void load()} aria-label="Refresh plans"><Icon name="refresh" size={13} /></button>
           </>}>
-            {!automations ? <Loading rows={3} /> : shownPlans.length === 0 ? (
+            {error && !automations ? <LoadError what="Plans" error={error} onRetry={() => void load()} /> : !automations ? <Loading rows={3} /> : shownPlans.length === 0 ? (
               <Empty icon="calendar" title={planView === "active" ? "No active plans" : "No finished plans yet"} text={planView === "active" ? "Build a schedule on the left. Active plans and their next order time show here." : "Completed, cancelled and stopped plans are kept here for reference."} />
             ) : (
               <div className="automation-plan-list">

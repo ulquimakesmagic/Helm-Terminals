@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { CHAIN_ORDER, CHAINS, ChainId, chainOf } from "../chains";
-import { Address, Card, ChainDot, Empty, Icon, Loading, PageHeader, SearchInput, Seg, useToast } from "../components/ui";
+import { CHAIN_ORDER, CHAINS, ChainId } from "../chains";
+import { ChainLabel } from "../components/marks";
+import { Address, Card, Empty, Icon, Loading, LoadError, PageHeader, SearchInput, Seg, useToast } from "../components/ui";
 
 interface Item { id: string; address: string; label: string; bookmarked: boolean; network: string }
 
@@ -14,7 +15,8 @@ export default function Tracker() {
   const [filter, setFilter] = useState<"all" | "starred">("all");
   const [q, setQ] = useState("");
 
-  const load = () => api<Item[]>("/tracker").then(setItems).catch((e) => { toast("bad", errMsg(e)); setItems((x) => x ?? []); });
+  const [loadErr, setLoadErr] = useState("");
+  const load = () => api<Item[]>("/tracker").then((r) => { setItems(r); setLoadErr(""); }).catch((e) => setLoadErr(errMsg(e)));
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const act = (p: Promise<unknown>, ok?: string) => p.then(() => { if (ok) toast("good", ok); return load(); }).catch((e) => toast("bad", errMsg(e)));
 
@@ -54,15 +56,15 @@ export default function Tracker() {
           <Seg value={filter} onChange={setFilter} options={[["all", "All"], ["starred", <><Icon name="star" size={12} /> Starred</>]]} />
           <div style={{ width: 220 }}><SearchInput placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         </>}>
-        {!items ? <Loading /> : items.length === 0 ? (
+        {loadErr && !items ? <LoadError what="Tracked addresses" error={loadErr} onRetry={load} /> : !items ? <Loading /> : items.length === 0 ? (
           <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana or EVM address (Base, BNB Chain, Robinhood Chain, Ethereum) above to start watching it." />
         ) : shown.length === 0 ? <Empty icon="search" title="No matches" /> : (
-          <div className="table-wrap"><table>
+          <div className="table-wrap"><table className="rtable">
             <thead><tr><th style={{ width: 44 }}><span className="sr-only">Starred</span></th><th>Label</th><th>Chain</th><th>Address</th><th className="r"><span className="sr-only">Remove</span></th></tr></thead>
             <tbody>
               {shown.map((i) => (
-                <tr key={i.id}>
-                  <td>
+                <tr key={i.id} className="has-cb">
+                  <td className="cb">
                     <button className={`icon-btn ${i.bookmarked ? "on" : ""}`} title={i.bookmarked ? "Unstar" : "Star"} aria-label={i.bookmarked ? `Unstar ${i.label || i.address}` : `Star ${i.label || i.address}`} aria-pressed={i.bookmarked}
                       onClick={() => act(api(`/tracker/${i.id}?bookmarked=${!i.bookmarked}`, { method: "PATCH", body: {} }))}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill={i.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
@@ -71,8 +73,8 @@ export default function Tracker() {
                     </button>
                   </td>
                   <td style={{ fontWeight: 550 }}>{i.label || <span className="muted">Unlabelled</span>}</td>
-                  <td><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={i.network} size={16} /><span className="hide-sm text-2">{chainOf(i.network).name}</span></span></td>
-                  <td><Address address={i.address} chars={6} network={i.network} /></td>
+                  <td data-label="Chain"><ChainLabel network={i.network} size={16} /></td>
+                  <td data-label="Address"><Address address={i.address} chars={6} network={i.network} /></td>
                   <td className="r">
                     <button className="icon-btn" title="Remove" aria-label={`Stop tracking ${i.label || i.address}`} onClick={() => act(api(`/tracker/${i.id}`, { method: "DELETE" }), "Removed")}><Icon name="trash" size={14} /></button>
                   </td>

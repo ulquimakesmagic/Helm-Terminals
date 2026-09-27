@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, errMsg, fmt } from "../api";
-import { Callout, Card, CopyButton, Empty, Icon, Loading, Spinner, useToast } from "./ui";
+import { Callout, Card, CopyButton, Icon, Loading, Spinner, useToast } from "./ui";
 
 export interface ReferralSummary {
   codes: { code: string; uses: number; max_uses: number }[];
@@ -45,7 +45,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
             ].map(([l, v, u], i) => (
               <div key={l} style={{ padding: "12px 18px", borderLeft: i ? "1px solid var(--line)" : undefined }}>
                 <div className="muted small">{l}</div>
-                <div className="num" style={{ fontWeight: 650, fontSize: 17 }}>{v} <span className="muted small">{u}</span></div>
+                <div className="num" style={{ font: "500 17px var(--mono)" }}>{v} <span className="muted small">{u}</span></div>
               </div>
             ))}
           </div>
@@ -63,7 +63,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
                   <Callout tone="warn">Add a payout address so your share is paid on-chain with each trade. Until then it's recorded as owed.</Callout>
                 )}
                 <div className="row nowrap">
-                  <input className="mono" placeholder="Your Solana wallet address" value={addr} onChange={(e) => setAddr(e.target.value)} />
+                  <input className="mono" aria-label="Referral payout address (Solana)" placeholder="Your Solana wallet address" value={addr} onChange={(e) => setAddr(e.target.value)} />
                   <button className="btn" disabled={addr.trim().length < 32 || busy} onClick={savePayout}>{busy && <Spinner />}Save</button>
                 </div>
               </>
@@ -71,7 +71,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
           </div>
 
           {data.codes.length === 0 ? (
-            <Empty icon="gift" title="No referral codes yet" text="Create a code and share your invite link." />
+            <p className="muted small" style={{ padding: "12px 18px" }}>No referral codes yet. Use <b className="text-2">New code</b> to create an invite link.</p>
           ) : (
             <div className="feed">
               {data.codes.map((c) => (

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
 import { LaunchpadDirectory } from "../components/Launchpads";
+import { ChainLabel, PadLabel } from "../components/marks";
 import {
-  Address, Callout, Card, ChainBadge, ChainDot, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime, useToast,
+  Address, Callout, Card, ChainDot, Empty, Field, Icon, Loading, LoadError, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime,
 } from "../components/ui";
 
 interface QuoteAsset { mint: string; symbol: string; name: string; decimals: number; image: string | null; kind: string; pool: string }
@@ -130,7 +131,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
             <Field label="Ticker" style={{ flex: 1 }}><input value={f.symbol} onChange={set("symbol")} maxLength={10} placeholder="HCAT" className="mono" /></Field>
           </div>
           <div className="row small muted" style={{ gap: 8 }}>
-            Launching on <ChainBadge network={chain.id} /> via <b className="text-2">{padName(f.launchpad)}</b>
+            Launching on <ChainLabel network={chain.id} size={16} /> via <PadLabel pad={f.launchpad} network={chain.id} size={18} />
           </div>
         </div>
       </div>
@@ -233,7 +234,6 @@ function ImportLaunch({ wallets, onClose }: { wallets: W[]; onClose: () => void 
 
 export default function Launches() {
   const nav = useNavigate();
-  const toast = useToast();
   const [launches, setLaunches] = useState<Launch[] | null>(null);
   const [archived, setArchived] = useState<Launch[]>([]);
   const [pads, setPads] = useState<Pad[]>([]);
@@ -243,11 +243,14 @@ export default function Launches() {
   const [chainF, setChainF] = useState<"all" | ChainId>("all");
   const [modal, setModal] = useState<null | "create" | "import">(null);
 
-  useEffect(() => {
+  const [loadErr, setLoadErr] = useState("");
+  const load = useCallback(() => {
+    setLoadErr("");
     Promise.all([api<Launch[]>("/launches"), api<Launch[]>("/launches?status=archived"), api<Pad[]>("/launchpads"), api<W[]>("/wallets")])
       .then(([l, a, p, w]) => { setLaunches(l); setArchived(a); setPads(p); setWallets(w.filter((x) => x.kind === "managed")); })
-      .catch((e) => { toast("bad", errMsg(e)); setLaunches([]); });
-  }, [toast]);
+      .catch((e) => setLoadErr(errMsg(e)));
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const counts = useMemo(() => ({
     all: launches?.length ?? 0,
@@ -287,7 +290,7 @@ export default function Launches() {
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
 
-      {!launches ? <div className="card"><Loading rows={4} /></div> : shown.length === 0 && (q || filter !== "all") ? (
+      {loadErr && !launches ? <div className="card"><LoadError what="Launches" error={loadErr} onRetry={load} /></div> : !launches ? <div className="card"><Loading rows={4} /></div> : shown.length === 0 && (q || filter !== "all") ? (
         <div className="card"><Empty icon="search" title="No launches match" text="Try a different filter or search." /></div>
       ) : (
         <div className="grid g-cards">
@@ -310,8 +313,8 @@ export default function Launches() {
               </div>
               {l.description && <p className="muted small" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{l.description}</p>}
               <div className="meta">
-                <div><span className="k">Chain</span><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={l.network} size={14} />{chainOf(l.network).name}</span></div>
-                <div><span className="k">Launchpad</span>{padName(l.launchpad)}{l.quote && <span className="badge info" style={{ marginLeft: 6 }}>/{l.quote.symbol}</span>}{l.imported && <span className="badge violet" style={{ marginLeft: 6 }}>imported</span>}</div>
+                <div><span className="k">Chain</span><ChainLabel network={l.network} size={16} /></div>
+                <div><span className="k">Launchpad</span><span className="row nowrap" style={{ gap: 6 }}><PadLabel pad={l.launchpad} network={l.network} size={18} />{l.quote && <span className="badge info">/{l.quote.symbol}</span>}{l.imported && <span className="badge violet">imported</span>}</span></div>
                 <div><span className="k">Created</span>{relTime(l.created_at)}</div>
                 <div><span className="k">Token address</span>{l.mint_address ? <Address address={l.mint_address} type="token" network={l.network} /> : <span className="muted">Not deployed</span>}</div>
               </div>

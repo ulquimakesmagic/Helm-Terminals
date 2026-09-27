@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { BASE, short } from "../api";
 import { chainOf, explorerUrl } from "../chains";
+import { ChainMark } from "./marks";
 
 /* ---------------------------------------------------------------- icons */
 const P: Record<string, ReactNode> = {
@@ -147,6 +148,17 @@ export function Metrics({ items, label }: { items: { label: string; value: React
   );
 }
 
+/** A failed load, shown instead of an empty state so a failure never looks like "nothing here". */
+export function LoadError({ what, error, onRetry, busy }: { what: string; error: string; onRetry?: () => void; busy?: boolean }) {
+  return (
+    <div className="load-error" role="alert">
+      <Icon name="xcircle" size={16} className="bad" />
+      <span className="grow"><b>{what} couldn't be loaded.</b> {error}</span>
+      {onRetry && <button type="button" className="btn sm secondary" onClick={onRetry} disabled={busy}>{busy ? <Spinner /> : <Icon name="refresh" size={13} />}Try again</button>}
+    </div>
+  );
+}
+
 export function Empty({ icon = "layers", title, text, action }: { icon?: IconName; title: string; text?: ReactNode; action?: ReactNode }) {
   return (
     <div className="empty">
@@ -163,7 +175,7 @@ export function Callout({ tone = "info", children, icon }: { tone?: "info" | "wa
   return <div className={`callout ${tone}`} role={tone === "err" ? "alert" : undefined}><Icon name={ic} size={16} /><div className="grow">{children}</div></div>;
 }
 
-export const Spinner = () => <span className="spinner" aria-label="Loading" />;
+export const Spinner = () => <span className="spinner" role="status" aria-label="Loading" />;
 
 export function Skeleton({ h = 16, w = "100%", style }: { h?: number; w?: number | string; style?: React.CSSProperties }) {
   return <div className="skel" style={{ height: h, width: w, ...style }} />;
@@ -256,13 +268,9 @@ export function Address({ address, type = "account", chars, network }: { address
 }
 
 /* ---------------------------------------------------------------- chains */
+/** A chain's mark with its name available to assistive tech. Prefer ChainLabel when there's room for the name. */
 export function ChainDot({ network, size = 16 }: { network?: string | null; size?: number }) {
-  const c = chainOf(network);
-  return (
-    <span className="chain-dot" title={c.name} role="img" aria-label={c.name} style={{ width: size, height: size, background: `${c.color}22`, borderColor: `${c.color}66`, color: c.color, fontSize: size * 0.5 }}>
-      {c.name.slice(0, 1)}
-    </span>
-  );
+  return <ChainMark network={network} size={size} label />;
 }
 
 export function ChainBadge({ network, label }: { network?: string | null; label?: string }) {

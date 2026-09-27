@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
-import { chainOf, explorerUrl, padName } from "../chains";
+import { chainOf, explorerUrl } from "../chains";
 import SpendDialog from "../components/SpendDialog";
+import { ChainLabel, PadLabel } from "../components/marks";
 import {
-  Address, Callout, Card, ChainBadge, Empty, Field, Icon, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, UnitInput,
+  Address, Callout, Card, Empty, Field, Icon, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, UnitInput,
   parseDate, relTime, useToast,
 } from "../components/ui";
 
@@ -190,7 +191,7 @@ export default function Workspace() {
               {l.imported && <span className="badge violet">imported</span>}
             </div>
             <div className="row small muted" style={{ gap: 8, marginTop: 4 }}>
-              <ChainBadge network={l.network} /><span>{padName(l.launchpad)}</span>
+              <ChainLabel network={l.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={l.launchpad} network={l.network} size={18} />
               {l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
               {l.mint_address && <><span aria-hidden="true">·</span><Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
             </div>
@@ -255,7 +256,7 @@ export default function Workspace() {
             {ws.wallets.length === 0 ? (
               <Empty icon="wallet" title="No wallets attached" text={`Attach managed ${chain.name} wallets to trade this token and to count the supply you control.`} />
             ) : (
-              <div className="table-wrap"><table>
+              <div className="table-wrap"><table className="rtable">
                 <caption className="sr-only">Wallets attached to this launch</caption>
                 <thead><tr>
                   <th className="cb"><input type="checkbox" checked={allSel} aria-label="Select all wallets" onChange={() => setSelected(allSel ? new Set() : new Set(ws.wallets.map((w: any) => w.id)))} /></th>
@@ -263,17 +264,17 @@ export default function Workspace() {
                 </tr></thead>
                 <tbody>
                   {ws.wallets.map((w: any) => (
-                    <tr key={w.id} className={`clickable ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
+                    <tr key={w.id} className={`clickable has-cb ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
                       <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${w.label || w.address}`} /></td>
-                      <td><div style={{ fontWeight: 550 }}>{w.label || "Untitled"}</div><Address address={w.address} network={l.network} /></td>
+                      <td className="span"><div className="row" style={{ gap: 8 }}><span style={{ fontWeight: 550 }}>{w.label || "Untitled"}</span>{w.role === "dev" && <span className="badge info show-sm">dev</span>}</div><Address address={w.address} network={l.network} /></td>
                       <td className="hide-sm"><span className={`badge cap ${w.role === "dev" ? "info" : ""}`}>{w.role}</span></td>
-                      <td className="r num">{fmt(w.sol, 4)}</td>
-                      <td className="r num" title={fmt(w.tokens, 6)}>{compact(w.tokens)}</td>
+                      <td className="r num" data-label={cur}>{fmt(w.sol, 4)}</td>
+                      <td className="r num" data-label="Tokens" title={fmt(w.tokens, 6)}>{compact(w.tokens)}</td>
                       {supply > 0 && <td className="r num hide-sm muted">{fmt((w.tokens / supply) * 100, 2)}%</td>}
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr><td /><td>Total</td><td className="hide-sm" /><td className="r num">{fmt(totalSol, 4)}</td><td className="r num">{compact(totalTok)}</td>{supply > 0 && <td className="r num hide-sm">{fmt((totalTok / supply) * 100, 2)}%</td>}</tr></tfoot>
+                <tfoot><tr><td className="m-hide" /><td className="span">Total</td><td className="hide-sm" /><td className="r num">{fmt(totalSol, 4)}</td><td className="r num">{compact(totalTok)}</td>{supply > 0 && <td className="r num hide-sm">{fmt((totalTok / supply) * 100, 2)}%</td>}</tr></tfoot>
               </table></div>
             )}
           </Card>
@@ -388,8 +389,8 @@ export default function Workspace() {
                   <td className="muted nowrap mono" style={{ fontSize: 12 }} title={parseDate(t.created_at).toLocaleString()}>{relTime(t.created_at)}</td>
                   <td style={{ textTransform: "capitalize" }}>{t.kind.replace(/_/g, " ")}</td>
                   <td><StatusBadge status={t.status} /></td>
-                  <td className={`r num ${t.sol_delta > 0 ? "good" : t.sol_delta < 0 ? "bad" : "muted"}`}>{t.sol_delta == null ? "—" : signed(t.sol_delta)}</td>
-                  <td className="r mono">{t.signature ? <a href={explorerUrl(l.network, "tx", t.signature)} target="_blank" rel="noreferrer">{short(t.signature)} <Icon name="ext" size={11} /><span className="sr-only"> (opens explorer)</span></a> : <span className="bad small" title={t.error}>{t.error ? "error" : "—"}</span>}</td>
+                  <td data-label={`${cur} change`} className={`r num ${t.sol_delta > 0 ? "good" : t.sol_delta < 0 ? "bad" : "muted"}`}>{t.sol_delta == null ? "—" : signed(t.sol_delta)}</td>
+                  <td className="r mono" data-label="Transaction">{t.signature ? <a href={explorerUrl(l.network, "tx", t.signature)} target="_blank" rel="noreferrer">{short(t.signature)} <Icon name="ext" size={11} /><span className="sr-only"> (opens explorer)</span></a> : <span className="muted small">{t.error ? "not sent" : "—"}</span>}</td>
                 </tr>
               ))}
             </tbody>

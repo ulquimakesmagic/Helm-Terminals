@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { api, errMsg } from "../api";
-import { Callout, Card, CopyButton, Empty, Icon, Loading, PageHeader, Spinner, parseDate, relTime, useToast } from "../components/ui";
+import { Callout, Card, CopyButton, Empty, Icon, Loading, LoadError, PageHeader, Spinner, parseDate, relTime, useToast } from "../components/ui";
 import { useSession } from "../session";
 
 interface S { id: string; ip: string | null; user_agent: string | null; created_at: string; expires_at: string }
@@ -133,7 +133,17 @@ export default function Settings() {
   const toast = useToast();
   const { me } = useSession();
   const [sessions, setSessions] = useState<S[] | null>(null);
-  const load = () => api<S[]>("/auth/sessions").then(setSessions).catch((e) => { toast("bad", errMsg(e)); setSessions([]); });
+  const [sessErr, setSessErr] = useState("");
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const load = () => api<S[]>("/auth/sessions").then((r) => { setSessions(r); setSessErr(""); }).catch((e) => setSessErr(errMsg(e)));
+  const revoke = (id: string) => {
+    setRevoking(id);
+    api(`/auth/sessions/${id}`, { method: "DELETE" })
+      .then(() => { toast("good", "Session revoked"); setConfirmId(null); return load(); })
+      .catch((e) => toast("bad", errMsg(e)))
+      .finally(() => setRevoking(null));
+  };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -155,21 +165,29 @@ export default function Settings() {
         <Telegram />
       </div>
 
-      <Card title="Active sessions" icon="monitor" sub="Revoke any you don't recognise" flush>
-        {!sessions ? <Loading /> : sessions.length === 0 ? <Empty icon="monitor" title="No active sessions" /> : (
-          <div className="table-wrap"><table>
-            <thead><tr><th>Device</th><th className="hide-sm">IP address</th><th>Started</th><th className="hide-sm">Expires</th><th className="r" /></tr></thead>
+      <Card title="Active sessions" icon="monitor" sub={sessions ? `${sessions.length} signed in · revoke any you don't recognise` : "Revoke any you don't recognise"} flush>
+        {sessErr && !sessions ? <LoadError what="Sessions" error={sessErr} onRetry={load} /> : !sessions ? <Loading /> : sessions.length === 0 ? <Empty icon="monitor" title="No active sessions" /> : (
+          <div className="table-wrap"><table className="rtable">
+            <caption className="sr-only">Signed-in sessions</caption>
+            <thead><tr><th>Device</th><th className="hide-sm">IP address</th><th>Started</th><th className="hide-sm">Expires</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.id}>
-                  <td><span className="row nowrap" style={{ gap: 10 }}>
-                    <span className="feed-ic" style={{ width: 28, height: 28 }}><Icon name={s.user_agent === "telegram-bot" ? "telegram" : "monitor"} size={14} /></span>
+                  <td className="span"><span className="row nowrap" style={{ gap: 10 }}>
+                    <span className="feed-ic" aria-hidden="true" style={{ width: 28, height: 28 }}><Icon name={s.user_agent === "telegram-bot" ? "telegram" : "monitor"} size={14} /></span>
                     <span style={{ fontWeight: 500 }}>{device(s.user_agent)}</span>
                   </span></td>
                   <td className="hide-sm mono muted">{s.ip ?? "—"}</td>
-                  <td className="muted" title={parseDate(s.created_at).toLocaleString()}>{relTime(s.created_at)}</td>
+                  <td className="muted" data-label="Started" title={parseDate(s.created_at).toLocaleString()}>{relTime(s.created_at)}</td>
                   <td className="hide-sm muted">{parseDate(s.expires_at).toLocaleDateString()}</td>
-                  <td className="r"><button className="btn sm ghost" onClick={() => api(`/auth/sessions/${s.id}`, { method: "DELETE" }).then(() => { toast("good", "Session revoked"); load(); })}>Revoke</button></td>
+                  <td className="r act">
+                    {confirmId === s.id ? (
+                      <span className="row nowrap" style={{ gap: 6, justifyContent: "flex-end" }}>
+                        <button className="btn sm ghost" onClick={() => setConfirmId(null)} disabled={revoking === s.id}>Keep</button>
+                        <button className="btn sm danger-ghost" onClick={() => revoke(s.id)} disabled={revoking === s.id} aria-label={`Confirm revoking ${device(s.user_agent)} session`}>{revoking === s.id ? <Spinner /> : null}Revoke</button>
+                      </span>
+                    ) : <button className="btn sm ghost" onClick={() => setConfirmId(s.id)} aria-label={`Revoke ${device(s.user_agent)} session started ${relTime(s.created_at)}`}>Revoke…</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

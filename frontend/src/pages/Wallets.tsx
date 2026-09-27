@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
 import Distribute from "../components/Distribute";
 import RouteFunds from "../components/RouteFunds";
+import { ChainLabel } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
 import {
-  Address, Callout, ChainDot, Empty, Field, Icon, Loading, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
+  Address, Callout, ChainDot, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
 interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number }
@@ -217,7 +218,9 @@ export default function Wallets() {
   const [search, setSearch] = useSearchParams();
   const [routeTo, setRouteTo] = useState<string | undefined>();
 
+  const [loadErr, setLoadErr] = useState("");
   const load = async (withBal = balances) => {
+    setLoadErr("");
     if (withBal) setLoadingBal(true);
     try {
       const [w, f, fu] = await Promise.all([
@@ -225,7 +228,7 @@ export default function Wallets() {
       ]);
       setWallets(w); setFolders(f); setFunders(fu);
       if (withBal) { setBalances(true); api("/portfolio?fresh=true").then(setFolio).catch(() => setFolio(null)); }
-    } catch (e) { toast("bad", errMsg(e)); setWallets((x) => x ?? []); }
+    } catch (e) { if (wallets) toast("bad", errMsg(e)); setLoadErr(errMsg(e)); }
     finally { setLoadingBal(false); }
   };
   useEffect(() => { load(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -247,6 +250,7 @@ export default function Wallets() {
       (folderFilter === "all" || (folderFilter === "none" ? !w.folder_id : w.folder_id === folderFilter)) &&
       (!s || w.label.toLowerCase().includes(s) || w.address.toLowerCase().includes(s)));
   }, [all, folderFilter, q, chainF]);
+  const unread = balances ? all.filter((w) => w.kind === "managed" && typeof w.balance_sol !== "number") : [];
   const sel = [...selected];
   const selManaged = sel.filter((id) => managed.some((w) => w.id === id));
   const selNets = [...new Set(selManaged.map((id) => managed.find((w) => w.id === id)?.network ?? "solana"))];
@@ -271,12 +275,22 @@ export default function Wallets() {
         </>} />
 
       <Metrics label="Wallet totals" items={[
-        { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", hint: folio ? (folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
+        { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", tone: folio && folio.complete === false ? "warn" : undefined,
+          hint: folio ? (folio.complete === false ? `at least · ${folio.incomplete_chains.length} chain${folio.incomplete_chains.length === 1 ? "" : "s"} not fully read` : folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
         { label: "Stablecoins", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC, USDG on Robinhood" },
         { label: "Managed", value: wallets ? String(managed.length) : "—", hint: `on ${new Set(managed.map((w) => w.network)).size} chain${new Set(managed.map((w) => w.network)).size === 1 ? "" : "s"}` },
         { label: "Watch-only", value: wallets ? String(all.length - managed.length) : "—", hint: "tracked, can't sign" },
         { label: "Folders", value: String(folders.length), hint: funders.length ? `${funders.length} funder${funders.length === 1 ? "" : "s"}` : "no funders set" },
       ]} />
+
+      {balances && unread.length > 0 && (
+        <Callout tone="warn">
+          <div className="row between" style={{ gap: 10 }}>
+            <span><b>{unread.length} wallet balance{unread.length === 1 ? "" : "s"} couldn't be read</b> ({[...new Set(unread.map((w) => chainOf(w.network).name))].join(", ")}). Those rows say "Unavailable"; they are not zero.</span>
+            <button className="btn sm secondary" onClick={() => load(true)} disabled={loadingBal}>{loadingBal ? <Spinner /> : <Icon name="refresh" size={13} />}Retry</button>
+          </div>
+        </Callout>
+      )}
 
       <div className="card">
         <div className="card-head">
@@ -288,21 +302,24 @@ export default function Wallets() {
               </button>
             ))}
             {folders.length > 0 && <button className={`chip ${folderFilter === "none" ? "on" : ""}`} onClick={() => setFolderFilter("none")}>No folder <span className="num">{all.filter((w) => !w.folder_id).length}</span></button>}
+            {shown.length > 0 && <button className="chip show-sm" aria-pressed={allShownSelected}
+              onClick={() => setSelected(allShownSelected ? new Set() : new Set(shown.map((w) => w.id)))}>{allShownSelected ? "Clear selection" : `Select all ${shown.length}`}</button>}
             <button className="chip" onClick={() => setModal("folders")}><Icon name="folder" size={12} />{folders.length ? "Manage folders" : "New folder"}</button>
           </div>
-          <div className="row nowrap">
-            <select value={chainF} onChange={(e) => setChainF(e.target.value as "all" | ChainId)} style={{ width: 170 }} aria-label="Filter by chain">
+          <div className="row filters" style={{ flex: "1 1 320px", justifyContent: "flex-end" }}>
+            <select value={chainF} onChange={(e) => setChainF(e.target.value as "all" | ChainId)} style={{ flex: "0 1 190px" }} aria-label="Filter by chain">
               <option value="all">All chains ({all.length})</option>
               {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name} ({all.filter((w) => (w.network ?? "solana") === c).length})</option>)}
             </select>
-          <div style={{ width: 240, maxWidth: "100%" }}><SearchInput placeholder="Search label or address" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div style={{ flex: "1 1 200px", maxWidth: 280 }}><SearchInput aria-label="Search wallets" placeholder="Search label or address" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           </div>
         </div>
-        {!wallets ? <Loading rows={5} /> : all.length === 0 ? (
+        {loadErr && !wallets ? <LoadError what="Wallets" error={loadErr} onRetry={() => load(false)} busy={loadingBal} /> : !wallets ? <Loading rows={5} /> : all.length === 0 ? (
           <Empty icon="wallet" title="No wallets yet" text="Create managed wallets to launch and trade from, or add an address to watch."
             action={<button className="btn sm" onClick={() => setModal("create")}><Icon name="plus" size={14} />Add wallets</button>} />
         ) : shown.length === 0 ? <Empty icon="search" title="No wallets match" /> : (
-          <div className="table-wrap"><table>
+          <div className="table-wrap"><table className="rtable">
+            <caption className="sr-only">Your wallets</caption>
             <thead><tr>
               <th className="cb"><input type="checkbox" checked={allShownSelected} aria-label="Select all"
                 onChange={() => setSelected(allShownSelected ? new Set() : new Set(shown.map((w) => w.id)))} /></th>
@@ -312,19 +329,22 @@ export default function Wallets() {
               {shown.map((w) => {
                 const fu = funderOf(w.id);
                 return (
-                  <tr key={w.id} className={`clickable ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
+                  <tr key={w.id} className={`clickable has-cb ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
                     <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${w.label || w.address}`} /></td>
-                    <td><div className="row nowrap" style={{ gap: 8 }}>
+                    <td className="span"><div className="row" style={{ gap: 8 }}>
                       <span style={{ fontWeight: 550 }}>{w.label || "Untitled"}</span>
                       {fu && <span className="badge info">funder{fu.is_default ? " · default" : ""}</span>}
+                      {w.kind !== "managed" && <span className="badge show-sm">watch-only</span>}
                     </div></td>
-                    <td><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={w.network} size={16} /><span className="hide-sm text-2">{chainOf(w.network).name}</span></span></td>
-                    <td><Address address={w.address} network={w.network} /></td>
+                    <td data-label="Chain"><ChainLabel network={w.network} size={16} /></td>
+                    <td data-label="Address"><Address address={w.address} network={w.network} /></td>
                     <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : "watch-only"} /></td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
-                    <td className="r num">{w.balance_sol !== undefined && w.balance_sol !== null ? <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></> : <span className="faint" title={balances ? "Couldn't read this balance" : "Load balances to see"}>—</span>}</td>
+                    <td className="r num" data-label="Balance">{typeof w.balance_sol === "number" ? <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></>
+                      : balances ? <span className="state unavailable" title="This balance couldn't be read. Refresh balances to retry."><Icon name="xcircle" size={12} />Unavailable</span>
+                      : <span className="muted" title="Load balances to see">—<span className="sr-only"> not loaded</span></span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>
-                      {w.kind === "managed" && !fu && <button className="btn sm ghost" onClick={() => makeFunder(w)}>Make funder</button>}
+                      {w.kind === "managed" && !fu && <button className="btn sm ghost row-action" onClick={() => makeFunder(w)} aria-label={`Make ${w.label || w.address} a funder`}>Make funder</button>}
                     </td>
                   </tr>
                 );
