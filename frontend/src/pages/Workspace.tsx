@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import SpendDialog from "../components/SpendDialog";
+import MarketPanel from "../components/MarketPanel";
 import { ChainLabel, PadLabel } from "../components/marks";
 import {
   Address, Callout, Card, Empty, Field, Icon, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, UnitInput,
@@ -241,6 +242,8 @@ export default function Workspace() {
         { label: `${cur} in wallets`, value: fmt(totalSol, 4), unit: cur, hint: "for trades and gas" },
         { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
       ]} />
+
+      <MarketPanel launchId={id!} network={l.network} mint={l.mint_address} live={live} symbol={l.symbol} native={cur} />
 
       <div className="grid g-main">
         <div className="col">

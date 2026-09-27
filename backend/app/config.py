@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     turnkey_api_private_key: str = ""  # P-256 private scalar, hex
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    # Licensed CoinGecko Onchain API (GeckoTerminal data). Leave blank to disable third-party market data.
+    # Market data is informational only and never feeds trade quotes or execution.
+    coingecko_api_key: str = ""
+    coingecko_onchain_api_url: str = "https://pro-api.coingecko.com/api/v3/onchain"
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
     # EVM RPC URLs per chain, each a comma-separated list rotated like SOLANA_RPC_URL. Blank = public endpoint

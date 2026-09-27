@@ -27,6 +27,7 @@ from ..services.auto_fund import plan_funding, run_funding, usd_value
 from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
 from ..services.transparency import compute_transparency
+from ..services.market_data import get_market_snapshot, get_pool_ohlcv
 
 router = APIRouter(tags=["launches"])
 MIN_DEPLOY_BUFFER_SOL = 0.03  # rent for mint/metadata/ATA accounts plus fees
@@ -673,6 +674,32 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
     if evm:
         out["pnl"]["note"] = "Net flow isn't tracked for EVM launches yet. Wallet balances above are live."
     return out
+
+
+@router.get("/launches/{launch_id}/market")
+async def launch_market(launch_id: str, pool_address: str | None = None,
+                        user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Read-only, provider-sourced market data. This route is deliberately separate from trade previews."""
+    l = await _owned_launch(db, user, launch_id)
+    if l.status != "live" or not l.mint_address:
+        return {"status": "pending", "reason": "Market data appears after the token is live and an eligible pool is indexed.",
+                "source": "CoinGecko API (on-chain data powered by GeckoTerminal)",
+                "source_url": "https://www.coingecko.com/en/api", "updated_at": None, "stale": False,
+                "pairs": [], "selected_pool": None}
+    return await get_market_snapshot(l.network, l.mint_address, pool_address)
+
+
+@router.get("/launches/{launch_id}/market/{pool_address}/ohlcv")
+async def launch_market_ohlcv(launch_id: str, pool_address: str, timeframe: str = "24h",
+                              user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Historical OHLCV is resolved by launch chain, exact token address and a verified selected pool."""
+    l = await _owned_launch(db, user, launch_id)
+    if l.status != "live" or not l.mint_address:
+        return {"status": "pending", "reason": "The token must be live before a market chart is available.",
+                "timeframe": timeframe, "candles": [], "updated_at": None, "stale": False,
+                "source": "CoinGecko API (on-chain data powered by GeckoTerminal)",
+                "source_url": "https://www.coingecko.com/en/api"}
+    return await get_pool_ohlcv(l.network, l.mint_address, pool_address, timeframe)
 
 
 @router.get("/jobs/{job_id}")
