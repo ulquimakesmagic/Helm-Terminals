@@ -31,6 +31,7 @@ interface Pair {
 interface PairsRes {
   state: "ok" | "no_pool" | "no_token" | "unsupported" | "error"; pairs: Pair[]; note: string; source?: string;
   fetched_at?: number | null; stale?: boolean; age_s?: number; error?: string; error_kind?: string; explorer_url?: string | null;
+  network?: string; token?: string | null; whose?: "launch" | "source";
 }
 interface CandlesRes {
   state: "ok" | "no_candles" | "unsupported" | "error"; candles: Candle[]; source?: string; fetched_at?: number | null;
@@ -62,12 +63,13 @@ function HeadStat({ label, value, sub, tone, title }: { label: string; value: st
   );
 }
 
-export default function MarketTerminal({ launchId, network, symbol, ticket }: { launchId: string; network: string; symbol: string; ticket?: ReactNode }) {
-  const chain = chainOf(network);
+export default function MarketTerminal({ launchId, network: launchNet, symbol: launchSymbol, ticket }: { launchId: string; network: string; symbol: string; ticket?: ReactNode }) {
   const [res, setRes] = useState<PairsRes | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [pool, setPool] = useState<string>("");
-  const [tf, setTf] = useState<TF>("15m");
+  const [tf, setTfState] = useState<TF>("15m");
+  const tfChosen = useRef(false);
+  const setTf = (v: TF) => { tfChosen.current = true; setTfState(v); };
   const [win, setWin] = useState<Win>("h24");
   const [cs, setCs] = useState<CandlesRes | null>(null);
   const [csBusy, setCsBusy] = useState(false);
@@ -78,7 +80,14 @@ export default function MarketTerminal({ launchId, network, symbol, ticket }: { 
   const loadPairs = useCallback(() => {
     setBusy(true);
     api<PairsRes>(`/launches/${launchId}/market`)
-      .then((r) => { if (!alive.current) return; setRes(r); setLoadErr(""); setPool((p) => r.pairs.some((x) => x.pair_address === p) ? p : r.pairs[0]?.pair_address ?? ""); })
+      .then((r) => {
+        if (!alive.current) return;
+        setRes(r); setLoadErr("");
+        setPool((p) => r.pairs.some((x) => x.pair_address === p) ? p : r.pairs[0]?.pair_address ?? "");
+        // A pool under a day old has only a handful of 15-minute candles; start it on 5-minute ones instead.
+        const born = r.pairs[0]?.pair_created_at;
+        if (!tfChosen.current && born && Date.now() - born < 86_400_000) setTfState("5m");
+      })
       .catch((e) => alive.current && setLoadErr(errMsg(e)))
       .finally(() => alive.current && setBusy(false));
   }, [launchId]);
@@ -101,6 +110,11 @@ export default function MarketTerminal({ launchId, network, symbol, ticket }: { 
   }, [loadPairs, loadCandles]);
 
   const p = res?.pairs.find((x) => x.pair_address === pool) ?? null;
+  // For a copied draft the server charts the token it was copied from, which may be on another chain.
+  const source = res?.whose === "source";
+  const network = res?.network ?? launchNet;
+  const chain = chainOf(network);
+  const symbol = source ? (p?.token_side === "quote" ? p.quote.symbol : p?.base.symbol) ?? launchSymbol : launchSymbol;
   const chartH = typeof window !== "undefined" && window.innerWidth < 640 ? 280 : 380;
   const ours = p?.token_side === "base";
   const refresh = (
@@ -184,6 +198,12 @@ export default function MarketTerminal({ launchId, network, symbol, ticket }: { 
         </div>
       </div>
 
+      {source && res?.token && (
+        <Callout icon="copy">
+          <b>This is the token you copied</b> ({chain.name} · <Address address={res.token} network={network} type="token" chars={6} />). Your relaunch isn't deployed yet;
+          once it is, this terminal switches to your own token's market.
+        </Callout>
+      )}
       {res?.stale && <Callout tone="warn"><b>Showing the last market data received.</b> {res.error}</Callout>}
       {p && !ours && (
         <Callout icon="info">This pool lists ${symbol} as its quote asset. DEX Screener's price, change, FDV and market cap describe {p.base.symbol} there, so they're not shown. Pool liquidity, volume and trade counts still apply.</Callout>

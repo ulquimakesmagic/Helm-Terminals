@@ -9,6 +9,15 @@ export function fmtPrice(v: number | null | undefined): string {
   const a = Math.abs(v);
   if (a >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
   if (a >= 1) return v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  // Tiny prices the way DEX terminals write them: 0.000005232 -> 0.0₅5232 (the subscript counts the zeros).
+  let zeros = -Math.floor(Math.log10(a)) - 1; // zeros between the point and the first significant digit
+  let m = Math.round(a * 10 ** (zeros + 4)); // four significant digits
+  if (m >= 10000) { zeros -= 1; m = Math.round(m / 10); } // 0.000099999 rounds up to 0.0001
+  if (zeros >= 4) {
+    const digits = String(m).replace(/0+$/, "") || "0";
+    const sub = String(zeros).split("").map((d) => "₀₁₂₃₄₅₆₇₈₉"[+d]).join("");
+    return `${v < 0 ? "-" : ""}0.0${sub}${digits}`;
+  }
   return v.toLocaleString(undefined, { maximumSignificantDigits: 4, maximumFractionDigits: 20 });
 }
 
@@ -38,9 +47,13 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
     return () => ro.disconnect();
   }, []);
 
-  const padL = 8, padR = 64, padT = 10, padB = 24, volH = Math.round(height * 0.16), gap = 8;
+  const padL = 8, padT = 10, padB = 24, volH = Math.round(height * 0.16), gap = 8;
   const priceH = height - padT - padB - volH - gap;
   // On narrow screens show only the most recent candles that fit legibly (about 6px each, at least 30).
+  // The price axis is as wide as its longest label, so small prices are never cut off at the edge.
+  const labelW = (t: number) => fmtPrice(t).length * 6.6 + 14;
+  const lo0 = Math.min(...all.map((c) => c.l)), hi0 = Math.max(...all.map((c) => c.h));
+  const padR = Math.max(56, Math.ceil(Math.max(labelW(lo0), labelW(hi0), labelW(all[all.length - 1].c))));
   const fit = Math.max(30, Math.floor((w - padL - padR) / 6));
   const candles = all.length > fit ? all.slice(-fit) : all;
   const n = candles.length;
@@ -49,9 +62,13 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
   const min = lo - span * 0.06, max = hi + span * 0.06;
   const vmax = Math.max(...candles.map((c) => c.v), 0) || 1;
   const plotW = w - padL - padR;
-  const step = plotW / Math.max(1, n);
+  // Room for at least 60 candles (or all that fit), filled from the right like an exchange chart, so a new pool's
+  // first few candles are normal-width bars at the right edge instead of a few huge blocks spread across the chart.
+  const slots = Math.max(n, Math.min(fit, 36));
+  const step = plotW / slots;
+  const lead = slots - n;
   const bw = Math.max(1, Math.min(14, step * 0.64));
-  const x = (i: number) => padL + step * i + step / 2;
+  const x = (i: number) => padL + step * (lead + i) + step / 2;
   const y = (v: number) => padT + (1 - (v - min) / (max - min)) * priceH;
   const volTop = padT + priceH + gap;
   const ticks = Array.from({ length: 5 }, (_, i) => min + ((max - min) * (i + 0.5)) / 5);
@@ -61,7 +78,7 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
   function pick(clientX: number) {
     const r = ref.current!.getBoundingClientRect();
     const px = ((clientX - r.left) / r.width) * w;
-    setHover(Math.max(0, Math.min(n - 1, Math.floor((px - padL) / step))));
+    setHover(Math.max(0, Math.min(n - 1, Math.floor((px - padL) / step) - lead)));
   }
   function onKey(e: KeyboardEvent) {
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -105,7 +122,7 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
         <line x1={padL} x2={w - padR} y1={y(last.c)} y2={y(last.c)} stroke="var(--text-2)" strokeDasharray="2 3" opacity={0.5} />
         <rect x={w - padR + 2} y={y(last.c) - 9} width={padR - 4} height={18} rx={4} fill="var(--panel-3)" stroke="var(--line-3)" />
         <text x={w - padR + 6} y={y(last.c) + 4} className="axis" style={{ fill: "var(--text)" }}>{fmtPrice(last.c)}</text>
-        <text x={padL} y={height - 6} className="axis">{when(candles[0].t, !!daily)}</text>
+        {n > 1 && x(0) < w - padR - 200 && <text x={lead ? x(0) - step / 2 : padL} y={height - 6} className="axis">{when(candles[0].t, !!daily)}</text>}
         <text x={w - padR} y={height - 6} textAnchor="end" className="axis">{when(last.t, !!daily)}</text>
         {hc && <line x1={x(hover!)} x2={x(hover!)} y1={padT} y2={volTop + volH} stroke="var(--line-3)" />}
       </svg>

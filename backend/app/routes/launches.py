@@ -42,8 +42,17 @@ def _launch_out(l: Launch) -> dict:
         "dev_wallet_id": l.dev_wallet_id, "dev_buy_sol": l.dev_buy_sol, "imported": l.imported,
         "has_image": l.image_blob is not None, "created_at": l.created_at.isoformat(),
         "quote": (l.launchpad_params or {}).get("quote"),
+        "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
     }
+
+
+def _cloned_from(l: Launch) -> dict | None:
+    """The token a draft's details were copied from, as {'network', 'address'}, or None."""
+    c = (l.launchpad_params or {}).get("cloned_from")
+    if isinstance(c, dict) and isinstance(c.get("address"), str) and isinstance(c.get("network"), str):
+        return {"network": c["network"], "address": c["address"]}
+    return None
 
 
 async def _owned_launch(db: AsyncSession, user: User, launch_id: str) -> Launch:

@@ -45,7 +45,8 @@ class Providers:
     def handler(self, req: httpx.Request) -> httpx.Response:
         if req.url.host == "api.dexscreener.com":
             self.calls["ds"] += 1
-            assert req.url.path == f"/token-pairs/v1/solana/{TOKEN}"
+            if req.url.path != f"/token-pairs/v1/solana/{TOKEN}":
+                return httpx.Response(200, json=[])
             if self.pairs_status != 200:
                 return httpx.Response(self.pairs_status, json={}, headers={"retry-after": "30"})
             return httpx.Response(200, json=self.pairs)
@@ -166,5 +167,34 @@ async def test_no_pool_unsupported_no_token_and_provider_failures(client, monkey
         m._cache.clear()
         r = (await client.get(f"/launches/{lid}/market", headers=h)).json()
         assert r["state"] == "unsupported"
+    finally:
+        app.dependency_overrides.pop(get_market, None)
+
+
+async def test_copied_draft_shows_the_source_tokens_market_until_deployed(client):
+    prov = Providers()
+    _use(prov)
+    try:
+        h = await signup(client, main=False)
+        async with get_sessionmaker()() as db:
+            uid = (await db.execute(select(User.id))).scalars().first()
+            l = Launch(user_id=uid, name="Copy", symbol="CPY", launchpad="pons", network="robinhood", status="draft",
+                       launchpad_params={"cloned_from": {"network": "solana", "address": TOKEN, "copied": ["name"]}})
+            db.add(l)
+            await db.commit()
+            lid = l.id
+        out = (await client.get(f"/launches/{lid}", headers=h)).json()
+        assert out["cloned_from"] == {"network": "solana", "address": TOKEN}
+        r = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+        assert r["state"] == "ok" and r["whose"] == "source" and r["network"] == "solana" and r["token"] == TOKEN
+        c = (await client.get(f"/launches/{lid}/market/candles?pool=POOLbig&tf=5m", headers=h)).json()
+        assert c["state"] == "ok"
+        # once deployed, the launch's own token takes over
+        async with get_sessionmaker()() as db:
+            l = await db.get(Launch, lid)
+            l.status, l.mint_address = "live", "0x" + "ab" * 20
+            await db.commit()
+        r = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+        assert r["whose"] == "launch" and r["network"] == "robinhood"
     finally:
         app.dependency_overrides.pop(get_market, None)

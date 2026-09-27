@@ -361,6 +361,8 @@ export default function Workspace() {
       ]} />
   );
   const terminal = !!l.mint_address;
+  // A copied draft shows the market of the token it was copied from, above the usual draft layout.
+  const sourceMarket = !l.mint_address && l.status === "draft" && !!l.cloned_from;
 
   return (
     <>
@@ -379,6 +381,7 @@ export default function Workspace() {
               <ChainLabel network={l.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={l.launchpad} network={l.network} size={18} />
               {l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
               {l.mint_address && <><span aria-hidden="true">·</span><Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
+              {!l.mint_address && l.cloned_from && <><span aria-hidden="true">·</span><span>copied from <Address address={l.cloned_from.address} type="token" chars={5} network={l.cloned_from.network} /></span></>}
             </div>
           </div>
         </div>
@@ -437,6 +440,7 @@ export default function Workspace() {
         </>
       ) : (
         <>
+          {sourceMarket && <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} />}
           {position}
           <div className="grid g-main">
             <div className="col">{walletsCard}</div>
