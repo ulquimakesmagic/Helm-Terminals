@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
@@ -24,6 +25,7 @@ from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
 from ..signing.base import SigningError
 
 router = APIRouter(tags=["wallets"])
+log = logging.getLogger(__name__)
 TX_FEE_RESERVE = 10_000  # lamports kept back for fees
 
 
@@ -187,8 +189,14 @@ async def setup_main_wallets(user: User = Depends(current_user), db: AsyncSessio
     at sign-up). Safe to call again."""
     try:
         created = await ensure_main_wallets(db, signer, user.id)
+    except SigningError as e:
+        await db.rollback()
+        log.warning("main wallet setup failed: %s", e)
+        # The signer's message says what went wrong (a Turnkey refusal, say) and never contains key material.
+        raise HTTPException(502, f"couldn't create the main wallet: {e}")
     except Exception as e:
         await db.rollback()
+        log.exception("main wallet setup failed")
         raise HTTPException(502, f"couldn't create the main wallet right now ({type(e).__name__}); try again shortly")
     if created:
         await log_activity(db, user.id, "wallets.main_created", payload={"count": len(created)})

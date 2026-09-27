@@ -10,6 +10,7 @@ against https://docs.turnkey.com before enabling this in production, and configu
 
 import base64
 import json
+import secrets
 import time
 
 import httpx
@@ -30,10 +31,13 @@ class TurnkeySigner:
     ) -> None:
         if not (org_id and api_public_key and api_private_key):
             raise RuntimeError("Turnkey signer needs TURNKEY_ORG_ID, TURNKEY_API_PUBLIC_KEY, TURNKEY_API_PRIVATE_KEY")
-        self.base_url = base_url.rstrip("/")
+        # Values pasted into a dashboard often carry spaces or a 0x prefix; either would break every request.
+        org_id, api_public_key, api_private_key = (v.strip() for v in (org_id, api_public_key, api_private_key))
+        api_public_key = api_public_key.lower().removeprefix("0x")
+        self.base_url = base_url.strip().rstrip("/")
         self.org_id = org_id
         self.api_public_key = api_public_key
-        self._priv = ec.derive_private_key(int(api_private_key, 16), ec.SECP256R1())
+        self._priv = ec.derive_private_key(int(api_private_key.lower().removeprefix("0x"), 16), ec.SECP256R1())
         self._client = client or httpx.AsyncClient(timeout=30)
 
     def stamp(self, body: bytes) -> str:
@@ -62,10 +66,14 @@ class TurnkeySigner:
         if r.status_code != 200:
             raise SigningError(f"Turnkey {r.status_code}: {r.text[:300]}")
         activity = r.json().get("activity", {})
-        if activity.get("status") != "ACTIVITY_STATUS_COMPLETED":
+        status = activity.get("status")
+        if status == "ACTIVITY_STATUS_FAILED":
+            why = ((activity.get("failure") or {}).get("message") or "no reason given")[:300]
+            raise SigningError(f"Turnkey refused the request: {why}")
+        if status != "ACTIVITY_STATUS_COMPLETED":
             # Consensus or pending states mean a policy needs a human approval. Surface it, do not bypass it.
-            raise SigningError(f"Turnkey activity not completed: {activity.get('status')}")
-        return activity.get("result", {})
+            raise SigningError(f"Turnkey activity not completed: {status}")
+        return activity.get("result") or {}
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef:
         evm = network in EVM_NETWORKS
@@ -77,7 +85,9 @@ class TurnkeySigner:
             {
                 "privateKeys": [
                     {
-                        "privateKeyName": f"{user_id}:{label}"[:60],
+                        # Turnkey requires unique names across the organization. The network and a random suffix
+                        # keep a user's Solana and EVM keys (and any retry after a partial failure) distinct.
+                        "privateKeyName": f"helm:{user_id}:{network}:{label}:{secrets.token_hex(3)}"[:100],
                         "curve": "CURVE_SECP256K1" if evm else "CURVE_ED25519",
                         "privateKeyTags": [],
                         "addressFormats": ["ADDRESS_FORMAT_ETHEREUM" if evm else "ADDRESS_FORMAT_SOLANA"],
@@ -85,7 +95,10 @@ class TurnkeySigner:
                 ]
             },
         )
-        pk = result["createPrivateKeysResultV2"]["privateKeys"][0]
+        found = _find(result, "createPrivateKeysResultV2")
+        if not found or not found.get("privateKeys"):
+            raise SigningError("Turnkey created no key (unexpected response shape)")
+        pk = found["privateKeys"][0]
         return WalletRef(signer_ref=pk["privateKeyId"], address=pk["addresses"][0]["address"])
 
     async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
@@ -124,3 +137,21 @@ class TurnkeySigner:
         sig = result["signRawPayloadResult"]
         v = int(sig["v"], 16)
         return (v - 27 if v >= 27 else v), int(sig["r"], 16), int(sig["s"], 16)
+
+
+def _find(obj, key: str):
+    """The first value stored under `key` anywhere in a nested response (Turnkey nests results differently by API
+    version)."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            hit = _find(v, key)
+            if hit is not None:
+                return hit
+    elif isinstance(obj, list):
+        for v in obj:
+            hit = _find(v, key)
+            if hit is not None:
+                return hit
+    return None

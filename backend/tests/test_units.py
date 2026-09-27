@@ -88,6 +88,36 @@ async def test_turnkey_pending_activity_is_not_bypassed():
         await t.sign_message("pk", b"m")
 
 
+async def test_turnkey_key_names_are_unique_and_failures_explained():
+    """A Solana and an EVM main key for one user used to share a name, which Turnkey rejects."""
+    priv = ec.generate_private_key(ec.SECP256R1())
+    scalar_hex = format(priv.private_numbers().private_value, "064x")
+    names: set = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        name = json.loads(request.content)["parameters"]["privateKeys"][0]["privateKeyName"]
+        if name in names:
+            return httpx.Response(200, json={"activity": {"status": "ACTIVITY_STATUS_FAILED",
+                                                          "failure": {"code": 3, "message": f"private key label must be unique: {name}"}}})
+        names.add(name)
+        # the nested shape Turnkey's docs show
+        return httpx.Response(200, json={"activity": {"status": "ACTIVITY_STATUS_COMPLETED", "result": {"activity": {"result": {
+            "createPrivateKeysResultV2": {"privateKeys": [{"privateKeyId": f"pk{len(names)}", "addresses": [{"address": f"addr{len(names)}"}]}]}}}}}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    t = TurnkeySigner("https://x ", " org ", " 0x02AB ", " " + scalar_hex + " ", client=client)
+    assert t.org_id == "org" and t.api_public_key == "02ab"
+    sol = await t.create_wallet("u1", "solana", "Main")
+    evm = await t.create_wallet("u1", "base", "Main")
+    again = await t.create_wallet("u1", "solana", "Main")  # a retry after a partial failure
+    assert len({sol.signer_ref, evm.signer_ref, again.signer_ref}) == 3 and sol.address == "addr1"
+    failing = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={
+        "activity": {"status": "ACTIVITY_STATUS_FAILED", "failure": {"message": "policy denied"}}})))
+    t2 = TurnkeySigner("https://x", "org", "02ab", scalar_hex, client=failing)
+    with pytest.raises(SigningError, match="policy denied"):
+        await t2.create_wallet("u1", "solana", "Main")
+
+
 def test_preflight_hash_is_stable_and_sensitive():
     a = build_preflight("trade", {"amount": 1, "wallets": ["a"]})
     b = build_preflight("trade", {"wallets": ["a"], "amount": 1})
