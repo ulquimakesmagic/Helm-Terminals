@@ -6,7 +6,7 @@ import RouteFunds from "../components/RouteFunds";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
 import {
-  Address, Callout, ChainDot, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Spinner, Stat, StatusBadge, UnitInput, useToast,
+  Address, Callout, ChainDot, Empty, Field, Icon, Loading, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
 interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number }
@@ -270,15 +270,13 @@ export default function Wallets() {
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />Add wallets</button>
         </>} />
 
-      <div className="grid g-stats">
-        <Stat accent label="Total across chains" icon="coins" value={folio ? usd(folio.totals.usd) : "—"}
-          hint={folio ? `${folio.priced ? "" : "prices unavailable · "}coins and stablecoins in ${folio.wallets} managed wallets` : "Load balances to see totals"} />
-        <Stat label="Dollar balance" icon="shield" value={folio ? usd(folio.totals.stable_usd) : "—"} hint="USDC, and USDG on Robinhood Chain" />
-        {(folio?.chains ?? []).filter((c: any) => c.wallets > 0).slice(0, 3).map((c: any) => (
-          <Stat key={c.network} label={c.name} icon="wallet" value={fmt(c.native, 4)} unit={c.coin}
-            hint={`${fmt(c.stable, 2)} ${c.stable_symbol}${c.error ? " · some balances unreadable" : ""}`} />
-        ))}
-      </div>
+      <Metrics label="Wallet totals" items={[
+        { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", hint: folio ? (folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
+        { label: "Stablecoins", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC, USDG on Robinhood" },
+        { label: "Managed", value: wallets ? String(managed.length) : "—", hint: `on ${new Set(managed.map((w) => w.network)).size} chain${new Set(managed.map((w) => w.network)).size === 1 ? "" : "s"}` },
+        { label: "Watch-only", value: wallets ? String(all.length - managed.length) : "—", hint: "tracked, can't sign" },
+        { label: "Folders", value: String(folders.length), hint: funders.length ? `${funders.length} funder${funders.length === 1 ? "" : "s"}` : "no funders set" },
+      ]} />
 
       <div className="card">
         <div className="card-head">
@@ -293,9 +291,9 @@ export default function Wallets() {
             <button className="chip" onClick={() => setModal("folders")}><Icon name="folder" size={12} />{folders.length ? "Manage folders" : "New folder"}</button>
           </div>
           <div className="row nowrap">
-            <select value={chainF} onChange={(e) => setChainF(e.target.value as "all" | ChainId)} style={{ width: 150 }} aria-label="Chain">
-              <option value="all">All chains</option>
-              {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name}</option>)}
+            <select value={chainF} onChange={(e) => setChainF(e.target.value as "all" | ChainId)} style={{ width: 170 }} aria-label="Filter by chain">
+              <option value="all">All chains ({all.length})</option>
+              {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name} ({all.filter((w) => (w.network ?? "solana") === c).length})</option>)}
             </select>
           <div style={{ width: 240, maxWidth: "100%" }}><SearchInput placeholder="Search label or address" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           </div>
@@ -308,14 +306,14 @@ export default function Wallets() {
             <thead><tr>
               <th className="cb"><input type="checkbox" checked={allShownSelected} aria-label="Select all"
                 onChange={() => setSelected(allShownSelected ? new Set() : new Set(shown.map((w) => w.id)))} /></th>
-              <th>Wallet</th><th>Chain</th><th>Address</th><th className="hide-sm">Type</th><th className="hide-sm">Folder</th><th className="r">Balance</th><th className="r" />
+              <th>Wallet</th><th>Chain</th><th>Address</th><th className="hide-sm">Type</th><th className="hide-sm">Folder</th><th className="r">Balance</th><th className="r"><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
               {shown.map((w) => {
                 const fu = funderOf(w.id);
                 return (
                   <tr key={w.id} className={`clickable ${selected.has(w.id) ? "sel" : ""}`} onClick={() => toggle(w.id)}>
-                    <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} /></td>
+                    <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${w.label || w.address}`} /></td>
                     <td><div className="row nowrap" style={{ gap: 8 }}>
                       <span style={{ fontWeight: 550 }}>{w.label || "Untitled"}</span>
                       {fu && <span className="badge info">funder{fu.is_default ? " · default" : ""}</span>}
@@ -324,7 +322,7 @@ export default function Wallets() {
                     <td><Address address={w.address} network={w.network} /></td>
                     <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : "watch-only"} /></td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
-                    <td className="r num">{w.balance_sol !== undefined ? <>{fmt(w.balance_sol)} <span className="muted">{chainOf(w.network).native}</span></> : <span className="muted">—</span>}</td>
+                    <td className="r num">{w.balance_sol !== undefined && w.balance_sol !== null ? <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></> : <span className="faint" title={balances ? "Couldn't read this balance" : "Load balances to see"}>—</span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>
                       {w.kind === "managed" && !fu && <button className="btn sm ghost" onClick={() => makeFunder(w)}>Make funder</button>}
                     </td>
@@ -337,11 +335,12 @@ export default function Wallets() {
       </div>
 
       {sel.length > 0 && (
-        <div className="selbar">
-          <b className="num">{sel.length} selected</b>
+        <div className="selbar" role="region" aria-label="Actions for selected wallets">
+          <b className="num" aria-live="polite">{sel.length} selected</b>
+          {selNet && <span className="row nowrap small text-2" style={{ gap: 6 }}><ChainDot network={selNet} size={14} />{chainOf(selNet).name}</span>}
           {selManaged.length !== sel.length && <span className="muted small">({sel.length - selManaged.length} watch-only ignored)</span>}
           <div className="grow" />
-          {selNets.length > 1 && <span className="warn-t small">Pick wallets on one chain to fund, withdraw, disperse or consolidate</span>}
+          {selNets.length > 1 && <span className="warn-t small">Money actions need wallets on one chain</span>}
           <button className="btn sm buy" disabled={!selNet} onClick={() => setModal("fund")}><Icon name="arrowdown" size={14} />Fund</button>
           <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
           <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("disperse")} title="Split a coin or token from one wallet across the selected wallets"><Icon name="send" size={14} />Disperse</button>

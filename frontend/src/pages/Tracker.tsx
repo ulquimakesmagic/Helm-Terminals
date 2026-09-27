@@ -23,6 +23,8 @@ export default function Tracker() {
     act(api("/tracker", { body: { network, address: address.trim(), label: label.trim() } }).then(() => { setAddress(""); setLabel(""); }), "Address added");
   }
 
+  const addr = address.trim();
+  const valid = network === "solana" ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) : /^0x[0-9a-fA-F]{40}$/.test(addr);
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     return (items ?? [])
@@ -40,10 +42,11 @@ export default function Tracker() {
           <select value={network} onChange={(e) => setNetwork(e.target.value as ChainId)} style={{ flex: "0 0 150px" }} aria-label="Chain">
             {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name}</option>)}
           </select>
-          <input className="mono" placeholder={network === "solana" ? "Solana address" : "0x… address"} value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} />
-          <input placeholder="Label, e.g. Dev of $CAT" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: "1 1 180px" }} />
-          <button className="btn" disabled={address.trim().length < 32}><Icon name="plus" size={15} />Track</button>
+          <input className="mono" aria-label="Address to track" aria-invalid={!!addr && !valid} placeholder={network === "solana" ? "Solana address" : "0x… address"} value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} spellCheck={false} autoComplete="off" />
+          <input aria-label="Label" placeholder="Label, e.g. Dev of $CAT" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: "1 1 180px" }} />
+          <button className="btn" disabled={!valid}><Icon name="plus" size={15} />Track</button>
         </form>
+        {addr && !valid && <p className="warn-t small" style={{ marginTop: 8 }} role="status">{network === "solana" ? "That doesn't look like a Solana address." : `${CHAINS[network].name} addresses start with 0x and have 40 hex characters.`}</p>}
       </Card>
 
       <Card flush title={`Tracked addresses`} icon="eye" sub={items ? `${items.length} total · ${items.filter((i) => i.bookmarked).length} starred` : undefined}
@@ -55,12 +58,12 @@ export default function Tracker() {
           <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana or EVM address (Base, BNB Chain, Robinhood Chain, Ethereum) above to start watching it." />
         ) : shown.length === 0 ? <Empty icon="search" title="No matches" /> : (
           <div className="table-wrap"><table>
-            <thead><tr><th style={{ width: 44 }} /><th>Label</th><th>Chain</th><th>Address</th><th className="r" /></tr></thead>
+            <thead><tr><th style={{ width: 44 }}><span className="sr-only">Starred</span></th><th>Label</th><th>Chain</th><th>Address</th><th className="r"><span className="sr-only">Remove</span></th></tr></thead>
             <tbody>
               {shown.map((i) => (
                 <tr key={i.id}>
                   <td>
-                    <button className={`icon-btn ${i.bookmarked ? "on" : ""}`} title={i.bookmarked ? "Unstar" : "Star"}
+                    <button className={`icon-btn ${i.bookmarked ? "on" : ""}`} title={i.bookmarked ? "Unstar" : "Star"} aria-label={i.bookmarked ? `Unstar ${i.label || i.address}` : `Star ${i.label || i.address}`} aria-pressed={i.bookmarked}
                       onClick={() => act(api(`/tracker/${i.id}?bookmarked=${!i.bookmarked}`, { method: "PATCH", body: {} }))}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill={i.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
                         <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
@@ -71,7 +74,7 @@ export default function Tracker() {
                   <td><span className="row nowrap" style={{ gap: 6 }}><ChainDot network={i.network} size={16} /><span className="hide-sm text-2">{chainOf(i.network).name}</span></span></td>
                   <td><Address address={i.address} chars={6} network={i.network} /></td>
                   <td className="r">
-                    <button className="icon-btn" title="Remove" onClick={() => act(api(`/tracker/${i.id}`, { method: "DELETE" }), "Removed")}><Icon name="trash" size={14} /></button>
+                    <button className="icon-btn" title="Remove" aria-label={`Stop tracking ${i.label || i.address}`} onClick={() => act(api(`/tracker/${i.id}`, { method: "DELETE" }), "Removed")}><Icon name="trash" size={14} /></button>
                   </td>
                 </tr>
               ))}

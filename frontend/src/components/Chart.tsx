@@ -51,14 +51,14 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
       <svg viewBox={`0 0 ${w} ${h}`} style={{ height }} role="img" aria-label="Cumulative net flow">
         <defs>
           <linearGradient id="area-g" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={last >= 0 ? "#34d399" : "#f87171"} stopOpacity="0.28" />
-            <stop offset="1" stopColor={last >= 0 ? "#34d399" : "#f87171"} stopOpacity="0" />
+            <stop offset="0" stopColor={last >= 0 ? "#3dcf8a" : "#ef6b6b"} stopOpacity="0.16" />
+            <stop offset="1" stopColor={last >= 0 ? "#3dcf8a" : "#ef6b6b"} stopOpacity="0" />
           </linearGradient>
         </defs>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={w - padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
-            <text x={padL - 8} y={y(t) + 3} textAnchor="end" className="axis">{fmt(t, step < 0.01 ? 4 : step < 1 ? 2 : 1)}</text>
+            <text x={padL - 8} y={y(t) + 3} textAnchor="end" className="axis">{tickLabel(t, step)}</text>
           </g>
         ))}
         <line x1={padL} x2={w - padR} y1={y(0)} y2={y(0)} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />
@@ -78,10 +78,17 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
       {hp && (
         <div className="tip" style={{ left: `${(x(hover!) / w) * 100}%`, top: `${(y(hp.cumulative_sol) / h) * 100}%` }}>
           <div className="d">{date(hp.date)}</div>
-          <div className="num"><b className={hp.cumulative_sol >= 0 ? "good" : "bad"}>{fmt(hp.cumulative_sol)} SOL</b> total</div>
-          <div className="num muted">{hp.daily_sol >= 0 ? "+" : ""}{fmt(hp.daily_sol)} that day</div>
+          <div className="num"><b className={hp.cumulative_sol >= 0 ? "good" : "bad"}>{fmt(hp.cumulative_sol, 9)} SOL</b> total</div>
+          <div className="num muted">{hp.daily_sol >= 0 ? "+" : ""}{fmt(hp.daily_sol, 9)} that day</div>
         </div>
       )}
     </div>
   );
+}
+
+/** Enough decimals to tell ticks apart at this step, and never a "-0". */
+function tickLabel(v: number, step: number) {
+  const d = Math.min(9, Math.max(0, -Math.floor(Math.log10(step)) + (step / 10 ** Math.floor(Math.log10(step)) < 1.5 ? 0 : 1)));
+  const r = Math.abs(v) < step / 1e6 ? 0 : v;
+  return fmt(r, d).replace(/^-0(\.0+)?$/, "0");
 }

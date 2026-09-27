@@ -1,5 +1,5 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { short } from "../api";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { BASE, short } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 
 /* ---------------------------------------------------------------- icons */
@@ -73,15 +73,10 @@ export function Icon({ name, size = 16, stroke = 2, className }: { name: IconNam
 export function Logo({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="helm-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#38bdf8" /><stop offset="1" stopColor="#818cf8" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="9" fill="#111726" stroke="#273041" />
-      <g fill="none" stroke="url(#helm-g)" strokeWidth="2.2" strokeLinecap="round">
+      <rect width="32" height="32" rx="7" fill="#0c1114" stroke="#233139" />
+      <g fill="none" stroke="#35d0a0" strokeWidth="2.2" strokeLinecap="round">
         <circle cx="16" cy="16" r="6.5" />
-        <circle cx="16" cy="16" r="1.8" fill="url(#helm-g)" />
+        <circle cx="16" cy="16" r="1.8" fill="#35d0a0" />
         <path d="M16 5v4.5M16 22.5V27M5 16h4.5M22.5 16H27M8.2 8.2l3.2 3.2M20.6 20.6l3.2 3.2M23.8 8.2l-3.2 3.2M11.4 20.6l-3.2 3.2" />
       </g>
     </svg>
@@ -137,6 +132,21 @@ export function Stat({ label, value, unit, hint, icon, tone, accent }: {
   );
 }
 
+/** A dense strip of key numbers separated by hairlines. Every value must come from real data. */
+export function Metrics({ items, label }: { items: { label: string; value: ReactNode; unit?: string; hint?: ReactNode; tone?: "good" | "bad" | "warn" }[]; label?: string }) {
+  return (
+    <section className="metrics" aria-label={label}>
+      {items.map((m) => (
+        <div className="metric" key={m.label}>
+          <div className="l">{m.label}</div>
+          <div className={`v ${m.tone === "warn" ? "warn-t" : m.tone ?? ""}`}>{m.value}{m.unit && <small>{m.unit}</small>}</div>
+          {m.hint && <div className="h">{m.hint}</div>}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function Empty({ icon = "layers", title, text, action }: { icon?: IconName; title: string; text?: ReactNode; action?: ReactNode }) {
   return (
     <div className="empty">
@@ -150,7 +160,7 @@ export function Empty({ icon = "layers", title, text, action }: { icon?: IconNam
 
 export function Callout({ tone = "info", children, icon }: { tone?: "info" | "warn" | "err" | "good"; children: ReactNode; icon?: IconName }) {
   const ic: IconName = icon ?? (tone === "err" ? "xcircle" : tone === "warn" ? "alert" : tone === "good" ? "checkcircle" : "info");
-  return <div className={`callout ${tone}`}><Icon name={ic} size={16} /><div className="grow">{children}</div></div>;
+  return <div className={`callout ${tone}`} role={tone === "err" ? "alert" : undefined}><Icon name={ic} size={16} /><div className="grow">{children}</div></div>;
 }
 
 export const Spinner = () => <span className="spinner" aria-label="Loading" />;
@@ -161,7 +171,7 @@ export function Skeleton({ h = 16, w = "100%", style }: { h?: number; w?: number
 
 export function Loading({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="stack" style={{ padding: 18 }}>
+    <div className="stack" style={{ padding: 16 }} aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={14} w={`${90 - i * 12}%`} />)}
     </div>
   );
@@ -172,9 +182,9 @@ export function Seg<T extends string>({ options, value, onChange, full, classNam
   options: [T, ReactNode][]; value: T; onChange: (v: T) => void; full?: boolean; className?: string;
 }) {
   return (
-    <div className={`seg ${full ? "full" : ""} ${className}`} role="tablist">
+    <div className={`seg ${full ? "full" : ""} ${className}`} role="group">
       {options.map(([k, l]) => (
-        <button key={k} type="button" role="tab" aria-selected={value === k} className={`${value === k ? "on" : ""} ${k}`} onClick={() => onChange(k)}>{l}</button>
+        <button key={k} type="button" aria-pressed={value === k} className={`${value === k ? "on" : ""} ${k}`} onClick={() => onChange(k)}>{l}</button>
       ))}
     </div>
   );
@@ -226,7 +236,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 export function CopyButton({ text, size = 13 }: { text: string; size?: number }) {
   const [ok, setOk] = useState(false);
   return (
-    <button type="button" className="icon-btn" title="Copy" onClick={(e) => {
+    <button type="button" className="icon-btn" title={ok ? "Copied" : "Copy"} aria-label={ok ? "Copied" : "Copy to clipboard"} onClick={(e) => {
       e.stopPropagation(); e.preventDefault();
       navigator.clipboard?.writeText(text).then(() => { setOk(true); setTimeout(() => setOk(false), 1200); }).catch(() => undefined);
     }}>
@@ -249,7 +259,7 @@ export function Address({ address, type = "account", chars, network }: { address
 export function ChainDot({ network, size = 16 }: { network?: string | null; size?: number }) {
   const c = chainOf(network);
   return (
-    <span className="chain-dot" title={c.name} style={{ width: size, height: size, background: `${c.color}22`, borderColor: `${c.color}66`, color: c.color, fontSize: size * 0.5 }}>
+    <span className="chain-dot" title={c.name} role="img" aria-label={c.name} style={{ width: size, height: size, background: `${c.color}22`, borderColor: `${c.color}66`, color: c.color, fontSize: size * 0.5 }}>
       {c.name.slice(0, 1)}
     </span>
   );
@@ -275,26 +285,56 @@ export function TokenAvatar({ symbol, size = 40 }: { symbol: string; size?: numb
   return (
     <div className="tok" style={{
       width: size, height: size, fontSize: size * 0.34, borderRadius: size * 0.3,
-      background: `linear-gradient(135deg, hsl(${h} 70% 52%), hsl(${(h + 50) % 360} 65% 38%))`,
-    }}>{(symbol || "?").slice(0, 3).toUpperCase()}</div>
+      background: `linear-gradient(135deg, hsl(${h} 38% 34%), hsl(${(h + 40) % 360} 36% 22%))`,
+    }} aria-hidden="true">{(symbol || "?").slice(0, 3).toUpperCase()}</div>
   );
+}
+
+/** The launch's own image when the API can serve it (deploying or live), otherwise the generated avatar. */
+export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol: string; has_image?: boolean; status?: string }; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  const servable = launch.has_image && (launch.status === "live" || launch.status === "deploying");
+  if (!servable || broken) return <TokenAvatar symbol={launch.symbol} size={size} />;
+  return <img src={`${BASE}/public/launch-images/${launch.id}`} alt="" width={size} height={size} onError={() => setBroken(true)}
+    style={{ width: size, height: size, borderRadius: size * 0.3, objectFit: "cover", flex: "none", border: "1px solid var(--line-2)" }} />;
 }
 
 /* ---------------------------------------------------------------- modal */
 export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
   title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; foot?: ReactNode; wide?: boolean; lock?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  // Escape closes; Tab stays inside the dialog; focus returns to whatever opened it.
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !lock) onClose(); };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !lock) onClose();
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = [...ref.current.querySelectorAll<HTMLElement>("a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])")]
+        .filter((el) => el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose, lock]);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) {
+      const auto = el.querySelector<HTMLElement>("[autofocus]");
+      (auto ?? el).focus();
+    }
+    return () => { opener?.focus?.(); };
+  }, []);
   return (
     <div className="modal-bg" onMouseDown={lock ? undefined : onClose}>
-      <div className={`modal ${wide ? "wide" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div ref={ref} tabIndex={-1} className={`modal ${wide ? "wide" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
-          <div>
-            <h2>{title}</h2>
+          <div style={{ minWidth: 0 }}>
+            <h2 id={titleId}>{title}</h2>
             {sub && <div className="muted small" style={{ marginTop: 2 }}>{sub}</div>}
           </div>
           <button className="icon-btn" onClick={onClose} disabled={lock} aria-label="Close"><Icon name="x" size={16} /></button>

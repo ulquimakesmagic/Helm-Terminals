@@ -4,14 +4,14 @@ import { api, errMsg, short } from "../api";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
 import { LaunchpadDirectory } from "../components/Launchpads";
 import {
-  Address, Callout, Card, ChainBadge, ChainDot, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenAvatar, UnitInput, relTime, useToast,
+  Address, Callout, Card, ChainBadge, ChainDot, Empty, Field, Icon, Loading, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime, useToast,
 } from "../components/ui";
 
 interface QuoteAsset { mint: string; symbol: string; name: string; decimals: number; image: string | null; kind: string; pool: string }
 interface Launch {
   quote?: { mint: string; symbol: string; name: string } | null;
   id: string; network: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
-  imported: boolean; created_at: string; dev_buy_sol: number; description: string;
+  imported: boolean; created_at: string; dev_buy_sol: number; description: string; has_image?: boolean;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
 function optLabel(key: string, o: string | number): string {
@@ -279,9 +279,9 @@ export default function Launches() {
           ["archived", <>Archived <span className="muted num">{counts.archived}</span></>],
         ]} />
         <div className="chips">
-          <button className={`chip ${chainF === "all" ? "on" : ""}`} onClick={() => setChainF("all")}>All chains</button>
+          <button className={`chip ${chainF === "all" ? "on" : ""}`} aria-pressed={chainF === "all"} onClick={() => setChainF("all")}>All chains</button>
           {CHAIN_ORDER.map((c) => (
-            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} onClick={() => setChainF(c)}><ChainDot network={c} size={14} />{CHAINS[c].name}</button>
+            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c)}><ChainDot network={c} size={14} />{CHAINS[c].name}</button>
           ))}
         </div>
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -301,10 +301,10 @@ export default function Launches() {
           {shown.map((l) => (
             <div key={l.id} className="card lcard" role="link" tabIndex={0} onClick={() => nav(`/launches/${l.id}`)} onKeyDown={(e) => e.key === "Enter" && nav(`/launches/${l.id}`)}>
               <div className="row nowrap" style={{ gap: 12 }}>
-                <TokenAvatar symbol={l.symbol} size={44} />
+                <TokenImage launch={l} size={42} />
                 <div className="grow">
                   <div className="truncate" style={{ fontWeight: 650, fontSize: 15 }}>{l.name}</div>
-                  <div className="muted mono">${l.symbol}</div>
+                  <div className="muted mono" style={{ fontSize: 12 }}>${l.symbol}</div>
                 </div>
                 <StatusBadge status={l.status} />
               </div>

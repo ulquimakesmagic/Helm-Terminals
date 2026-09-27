@@ -133,7 +133,7 @@ export default function Profile() {
       {error && <Callout tone="err">{error}</Callout>}
 
       <Card className="profile-hero" flush>
-        <div className="banner" style={{ background: p ? `linear-gradient(120deg, hsl(${p.avatar_hue} 70% 30%), hsl(${(p.avatar_hue + 60) % 360} 60% 18%) 60%, var(--panel))` : "var(--panel-2)" }} />
+        <div className="banner" style={{ background: p ? `linear-gradient(120deg, hsl(${p.avatar_hue} 35% 22%), hsl(${(p.avatar_hue + 50) % 360} 30% 13%) 60%, var(--panel))` : "var(--panel-2)" }} />
         <div className="hero-body">
           {p ? <ProfileAvatar name={p.display_name} hue={p.avatar_hue} size={96} radius={24} /> : <Skeleton h={96} w={96} />}
           <div className="who">

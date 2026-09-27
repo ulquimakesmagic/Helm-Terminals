@@ -2,6 +2,7 @@ import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
 import { chainOf, explorerUrl } from "../chains";
+import { ReviewHero, summarize } from "./review";
 import { Address, Callout, Icon, Modal, Spinner, StatusBadge } from "./ui";
 
 type Phase = "loading" | "review" | "submitting" | "polling" | "done" | "error";
@@ -170,6 +171,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const busy = phase === "submitting" || phase === "polling";
   const blocked = warnings.length > 0;
   const danger = kind === "burn" || kind === "withdraw" || kind === "send_tokens";
+  const summary = summarize(pre, network);
 
   const foot =
     phase === "done" || phase === "error" ? <button className="btn" onClick={onClose}>Close</button> :
@@ -185,21 +187,13 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   return (
     <Modal title={title} sub={<Steps phase={phase} />} onClose={onClose} foot={foot} lock={busy}>
       {phase === "loading" && (
-        <div className="row" style={{ padding: "24px 0", justifyContent: "center", gap: 10 }}><Spinner /><span className="muted">Building preview and simulating…</span></div>
+        <div className="row" style={{ padding: "24px 0", justifyContent: "center", gap: 10 }} role="status"><Spinner /><span className="muted">Building the preview and checking balances…</span></div>
       )}
       {phase === "error" && <Callout tone="err"><b>Couldn't build this action.</b><br />{error}</Callout>}
 
       {pre && phase !== "done" && phase !== "error" && (
         <>
-          <Callout icon="eye">Review exactly what will happen. <b>Nothing is sent until you confirm.</b></Callout>
-          <div className="kv">
-            {rows.map(([k, v]) => (
-              <Fragment key={k}>
-                <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
-                <div className="v"><Value k={k} v={v} network={network} asset={typeof pre?.asset === "string" ? pre.asset : undefined} /></div>
-              </Fragment>
-            ))}
-          </div>
+          {summary && <ReviewHero s={summary} />}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
           {kind !== "bridge" && lowFunds(warnings) && fundAddress(pre) && (
             <div className="row" style={{ gap: 8 }}>
@@ -209,6 +203,24 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
               <span className="muted small">Routes your dollar balance into {chainOf(network).native} on {chainOf(network).name}.</span>
             </div>
           )}
+          {summary && !blocked && (
+            <div className="review-section">
+              <h3>What happens when you confirm</h3>
+              <ol className="next-steps">{summary.next.map((n) => <li key={n}>{n}</li>)}</ol>
+            </div>
+          )}
+          <details className="more" open={!summary}>
+            <summary>Full preview · every field the server will act on</summary>
+            <div className="kv" style={{ marginTop: 4 }}>
+              {rows.map(([k, v]) => (
+                <Fragment key={k}>
+                  <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
+                  <div className="v"><Value k={k} v={v} network={network} asset={typeof pre?.asset === "string" ? pre.asset : undefined} /></div>
+                </Fragment>
+              ))}
+            </div>
+          </details>
+          <p className="muted small row" style={{ gap: 6, flexWrap: "nowrap", alignItems: "flex-start" }}><Icon name="eye" size={13} />Nothing is sent until you confirm. The preview is tied to this exact request.</p>
           {error && <Callout tone="err">{error}</Callout>}
           {needs2fa && !blocked && (
             <div className="stack tight" style={{ alignItems: "center", padding: "6px 0" }}>
@@ -225,7 +237,8 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
             <div className={`feed-ic ${job.status === "confirmed" ? "good" : job.status === "failed" ? "bad" : "warn"}`} style={{ width: 48, height: 48, borderRadius: 14 }}>
               <Icon name={job.status === "confirmed" ? "checkcircle" : job.status === "failed" ? "xcircle" : "alert"} size={24} />
             </div>
-            <h2>{job.status === "confirmed" ? "Confirmed on-chain" : job.status === "failed" ? "Failed" : "Partly completed"}</h2>
+            <h2 role="status">{job.status === "confirmed" ? "Confirmed on-chain" : job.status === "failed" ? "Failed" : "Partly completed"}</h2>
+            <p className="muted small">{job.transactions.length} transaction{job.transactions.length === 1 ? "" : "s"} recorded{job.status !== "confirmed" ? ". Nothing is retried automatically." : "."}</p>
           </div>
           {job.error && <Callout tone="err">{job.error}</Callout>}
           <div className="card" style={{ background: "var(--bg-2)" }}>
@@ -233,7 +246,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
               <tbody>
                 {job.transactions.map((t: any) => (
                   <tr key={t.id}>
-                    <td>{t.kind}</td>
+                    <td style={{ textTransform: "capitalize" }}>{String(t.kind).replace(/_/g, " ")}</td>
                     <td><StatusBadge status={t.status} /></td>
                     <td className="r mono">
                       {t.signature ? <a href={explorerUrl(network, "tx", t.signature)} target="_blank" rel="noreferrer">View on explorer <Icon name="ext" size={11} /></a> : null}

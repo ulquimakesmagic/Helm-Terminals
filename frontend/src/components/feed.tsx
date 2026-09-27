@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { short } from "../api";
+import { fmt, short } from "../api";
 import { Icon, IconName, parseDate, relTime } from "./ui";
 
 export interface ActivityRow { id: string; kind: string; ref_type: string | null; ref_id: string | null; payload: Record<string, unknown>; created_at: string }
@@ -60,7 +60,7 @@ function detail(a: ActivityRow): string {
   if (a.kind === "launch.imported" && typeof p.mint === "string") return `mint ${short(p.mint)}`;
   if (a.kind === "automation.scheduled") {
     const side = p.side === "sell" ? "sells" : "buys";
-    const size = p.side === "sell" ? (p.sell_percent ? ` · ${p.sell_percent}% each` : "") : p.planned_trade_sol ? ` · ${p.planned_trade_sol} ${p.coin ?? "SOL"}` : "";
+    const size = p.side === "sell" ? (p.sell_percent ? ` · ${p.sell_percent}% each` : "") : typeof p.planned_trade_sol === "number" ? ` · ${fmt(p.planned_trade_sol, 6)} ${p.coin ?? "SOL"}` : "";
     return `${String(p.orders ?? "")} ${side} · ${String(p.wallet_count ?? "")} wallets${size}`;
   }
   if (a.kind.startsWith("automation.order_") && p.order_number) return `Order ${p.order_number}`;
@@ -72,7 +72,7 @@ export function FeedItem({ a }: { a: ActivityRow }) {
   const d = detail(a);
   return (
     <div className="feed-item">
-      <div className={`feed-ic ${m.tone}`}><Icon name={m.icon} size={15} /></div>
+      <div className={`feed-ic ${m.tone}`} aria-hidden="true"><Icon name={m.icon} size={14} /></div>
       <div className="grow">
         <div style={{ fontWeight: 500 }}>{m.label}</div>
         <div className="muted small row" style={{ gap: 6 }}>
@@ -81,7 +81,7 @@ export function FeedItem({ a }: { a: ActivityRow }) {
           {a.ref_type === "automation" && <Link to="/automation">Open automation</Link>}
         </div>
       </div>
-      <span className="muted small nowrap" title={parseDate(a.created_at).toLocaleString()}>{relTime(a.created_at)}</span>
+      <time className="feed-time" dateTime={parseDate(a.created_at).toISOString()} title={parseDate(a.created_at).toLocaleString()}>{relTime(a.created_at)}</time>
     </div>
   );
 }

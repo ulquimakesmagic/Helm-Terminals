@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short } from "../api";
-import { Address, Callout, Card, Empty, Field, Icon, Loading, PageHeader, StatusBadge, useToast } from "../components/ui";
+import { Address, Callout, Card, Empty, Field, Icon, Loading, Metrics, PageHeader, Seg, StatusBadge, useToast } from "../components/ui";
 import { chainOf, native } from "../chains";
 
 interface Launch { id: string; name: string; symbol: string; network: string; status: string; mint_address: string | null }
@@ -87,6 +87,10 @@ export default function Automation() {
   const plannedExitPercent = side === "sell" ? (1 - (1 - Math.min(100, +amount || 0) / 100) ** (+orders || 0)) * 100 : 0;
   const activePlans = useMemo(() => automations?.filter((a) => active.has(a.status)) ?? [], [automations]);
   const completed = useMemo(() => automations?.filter((a) => a.status === "completed").length ?? 0, [automations]);
+  const nextRun = useMemo(() => automations?.filter((a) => a.status === "scheduled" && a.next_run_at)
+    .sort((a, b) => a.next_run_at.localeCompare(b.next_run_at))[0], [automations]);
+  const [planView, setPlanView] = useState<"active" | "history">("active");
+  const shownPlans = useMemo(() => (automations ?? []).filter((a) => planView === "active" ? active.has(a.status) : !active.has(a.status)), [automations, planView]);
   const clearPreview = () => setPreview(null);
 
   function formBody() {
@@ -146,21 +150,15 @@ export default function Automation() {
         actions={<Link to="/launches" className="btn secondary"><Icon name="rocket" size={15} />Launches</Link>} />
 
       {error && <Callout tone="err">{error}</Callout>}
-      <div className="automation-hero">
-        <div className="automation-hero-mark"><Icon name="calendar" size={23} /></div>
-        <div className="grow">
-          <div className="eyebrow">CONTROLLED EXECUTION</div>
-          <h2>Automate a plan. Keep the limits.</h2>
-          <p>Schedule a fixed number of buys or staged sells from wallets you control. Every tranche uses Helm’s normal transaction simulation and audit trail.</p>
-        </div>
-        <div className="automation-hero-stats">
-          <div><strong>{automations ? activePlans.length : "—"}</strong><span>active plans</span></div>
-          <div><strong>{automations ? completed : "—"}</strong><span>completed</span></div>
-        </div>
-      </div>
+      <Metrics label="Plan summary" items={[
+        { label: "Active plans", value: automations ? String(activePlans.length) : "—", hint: `${automations?.filter((a) => a.status === "paused").length ?? 0} paused` },
+        { label: "Next order", value: nextRun ? displayTime(nextRun.next_run_at) : "—", hint: nextRun ? `${nextRun.side === "buy" ? "Buy" : "Sell"} · $${nextRun.launch_symbol ?? ""}` : "nothing scheduled" },
+        { label: "Orders filled", value: automations ? String(automations.reduce((s, a) => s + a.runs_completed, 0)) : "—", hint: "across all plans" },
+        { label: "Completed", value: automations ? String(completed) : "—", hint: `${automations?.filter((a) => a.status === "failed").length ?? 0} stopped on failure` },
+      ]} />
 
       <Callout tone="info" icon="shield">
-        Plans are one-way and finite: schedule buys or staged sells. Helm does not create buy/sell round trips or trade between your wallets to inflate activity. A sell tranche applies to each wallet’s remaining balance at execution time.
+        Plans are one-way and finite: a fixed number of buys, or a fixed number of staged sells. Helm never creates buy/sell round trips or trades between your wallets to make volume. Each sell applies to the wallet's remaining balance at that moment.
       </Callout>
 
       <div className="grid automation-layout">
@@ -173,6 +171,9 @@ export default function Automation() {
                 <button type="button" className={`btn sm ${side === "sell" ? "" : "secondary"}`} aria-pressed={side === "sell"}
                   onClick={() => { setSide("sell"); setAmount("25"); clearPreview(); }}>Staged sells</button>
               </div>
+              {launches.every((l) => l.status !== "live") && (
+                <Callout>You have no live launches yet. Plans run on a live token: <Link to="/launches">deploy or import one</Link> first.</Callout>
+              )}
               <Field label="Live launch" hint="Works on Solana, Base, BNB Chain, Robinhood Chain and Ethereum launches.">
                 <select value={launchId} onChange={(e) => { setLaunchId(e.target.value); clearPreview(); }}>
                   <option value="">Choose a live launch…</option>
@@ -239,7 +240,25 @@ export default function Automation() {
                   <div className="stack tight">
                     {preview.preflight.wallets.map((w) => <div key={w.address} className="row between small"><span>{w.label} · <span className="mono">{short(w.address)}</span>{side === "sell" && <span className="muted"> · {fmt(w.token_balance ?? 0, 2)} ${launch?.symbol}</span>}</span><Address address={w.address} network={launch?.network ?? "solana"} /></div>)}
                   </div>
-                  <div className="small text-2">Platform fee: {preview.preflight.platform_fee}<br />Network fees: {preview.preflight.network_fees}</div>
+                  <div className="kv small">
+                    <div className="k">Platform fee</div><div className="v">{preview.preflight.platform_fee}</div>
+                    <div className="k">Network fees</div><div className="v">{preview.preflight.network_fees}</div>
+                  </div>
+                  <div className="stack tight">
+                    <h3>Schedule · approximate, from now</h3>
+                    <OrderTimeline first={preview.preflight.first_order_in_minutes} every={preview.preflight.interval_minutes} count={preview.preflight.number_of_orders} side={side} />
+                  </div>
+                  {preview.preflight.warnings.length === 0 && (
+                    <div className="stack tight">
+                      <h3>What happens next</h3>
+                      <ol className="next-steps">
+                        <li>The plan is saved. Nothing is sent until the first order time.</li>
+                        <li>Before each order Helm re-checks {side === "buy" ? `each wallet's ${coin} balance` : `token balances and ${coin} for fees`}, simulates, then sends. Each order is a normal job in the launch's history.</li>
+                        <li>If an order fails or its outcome is uncertain, the plan stops. Nothing is retried automatically.</li>
+                        <li>You can pause or cancel the remaining orders at any time.</li>
+                      </ol>
+                    </div>
+                  )}
                   {preview.preflight.warnings.map((warning) => <Callout key={warning} tone="warn">{warning}</Callout>)}
                   <div className="row between">
                     <button className="btn ghost" onClick={clearPreview}>Edit plan</button>
@@ -258,12 +277,15 @@ export default function Automation() {
         </Card>
 
         <div className="col">
-          <Card title="Your plans" icon="calendar" sub="Each plan is finite and linked to its execution jobs" actions={<button className="btn icon sm secondary" onClick={() => void load()} aria-label="Refresh plans"><Icon name="refresh" size={13} /></button>}>
-            {!automations ? <Loading rows={3} /> : automations.length === 0 ? (
-              <Empty icon="calendar" title="No plans yet" text="Your scheduled orders and their status will appear here." />
+          <Card title="Your plans" icon="calendar" sub="Each plan is finite and linked to its execution jobs" actions={<>
+            <Seg value={planView} onChange={setPlanView} options={[["active", <>Active <span className="muted num">{activePlans.length}</span></>], ["history", <>History <span className="muted num">{(automations?.length ?? 0) - activePlans.length}</span></>]]} />
+            <button className="btn icon sm secondary" onClick={() => void load()} aria-label="Refresh plans"><Icon name="refresh" size={13} /></button>
+          </>}>
+            {!automations ? <Loading rows={3} /> : shownPlans.length === 0 ? (
+              <Empty icon="calendar" title={planView === "active" ? "No active plans" : "No finished plans yet"} text={planView === "active" ? "Build a schedule on the left. Active plans and their next order time show here." : "Completed, cancelled and stopped plans are kept here for reference."} />
             ) : (
               <div className="automation-plan-list">
-                {automations.map((a) => {
+                {shownPlans.map((a) => {
                   const pct = a.total_orders ? Math.min(100, a.runs_completed / a.total_orders * 100) : 0;
                   return (
                     <article className="automation-plan" key={a.id}>
@@ -273,7 +295,7 @@ export default function Automation() {
                       </div>
                       <div className="bar thin"><div style={{ width: `${pct}%` }} /></div>
                       <div className="row between small muted"><span>{a.runs_completed} of {a.total_orders} {a.side === "buy" ? "buys" : "sells"} complete{a.side === "sell" && a.status === "completed" && a.runs_completed < a.total_orders ? " · position exhausted" : ""}</span><span>{a.side === "buy" ? `${fmt(a.planned_trade_sol ?? 0, 4)} ${a.coin ?? native(a.network)} planned` : `up to ${fmt(a.planned_position_exit_pct ?? 0, 2)}% of starting holdings`}</span></div>
-                      {a.status === "scheduled" && <div className="small text-2">Next order {displayTime(a.next_run_at)}</div>}
+                      {a.status === "scheduled" && <div className="small text-2 row" style={{ gap: 6 }}><Icon name="calendar" size={12} />Next order <span className="mono">{displayTime(a.next_run_at)}</span></div>}
                       {a.error && <Callout tone="warn">{a.error}</Callout>}
                       <div className="row between">
                         <Link to={`/launches/${a.launch_id}`} className="btn sm ghost">Open workspace<Icon name="arrowright" size={12} /></Link>
@@ -300,5 +322,23 @@ export default function Automation() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Approximate order times for a plan being reviewed, counted from now. Shows the first few and the last. */
+function OrderTimeline({ first, every, count, side }: { first: number; every: number; count: number; side: "buy" | "sell" }) {
+  const start = Date.now() + first * 60_000;
+  const at = (i: number) => new Date(start + i * every * 60_000);
+  const label = (d: Date) => d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const idx = count <= 4 ? Array.from({ length: count }, (_, i) => i) : [0, 1, 2, count - 1];
+  return (
+    <ol className="timeline">
+      {idx.map((i, n) => (
+        <li key={i} className={count > 4 && n === 3 ? "more" : ""}>
+          <span>{side === "buy" ? "Buy" : "Sell"} {i + 1} of {count}{count > 4 && n === 3 ? ` · ${count - 4} more before this` : ""}</span>
+          <time dateTime={at(i).toISOString()}>{label(at(i))}</time>
+        </li>
+      ))}
+    </ol>
   );
 }

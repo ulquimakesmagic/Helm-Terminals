@@ -38,13 +38,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`app ${open ? "open" : ""}`}>
-      <div className="scrim" onClick={() => setOpen(false)} />
-      <aside className="sidebar">
+      <a href="#main" className="skip-link">Skip to content</a>
+      <button type="button" className="scrim" aria-label="Close menu" tabIndex={-1} onClick={() => setOpen(false)} />
+      <aside className="sidebar" aria-label="Main navigation">
         <Link to="/" className="logo">
           <Logo size={34} />
-          <div className="logo-name">Helm Terminals<small>Multichain launch desk</small></div>
+          <div className="logo-name">Helm Terminals<small>On-chain ops</small></div>
         </Link>
-        <nav className="nav">
+        <nav className="nav" aria-label="Sections">
           {NAV.map((g) => (
             <div key={g.group}>
               <div className="nav-group">{g.group}</div>
@@ -72,7 +73,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                 <Icon name="telegram" size={12} />{tg?.linked ? "Telegram linked" : "Telegram not linked"}
               </div>
             </Link>
-            <button className="icon-btn" title="Sign out" onClick={() => { setToken(null); nav("/login"); }}>
+            <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => { setToken(null); nav("/login"); }}>
               <Icon name="logout" size={15} />
             </button>
           </div>
@@ -81,26 +82,26 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="main">
         <header className="topbar">
-          <button className="btn icon secondary menu-btn" onClick={() => setOpen(true)} aria-label="Open menu"><Icon name="menu" size={17} /></button>
-          <div className="crumbs">
+          <button className="btn icon secondary menu-btn" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><Icon name="menu" size={17} /></button>
+          <nav className="crumbs" aria-label="Breadcrumb">
             <span className="hide-sm">Helm</span>
             <Icon name="chevron" size={13} className="hide-sm" />
             {seg === "launches" && loc.pathname.split("/")[2] ? (
               <><Link to="/launches" className="muted">Launches</Link><Icon name="chevron" size={13} /><b>Workspace</b></>
-            ) : <b>{TITLES[seg] ?? ""}</b>}
-          </div>
+            ) : <b aria-current="page">{TITLES[seg] ?? ""}</b>}
+          </nav>
           <div className="spacer" />
           {testSigner && (
             <span className="pill warn" title="Keys are held by the local development signer. Do not hold real funds.">
               <span className="dot" style={{ background: "var(--warn)" }} />Test signer<span className="hide-sm"> · no real funds</span>
             </span>
           )}
-          <span className="pill hide-sm">
+          <span className="pill hide-sm" role="status">
             <span className="dot" style={{ background: health ? "var(--good)" : "var(--bad)" }} />
             {health ? "API online" : "API offline"}
           </span>
         </header>
-        <main className="content">{children}</main>
+        <main className="content" id="main" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

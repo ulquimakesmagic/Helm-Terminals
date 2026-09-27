@@ -45,7 +45,7 @@ export default function PublicProfile() {
         ) : !d ? <Card><Loading rows={4} /></Card> : (
           <>
             <Card className="profile-hero" flush>
-              <div className="banner" style={{ background: `linear-gradient(120deg, hsl(${d.avatar_hue} 70% 30%), hsl(${(d.avatar_hue + 60) % 360} 60% 18%) 60%, var(--panel))` }} />
+              <div className="banner" style={{ background: `linear-gradient(120deg, hsl(${d.avatar_hue} 35% 22%), hsl(${(d.avatar_hue + 50) % 360} 30% 13%) 60%, var(--panel))` }} />
               <div className="hero-body">
                 <ProfileAvatar name={d.display_name} hue={d.avatar_hue} size={96} radius={24} />
                 <div className="who">

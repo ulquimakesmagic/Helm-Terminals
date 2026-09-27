@@ -10,7 +10,7 @@ export function initials(name: string) {
 }
 
 export function avatarBg(hue: number) {
-  return `linear-gradient(135deg, hsl(${hue} 85% 66%), hsl(${(hue + 45) % 360} 80% 58%))`;
+  return `linear-gradient(135deg, hsl(${hue} 50% 56%), hsl(${(hue + 40) % 360} 45% 42%))`;
 }
 
 export function ProfileAvatar({ name, hue, size = 32, radius }: { name: string; hue: number; size?: number; radius?: number }) {
