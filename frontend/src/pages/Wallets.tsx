@@ -194,7 +194,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
         </>
       ) : tab === "import" ? (
         <>
-          <p className="muted small">Bring a wallet you already have into Helm so you can launch and trade from it. The key is handed to the signing service, stored encrypted, and never shown again. Anyone with this key controls the wallet, so only paste it here, never in a chat or email.</p>
+          <p className="muted small">Bring a wallet you already have into Helm so you can launch and trade from it. Helm's server encrypts the key for the signing service's secure enclave as soon as it arrives. Helm never stores it or shows it again. Anyone with this key controls the wallet, so only paste it here, never in a chat or email.</p>
           <Field label={`${CHAINS[network].name} private key`} hint={network === "solana" ? "The base58 key your wallet app exports, or a solana-keygen JSON array" : "64 hex characters, with or without 0x"}>
             <input className="mono" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" spellCheck={false} autoCapitalize="off" autoCorrect="off" autoFocus />
           </Field>

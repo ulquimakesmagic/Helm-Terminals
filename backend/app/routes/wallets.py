@@ -22,7 +22,7 @@ from ..chains.evm import EVM_CHAINS, WEI
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
-from ..signing.base import SigningError
+from ..signing.base import SigningError, parse_private_key
 
 router = APIRouter(tags=["wallets"])
 log = logging.getLogger(__name__)
@@ -151,13 +151,27 @@ async def import_wallet(body: ImportWallet, user: User = Depends(current_user), 
         raise HTTPException(400, f"unsupported network {body.network}")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
+    networks = list(EVM_CHAINS) if evm and body.all_evm else [body.network]
+    secret = body.private_key.get_secret_value()
     try:
-        ref = await signer.import_wallet(user.id, body.network, body.private_key.get_secret_value())
+        _, address = parse_private_key(body.network, secret)
+    except SigningError as e:
+        raise HTTPException(400, str(e))  # the message describes the expected format only, never the key
+    # Refuse before the key goes anywhere if the account already manages this address everywhere asked.
+    managed = (await db.execute(select(Wallet.network).where(
+        Wallet.user_id == user.id, Wallet.kind == "managed", Wallet.network.in_(networks),
+        Wallet.address == address))).scalars().all()
+    if set(managed) >= set(networks):
+        raise HTTPException(409, "that wallet is already in your account")
+    try:
+        ref = await signer.import_wallet(user.id, body.network, secret)
     except NotImplementedError as e:
         raise HTTPException(501, str(e))
     except SigningError as e:
-        raise HTTPException(400, str(e))  # messages describe the expected format only, never the key
-    networks = list(EVM_CHAINS) if evm and body.all_evm else [body.network]
+        log.warning("wallet import failed: %s", e)
+        raise HTTPException(502, f"couldn't import the wallet: {e}")
+    finally:
+        del secret
     created, skipped = [], []
     for n in networks:
         existing = (await db.execute(select(Wallet).where(
