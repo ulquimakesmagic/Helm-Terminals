@@ -38,6 +38,21 @@ class EvmRPCUnavailable(Exception):
     """No endpoint for this chain gave a usable answer. Never contains a URL."""
 
 
+# Replies meaning "this endpoint won't run that method" (a provider plan limit or a disabled method), not "the call
+# itself failed". Those move on to the next endpoint instead of being returned as the answer.
+_PLAN_LIMIT_HINTS = ("paid plan", "upgrade your", "method not supported", "is not supported", "not whitelisted",
+                     "method not allowed", "unsupported method", "does not exist/is not available")
+
+
+def _plan_limited(err: dict) -> bool:
+    if err.get("code") == 3:  # execution reverted: a real answer from the contract, whatever its message says
+        return False
+    if err.get("code") == -32601:  # JSON-RPC "method not found"
+        return True
+    msg = str(err.get("message", "")).lower()
+    return any(h in msg for h in _PLAN_LIMIT_HINTS)
+
+
 def _hex(n: int) -> str:
     return hex(n)
 
@@ -86,6 +101,11 @@ class EvmRPC:
         self._client = client or httpx.AsyncClient(timeout=30)
         self._verified: set[str] = set()
         self.using_public_fallback = not parse_list(urls)
+        self._unsupported: dict[str, set[str]] = {}  # endpoint -> methods its plan refuses
+        # When none of your endpoints can run a method (e.g. eth_call on a free tier), the chain's public RPC is
+        # tried last so reads still work.
+        public = EVM_CHAINS[network]["public_rpc"]
+        self._last_resort = [] if public in items else [public]
 
     async def _post(self, url: str, method: str, params: list) -> httpx.Response:
         target, headers = split_header_key(url)
@@ -106,8 +126,15 @@ class EvmRPC:
     async def call(self, method: str, params: list | None = None):
         params = params or []
         problems: list[str] = []
-        for url in self.ring.order():
-            name = self.ring.label(url)
+        order = self.ring.order()
+        for url in order + self._last_resort:
+            last_resort = url not in order
+            if last_resort and not any("not on its plan" in p for p in problems):
+                break  # the public endpoint is only for methods your endpoints refuse
+            name = "public endpoint" if last_resort else self.ring.label(url)
+            if method in self._unsupported.get(url, ()):
+                problems.append(f"{name}: {method} not on its plan")
+                continue
             try:
                 if url not in self._verified:
                     bad = await self._verify(url)
@@ -142,6 +169,10 @@ class EvmRPC:
             if err and (err.get("code") in (-32005, 429) or "rate" in str(err.get("message", "")).lower()):
                 self.ring.fail(url, 30)  # some providers signal rate limits inside a 200 response
                 problems.append(f"{name}: rate limited")
+                continue
+            if err and _plan_limited(err):
+                self._unsupported.setdefault(url, set()).add(method)  # skip it for this method; it still serves others
+                problems.append(f"{name}: {method} not on its plan")
                 continue
             self.ring.ok(url)
             if err:

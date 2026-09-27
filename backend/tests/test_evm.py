@@ -122,3 +122,40 @@ async def test_header_key_moved_out_of_url():
                  client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     assert await rpc.get_balance("0x" + "1" * 40) == 5
     assert all(u == "https://base-mainnet.gateway.tatum.io" and k == "SECRET" for u, k in seen)
+
+
+async def test_endpoint_whose_plan_refuses_a_method_is_skipped_for_that_method_only():
+    """A free-tier key that refuses eth_call ("available for paid plans only") mustn't break balance reads."""
+    import json
+
+    log: list = []
+    paid = {"code": -32000, "message": "Method 'eth_call' is available for paid plans only. To access this feature, "
+                                       "please upgrade your subscription at https://provider.test"}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        host, body = req.url.host, json.loads(req.content)
+        log.append((host, body["method"]))
+        if body["method"] == "eth_chainId":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": hex(4663)})
+        if body["method"] == "eth_call" and host in ("free.test", "free2.test"):
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "error": paid})
+        if body["method"] == "eth_call":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": hex(7 * 10**6)})
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": hex(10**18)})
+
+    owner, token = "0x" + "11" * 20, "0x" + "22" * 20
+    rpc = EvmRPC("robinhood", ["https://free.test", "https://full.test"], client=client(handler))
+    for _ in range(3):  # whichever endpoint the rotation starts at, the answer comes from the one that can serve it
+        assert await rpc.erc20_balance(token, owner) == 7 * 10**6
+    assert sum(1 for x in log if x == ("free.test", "eth_call")) == 1  # asked once, then skipped for eth_call
+    log.clear()
+    await rpc.get_balance(owner)
+    await rpc.get_balance(owner)
+    assert ("free.test", "eth_getBalance") in log  # still used for everything its plan allows
+
+    # Every configured endpoint refuses: the chain's public RPC answers instead of failing the read.
+    import app.chains.evm as evm_mod
+    only_free = EvmRPC("robinhood", ["https://free.test", "https://free2.test"], client=client(handler))
+    only_free._last_resort = ["https://public.test"]
+    assert await only_free.erc20_balance(token, owner) == 7 * 10**6
+    assert evm_mod._plan_limited(paid) and not evm_mod._plan_limited({"code": 3, "message": "execution reverted"})
