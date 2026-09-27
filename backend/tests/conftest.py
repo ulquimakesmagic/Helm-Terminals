@@ -70,7 +70,7 @@ class FakeRPC:
         self.balances[payer] = self.balances.get(payer, 5 * SOL) + self.next_delta
         return f"sig{len(self.sent)}"
 
-    async def confirm(self, sig, timeout_s=60, poll_s=1.0):
+    async def confirm(self, sig, timeout_s=60, poll_s=1.0, **_):
         return "confirmed", None
 
 
@@ -151,14 +151,51 @@ async def signup(client, email="a@example.com", password="correct-horse-battery"
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-async def enable_2fa(client, headers):
-    """Turn on TOTP for the signed-in user and return the secret."""
+async def totp_code(secret):
+    """A current 2FA code that hasn't been used yet. Helm refuses a code twice, and a test can need several within
+    one 30-second step, so this forgets earlier uses first (the production check is covered in test_guard.py)."""
     import pyotp
+    from sqlalchemy import delete
 
-    secret = (await client.post("/auth/totp/enable", headers=headers)).json()["secret"]
-    r = await client.post("/auth/totp/verify", json={"code": pyotp.TOTP(secret).now()}, headers=headers)
+    from app.db import get_sessionmaker
+    from app.models import TotpUse
+
+    async with get_sessionmaker()() as db:
+        await db.execute(delete(TotpUse))
+        await db.commit()
+    return pyotp.TOTP(secret).now()
+
+
+async def enable_2fa(client, headers, password="correct-horse-battery"):
+    """Turn on TOTP for the signed-in user and return the secret."""
+    r = await client.post("/auth/totp/enable", json={"password": password}, headers=headers)
+    assert r.status_code == 200, r.text
+    secret = r.json()["secret"]
+    r = await client.post("/auth/totp/verify", json={"code": await totp_code(secret)}, headers=headers)
     assert r.status_code == 200, r.text
     return secret
+
+
+@pytest.fixture(autouse=True)
+def offline_evm(monkeypatch):
+    """No test reaches a real EVM RPC. Chains a test doesn't fake itself behave like an unreachable node (reads come
+    back "unavailable"), instead of quietly calling the public endpoints (which made results depend on the network)."""
+    import httpx
+
+    from app.chains import evm, registry
+
+    def refuse(req):
+        raise httpx.ConnectError("offline in tests", request=req)
+
+    cache: dict = {}
+
+    def offline(network):
+        if network not in cache:
+            cache[network] = evm.EvmRPC(network, "", client=httpx.AsyncClient(transport=httpx.MockTransport(refuse)))
+        return cache[network]
+
+    monkeypatch.setattr(evm, "shared_evm", offline)
+    monkeypatch.setattr(registry, "shared_evm", offline)
 
 
 @pytest.fixture(autouse=True)

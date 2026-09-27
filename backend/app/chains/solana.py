@@ -176,20 +176,38 @@ class SolanaRPC:
             "sendTransaction", [b64, {"encoding": "base64", "skipPreflight": True, "maxRetries": 3}]
         )
 
-    async def confirm(self, signature: str, timeout_s: float = 60, poll_s: float = 1.0) -> tuple[str, str | None]:
-        """Return (status, error) where status is confirmed | failed | timeout."""
-        waited = 0.0
-        while waited < timeout_s:
-            res = await self._call("getSignatureStatuses", [[signature], {"searchTransactionHistory": True}])
+    async def confirm(self, signature: str, timeout_s: float = 60, poll_s: float = 1.0,
+                      fast_poll_s: float = 0.25, fast_for_s: float = 8.0) -> tuple[str, str | None]:
+        """Return (status, error) where status is confirmed | failed | timeout.
+
+        Polls every 0.25 s (under one slot) for the first seconds, when a landed transaction is most likely to show
+        up, then every `poll_s`. The deadline is wall-clock time, including the RPC calls themselves. Recent
+        signatures are in every node's status cache, so the full history is only searched once, at the end."""
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        deadline = start + timeout_s
+        misses = 0
+        while True:
+            last = loop.time() >= deadline
+            try:
+                res = await self._call("getSignatureStatuses", [[signature], {"searchTransactionHistory": last}])
+                misses = 0
+            except (RPCUnavailable, httpx.HTTPError):
+                misses += 1  # a blip: keep asking; several in a row means the node is really down
+                if misses >= 5 or last:
+                    raise
+                await asyncio.sleep(fast_poll_s)
+                continue
             st = res["value"][0]  # type: ignore[index]
             if st:
                 if st.get("err"):
                     return "failed", str(st["err"])
                 if st.get("confirmationStatus") in ("confirmed", "finalized"):
                     return "confirmed", None
-            await asyncio.sleep(poll_s)
-            waited += poll_s
-        return "timeout", "not confirmed in time"
+            if last:
+                return "timeout", "not confirmed in time"
+            elapsed = loop.time() - start
+            await asyncio.sleep(min(fast_poll_s if elapsed < fast_for_s else poll_s, max(0.0, deadline - loop.time())))
 
 
 # --- Transaction building -------------------------------------------------------------------------

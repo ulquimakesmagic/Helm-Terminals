@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -19,6 +20,7 @@ from .signing import get_signer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    check_production_config(get_settings())
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
     await create_all()
     worker = None
@@ -35,6 +37,20 @@ async def lifespan(app: FastAPI):
                 await worker
 
 
+DEFAULT_SECRET = "dev-secret-change-me"
+
+
+def check_production_config(s) -> None:
+    """Refuse to start a production deployment on development defaults. SECRET_KEY encrypts 2FA secrets (and local
+    signer keys), so the public default would make them readable to anyone with the database."""
+    if s.env != "production":
+        return
+    # Only the public default (or nothing) is refused. A short but real key is left alone: changing SECRET_KEY makes
+    # existing 2FA secrets unreadable, so that must be a planned migration, not something a deploy forces.
+    if not s.secret_key or s.secret_key == DEFAULT_SECRET:
+        raise RuntimeError("ENV=production needs SECRET_KEY set to a long random value, not the default")
+
+
 def create_app() -> FastAPI:
     s = get_settings()
     app = FastAPI(title="Helm Terminals", version="0.1.0", lifespan=lifespan)
@@ -44,6 +60,22 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        # An API that only returns JSON and images: never sniff types, never render in a frame, no referrer leakage.
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid(_: Request, exc: RequestValidationError):
+        # FastAPI's default 422 echoes the submitted value back ("input"), which for a private key or password
+        # would put it in the response (and in any logs of it). Report where and why, never the value.
+        return JSONResponse(status_code=422, content={"detail": [
+            {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
+
     for r in (auth.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)

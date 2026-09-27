@@ -114,7 +114,7 @@ class Job(Base):
     launch_id: Mapped[str | None] = mapped_column(ForeignKey("launches.id"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(24))
     params: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|submitted|confirmed|failed|partial
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|submitted|confirmed|failed|partial|unconfirmed
     idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     channel: Mapped[str] = mapped_column(String(8), default="web")  # where the confirmation came from
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -291,3 +291,22 @@ def _declare_fk_dependencies() -> None:
 
 
 _declare_fk_dependencies()
+
+
+class AuthFailure(Base):
+    """A failed password or 2FA attempt, keyed by what was attacked ("login:<email>", "totp:<user id>"). Used to slow
+    down guessing; rows older than the window are ignored and pruned opportunistically."""
+    __tablename__ = "auth_failures"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    key: Mapped[str] = mapped_column(String(160), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class TotpUse(Base):
+    """A 2FA time step already accepted for a user. A code can't be replayed within its validity window."""
+    __tablename__ = "totp_uses"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    step: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "step"),)

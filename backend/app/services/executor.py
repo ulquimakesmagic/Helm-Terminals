@@ -4,6 +4,8 @@ Nothing is sent unless simulation succeeds. Failures are recorded as failures, n
 """
 
 import asyncio
+
+import httpx
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -12,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, BuiltTx, LaunchpadAdapter, TradeRequest
 from ..chains.solana import (
-    LAMPORTS_PER_SOL, SolanaRPC, TxTooLarge, append_sol_transfers, build_unsigned, sign_versioned, sol_transfer_ix,
+    LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, TxTooLarge, append_sol_transfers, build_unsigned,
+    sign_versioned, sol_transfer_ix,
 )
 from ..models import FeeRecord, Job, Transaction, Wallet, utcnow
 from ..signing.base import Signer, SigningError
@@ -70,7 +73,8 @@ class Executor:
         return EvmSender(rpc, self.signer, poll_s=0 if network in self.evm_rpcs else 1.5)
 
     async def submit(
-        self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None
+        self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None,
+        fast_poll_s: float = 0.25,
     ) -> SubmitResult:
         """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
         endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
@@ -83,17 +87,27 @@ class Executor:
                    else await self.rpc.simulate(signed, sig_verify=False))
         if sim_err:
             return SubmitResult(None, "failed", f"simulation failed: {sim_err}")
-        if submit_via is not None:
-            from solders.transaction import VersionedTransaction
+        from solders.transaction import VersionedTransaction
 
-            sig = str(VersionedTransaction.from_bytes(signed).signatures[0])
+        sig = str(VersionedTransaction.from_bytes(signed).signatures[0])  # known before sending
+        if submit_via is not None:
             try:
                 await submit_via(signed)
             except AdapterError as e:
                 return SubmitResult(None, "failed", str(e))
         else:
-            sig = await self.rpc.send(signed)
-        status, err = await self.rpc.confirm(sig, timeout_s=self.confirm_timeout_s)
+            try:
+                sig = await self.rpc.send(signed)
+            except RPCError as e:  # the node answered and refused it: nothing was broadcast
+                return SubmitResult(None, "failed", f"rejected by the node: {e}")
+            except (RPCUnavailable, httpx.HTTPError) as e:
+                # No answer: it may or may not have gone out. Treat it as sent-but-unconfirmed, never as failed,
+                # so nobody retries into a double buy or send.
+                return SubmitResult(sig, "timeout", f"couldn't confirm it was sent ({type(e).__name__}); check the explorer")
+        try:
+            status, err = await self.rpc.confirm(sig, timeout_s=self.confirm_timeout_s, fast_poll_s=fast_poll_s)
+        except Exception as e:  # anything after sending: the transaction may be out there, so never "failed"
+            return SubmitResult(sig, "timeout", f"sent, but confirmation couldn't be read ({type(e).__name__}); check the explorer")
         return SubmitResult(sig, status, err)
 
 
@@ -115,8 +129,17 @@ async def _record(
 
 
 def _finish(job: Job, results: list[SubmitResult]) -> None:
+    """A transaction that was sent but not confirmed in time may still land, so a job with any such transaction is
+    "unconfirmed", never "failed": reporting it as failed invites a retry that could buy or send twice."""
     ok = sum(1 for r in results if r.status == "confirmed")
-    job.status = "confirmed" if ok == len(results) and results else ("failed" if ok == 0 else "partial")
+    if results and ok == len(results):
+        job.status = "confirmed"
+    elif any(r.status == "timeout" for r in results):
+        job.status = "unconfirmed"
+    else:
+        job.status = "failed" if ok == 0 else "partial"
+    if (job.params or {}).get("lost_track"):  # it did finish after all
+        job.params = {k: v for k, v in job.params.items() if k not in ("lost_track", "error")}
     job.updated_at = utcnow()
 
 
@@ -189,9 +212,12 @@ async def run_trade(
     async def one(w: Wallet) -> tuple[list[tuple[str, SubmitResult, int | None]], FeeOutcome | None]:
         """Chain work only. No DB access, so wallets can run concurrently on one AsyncSession-safe path."""
         req = TradeRequest(mint, w.address, side, amount, denominated_in_sol, slippage_pct)
+        # The balance before the trade is read while the launchpad builds the transaction, not after it.
+        before_task = asyncio.create_task(ex.rpc.get_balance(w.address))
         try:
             built: BuiltTx = await (adapter.build_buy_tx(req) if side == "buy" else adapter.build_sell_tx(req))
         except AdapterError as e:
+            before_task.cancel()
             return [(side, SubmitResult(None, "failed", str(e)), None)], None
         refs = {w.address: w.signer_ref or ""}
         fee, transfers = await price_fee(w, built)
@@ -202,9 +228,10 @@ async def run_trade(
             except (TxTooLarge, ValueError):
                 fee.mode = "follow_up"
         if execution_guard and not await execution_guard():
+            before_task.cancel()
             return [(side, SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent."), None)], None
-        before = await ex.rpc.get_balance(w.address)
-        res = await ex.submit(raw, refs, built.extra_signers)
+        before = await before_task
+        res = await ex.submit(raw, refs, built.extra_signers, fast_poll_s=fast_poll)
         delta = None
         if res.status == "confirmed":
             delta = await ex.rpc.get_balance(w.address) - before
@@ -235,6 +262,9 @@ async def run_trade(
             ))
         await db.commit()
 
+    # Many wallets confirming at once poll less often each, so a batch stays near one status call per second per
+    # wallet (the old fixed rate) instead of multiplying load on the RPC.
+    fast_poll = min(1.0, 0.25 * max(1.0, len(wallets) / 2)) if mode == "parallel" else 0.25
     if mode == "parallel":
         outcomes = await asyncio.gather(*(one(w) for w in wallets))
         for w, outcome in zip(wallets, outcomes):

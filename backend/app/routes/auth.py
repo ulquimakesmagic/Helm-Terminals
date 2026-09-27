@@ -1,7 +1,7 @@
 import logging
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,11 +10,13 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import current_user, log_activity, web_user
 from ..models import Profile, Referral, ReferralLink, Session, User, utcnow
+from ..services.guard import (
+    LOGIN_LIMIT, LOGIN_LIMIT_ANY, check_password, check_totp_once, client_address, ensure_not_locked, record_failure,
+)
 from ..services.main_wallet import ensure_main_wallets
 from ..signing import get_signer
 from ..security import (
-    check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
-    token_hash, totp_uri, verify_password,
+    encrypt_secret, hash_password, new_token, new_totp_secret, token_hash, totp_uri, verify_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,6 +37,10 @@ class Login(BaseModel):
 
 class Code(BaseModel):
     code: str
+
+
+class PasswordConfirm(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
 
 
 @router.post("/register", status_code=201)
@@ -69,11 +75,18 @@ async def register(body: Register, db: AsyncSession = Depends(get_db), signer=De
 
 @router.post("/login")
 async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db)):
-    user = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+    email = body.email.lower()
+    here, anywhere = f"login:{email}:{client_address(request)}", f"login:{email}"
+    await ensure_not_locked(db, here, LOGIN_LIMIT)
+    await ensure_not_locked(db, anywhere, LOGIN_LIMIT_ANY)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
+        await record_failure(db, here, anywhere)
         raise HTTPException(401, "invalid credentials")
     if user.totp_enabled:
-        if not body.totp or not check_totp(decrypt_secret(user.totp_secret_enc or ""), body.totp):
+        if not body.totp:
+            raise HTTPException(401, "totp_required")
+        if not await check_totp_once(db, user, body.totp):
             raise HTTPException(401, "totp_required")
     token = new_token()
     ttl = timedelta(hours=get_settings().session_ttl_hours)
@@ -91,9 +104,13 @@ async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db
 
 
 @router.post("/totp/enable")
-async def totp_enable(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+async def totp_enable(body: PasswordConfirm, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     if user.totp_enabled:
         raise HTTPException(409, "2FA already enabled")
+    # 2FA guards withdrawals. Setting it up asks for the password, so someone holding only a stolen session can't
+    # attach their own authenticator and then withdraw.
+    if not await check_password(db, user, body.password):
+        raise HTTPException(400, "wrong password")
     secret = new_totp_secret()
     user.totp_secret_enc = encrypt_secret(secret)
     await db.commit()
@@ -104,7 +121,7 @@ async def totp_enable(user: User = Depends(web_user), db: AsyncSession = Depends
 async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     if not user.totp_secret_enc:
         raise HTTPException(400, "call /auth/totp/enable first")
-    if not check_totp(decrypt_secret(user.totp_secret_enc), body.code):
+    if not await check_totp_once(db, user, body.code):
         raise HTTPException(400, "invalid code")
     user.totp_enabled = True
     await log_activity(db, user.id, "2fa.enabled")
@@ -141,3 +158,15 @@ async def revoke(session_id: str, user: User = Depends(web_user), db: AsyncSessi
     s.revoked_at = utcnow()
     await log_activity(db, user.id, "session.revoked", "session", s.id)
     await db.commit()
+
+
+@router.post("/logout", status_code=204)
+async def logout(authorization: str | None = Header(default=None), user: User = Depends(current_user),
+                 db: AsyncSession = Depends(get_db)):
+    """End this session on the server too, so a copied token stops working when the user signs out."""
+    th = token_hash((authorization or "")[7:].strip())
+    s = (await db.execute(select(Session).where(Session.token_hash == th))).scalar_one_or_none()
+    if s and s.user_id == user.id and not s.revoked_at:
+        s.revoked_at = utcnow()
+        await log_activity(db, user.id, "session.revoked", "session", s.id)
+        await db.commit()

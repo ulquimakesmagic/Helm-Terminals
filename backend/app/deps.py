@@ -11,7 +11,7 @@ from .chains.solana import SolanaRPC, shared_rpc
 from .config import get_settings
 from .db import get_db, get_sessionmaker
 from .models import Activity, Job, Session, User, Wallet, utcnow
-from .security import check_totp, decrypt_secret, token_hash
+from .security import token_hash
 from .services.executor import Executor
 from .signing import get_signer
 
@@ -46,8 +46,14 @@ async def web_user(user: User = Depends(current_user)) -> User:
     return user
 
 
+# Sending to an address Helm doesn't hold the key for always needs 2FA, whatever TFA_REQUIRED_KINDS says: these are
+# the paths a stolen session (or a leaked bot key) would use to take funds out.
+ALWAYS_2FA = frozenset({"withdraw", "send_tokens", "fund_external"})
+
+
 def needs_2fa(kind: str) -> bool:
-    return kind in {k.strip() for k in get_settings().tfa_required_kinds.split(",") if k.strip()}
+    configured = {k.strip() for k in get_settings().tfa_required_kinds.split(",") if k.strip()}
+    return kind in ALWAYS_2FA or kind in configured
 
 
 def two_fa_warnings(user: User, kind: str) -> list[str]:
@@ -121,7 +127,9 @@ async def begin_spend(
     if needs_2fa(kind):
         if not user.totp_enabled:
             raise HTTPException(403, "2fa_setup_required: enable 2FA in the web app before sending assets out")
-        if not body.totp or not user.totp_secret_enc or not check_totp(decrypt_secret(user.totp_secret_enc), body.totp):
+        from .services.guard import check_totp_once
+
+        if not body.totp or not await check_totp_once(db, user, body.totp):
             raise HTTPException(401, "totp_required: provide a valid 2FA code to confirm")
     existing = (
         await db.execute(select(Job).where(Job.user_id == user.id, Job.idempotency_key == body.idempotency_key))

@@ -6,7 +6,7 @@ from app.db import get_sessionmaker
 from app.models import FeeRecord, Transaction
 from app.signing import get_signer  # noqa: F401
 
-from .conftest import SOL, enable_2fa, signup
+from .conftest import SOL, enable_2fa, signup, totp_code
 
 EXCLUDED_WORDS = ("marketplace", "volume", "nuke", "cleanup", "sniper", "generate-activity", "bundle", "block0")
 
@@ -257,7 +257,7 @@ async def test_two_factor_policy_only_gates_assets_leaving_the_wallets(client, f
     base = {**body, "confirm": True, "preflight_hash": pre["preflight_hash"], "idempotency_key": "b"}
     assert (await client.post("/wallets/withdraw", json=base, headers=h)).status_code == 401  # no code
     assert (await client.post("/wallets/withdraw", json={**base, "totp": "000000"}, headers=h)).status_code == 401
-    ok = await client.post("/wallets/withdraw", json={**base, "totp": pyotp.TOTP(secret).now()}, headers=h)
+    ok = await client.post("/wallets/withdraw", json={**base, "totp": await totp_code(secret)}, headers=h)
     assert ok.status_code == 200
 
     # Everything inside your own wallets (deploy, trades, ...) does not ask for a code, even with 2FA on.
@@ -286,7 +286,7 @@ async def test_fund_and_withdraw(client, fake_rpc):
     secret = await enable_2fa(client, h)
     dest = funder["address"]
     pre, r = await confirm(client, h, "/wallets/withdraw", {"wallet_ids": [a["id"], b["id"]], "destination": dest},
-                           key="w1", totp=pyotp.TOTP(secret).now())
+                           key="w1", totp=await totp_code(secret))
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
     bad = await client.post("/wallets/withdraw", json={"wallet_ids": [a["id"]], "destination": "not-an-address"},
@@ -305,7 +305,7 @@ async def test_burn_and_send_build_valid_transactions(client, fake_rpc):
     secret = await enable_2fa(client, h)
     _, r = await confirm(client, h, f"/launches/{lid}/send",
                          {"wallet_id": holders[0]["id"], "recipient": dev["address"], "percent": 10}, key="s1",
-                         totp=pyotp.TOTP(secret).now())
+                         totp=await totp_code(secret))
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
 
 

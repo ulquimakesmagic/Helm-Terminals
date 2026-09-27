@@ -20,6 +20,7 @@ from .test_bridge import TokenNode
 from .test_evm_wallets import ETH
 
 EVM = ["base", "bsc", "ethereum", "robinhood"]
+PW = "correct-horse-battery"
 
 
 async def test_signup_gives_every_account_a_main_wallet(client):
@@ -62,29 +63,29 @@ async def test_import_a_wallet_by_private_key_never_echoes_the_key(client):
     h = await signup(client, main=False)
     kp = Keypair()
     secret = str(kp)
-    r = await client.post("/wallets/import", json={"network": "solana", "private_key": secret, "label": "Old"}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": secret, "label": "Old"}, headers=h)
     assert r.status_code == 201, r.text
     [w] = r.json()
     assert w["address"] == str(kp.pubkey()) and w["kind"] == "managed" and w["label"] == "Old"
     assert secret not in r.text
     # the same wallet again
-    r = await client.post("/wallets/import", json={"network": "solana", "private_key": secret}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": secret}, headers=h)
     assert r.status_code == 409
     # a bad key: explains the format, repeats nothing of what was sent
     bad = "not-a-key-" + secret[:20]
-    r = await client.post("/wallets/import", json={"network": "solana", "private_key": bad}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": bad}, headers=h)
     assert r.status_code == 400 and "base58" in r.json()["detail"] and bad not in r.text
     # a malformed request body doesn't echo the key in the validation error either
-    r = await client.post("/wallets/import", json={"network": "solana", "private_key": secret, "label": "x" * 200}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": secret, "label": "x" * 200}, headers=h)
     assert r.status_code == 422 and secret not in r.text
-    r = await client.post("/wallets/import", json={"network": "solana", "private_key": secret, "all_evm": "maybe"}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": secret, "all_evm": "maybe"}, headers=h)
     assert r.status_code == 422 and secret not in r.text
     # an EVM key on every EVM chain; a watched address becomes managed rather than duplicated
     evm_key = "0x" + "22" * 32
     from eth_keys import keys
     addr = keys.PrivateKey(bytes.fromhex("22" * 32)).public_key.to_checksum_address()
     assert (await client.post("/wallets/watch", json={"network": "bsc", "address": addr}, headers=h)).status_code == 201
-    r = await client.post("/wallets/import", json={"network": "base", "private_key": evm_key, "all_evm": True}, headers=h)
+    r = await client.post("/wallets/import", json={"password": PW, "network": "base", "private_key": evm_key, "all_evm": True}, headers=h)
     assert r.status_code == 201 and sorted(w["network"] for w in r.json()) == sorted(EVM)
     ws = (await client.get("/wallets", headers=h)).json()
     assert [w["kind"] for w in ws if w["network"] == "bsc"] == ["managed"]
@@ -102,7 +103,7 @@ async def test_import_is_refused_plainly_where_the_signer_cant(client):
     h = await signup(client, main=False)
     app.dependency_overrides[get_signer] = lambda: NoImportSigner()
     try:
-        r = await client.post("/wallets/import", json={"network": "solana", "private_key": str(Keypair())}, headers=h)
+        r = await client.post("/wallets/import", json={"password": PW, "network": "solana", "private_key": str(Keypair())}, headers=h)
         assert r.status_code == 501 and "isn't available" in r.json()["detail"]
     finally:
         app.dependency_overrides.pop(get_signer, None)

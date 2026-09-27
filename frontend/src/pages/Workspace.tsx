@@ -150,7 +150,12 @@ export default function Workspace() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [w, all] = await Promise.all([api(`/launches/${id}/workspace`), api<any[]>("/wallets")]);
+      let [w, all] = await Promise.all([api<any>(`/launches/${id}/workspace`), api<any[]>("/wallets")]);
+      if (w.launch.status === "deploying" && w.launch.mint_address && w.launch.network === "solana") {
+        // The create was sent but not confirmed in time: look for the token on-chain.
+        const l = await api<any>(`/launches/${id}/recheck`, { body: {} }).catch(() => null);
+        if (l && l.status !== "deploying") w = await api(`/launches/${id}/workspace`);
+      }
       setWs(w);
       setAllWallets(all.filter((x) => x.kind === "managed"));
       setError("");
@@ -421,7 +426,9 @@ export default function Workspace() {
           </button>
         </div>
       )}
-      {l.status === "deploying" && <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>}
+      {l.status === "deploying" && (l.mint_address
+        ? <Callout tone="warn"><b>Sent, not confirmed yet.</b> The create transaction didn't confirm in time, so it may still land. Helm checks for the token every 10 seconds. Don't deploy again until this resolves; that would create a second token.</Callout>
+        : <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>)}
 
       {terminal ? (
         <>

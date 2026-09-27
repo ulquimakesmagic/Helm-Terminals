@@ -1,11 +1,12 @@
+import asyncio
 import base64
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from solders.pubkey import Pubkey
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
@@ -131,6 +132,8 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
             raise HTTPException(400, "image_b64 is not valid base64")
         if len(image) > MAX_IMAGE_BYTES:
             raise HTTPException(400, "image too large (max 2 MB)")
+        if _image_type(image) is None:  # served publicly and sent to launchpads, so it must really be an image
+            raise HTTPException(400, "the token image must be a PNG, JPEG, GIF or WebP file")
     adapter = get_adapter(body.launchpad)
     network = adapter.network
     params: dict = {"slippage_pct": body.slippage_pct}
@@ -214,7 +217,7 @@ async def clone_launch(body: CloneBody, user: User = Depends(current_user), db: 
         raise HTTPException(404, "that address has no token name or ticker to copy")
     l = Launch(user_id=user.id, network=target, launchpad=body.launchpad, status="draft",
                name=(meta["name"] or "Untitled")[:32], symbol=(meta["symbol"] or "TKN")[:10].upper(),
-               description=meta["description"] or "", image_blob=meta["image"], socials=meta["socials"],
+               description=meta["description"] or "", image_blob=meta["image"] if meta["image"] and _image_type(meta["image"]) else None, socials=meta["socials"],
                dev_wallet_id=body.dev_wallet_id,
                launchpad_params={"slippage_pct": 10.0, "cloned_from": {"network": network, "address": body.mint,
                                                                       "copied": meta["copied"]}})
@@ -391,6 +394,11 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
             res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", built.mint, utcnow()
+            elif res.status == "timeout" and built.mint:
+                # Sent but not confirmed in time: it may still land. Keep the mint so Helm can check for it, and
+                # don't offer a redeploy, which would create a second token.
+                launch.status, launch.mint_address = "deploying", built.mint
+                launch.launchpad_params = {**(launch.launchpad_params or {}), "unconfirmed_since": utcnow().isoformat()}
             else:
                 launch.status = "failed"
             await session.commit()
@@ -457,8 +465,9 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
     warnings = []
     if body.side == "buy":
         fee_sol = body.amount * plan.bps / 10_000 if plan.active else 0.0
-        for w in wallets:
-            if await rpc.get_balance(w.address) < int((body.amount + fee_sol + 0.01) * LAMPORTS_PER_SOL):
+        need = int((body.amount + fee_sol + 0.01) * LAMPORTS_PER_SOL)
+        for w, bal in zip(wallets, await _balances(rpc, [w.address for w in wallets])):
+            if bal < need:
                 warnings.append(f"{w.address} has too little SOL for a {body.amount} SOL buy plus fees.")
     if body.side == "buy" and getattr(user, "channel", "web") == "bot":
         # Cap how much a hijacked or mistaken chat session can spend on buys. Larger orders go through the web app.
@@ -494,6 +503,40 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+async def _balances(rpc: SolanaRPC, addresses: list[str]) -> list[int]:
+    """Balances read concurrently (a few at a time), not one round trip after another."""
+    sem = asyncio.Semaphore(8)
+
+    async def one(a: str) -> int:
+        async with sem:
+            return await rpc.get_balance(a)
+
+    return list(await asyncio.gather(*(one(a) for a in addresses)))
+
+
+@router.post("/launches/{launch_id}/recheck")
+async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                         rpc: SolanaRPC = Depends(get_rpc)):
+    """For a Solana deploy that was sent but not confirmed in time: look for the token on-chain."""
+    l = await _owned_launch(db, user, launch_id)
+    if l.status != "deploying" or not l.mint_address or l.network != "solana":
+        return _launch_out(l)
+    try:
+        await rpc.get_token_supply(l.mint_address)
+    except RPCError as e:
+        missing = "could not find account" in str(e).lower()  # the node's answer for a mint that doesn't exist
+        since = (l.launchpad_params or {}).get("unconfirmed_since")
+        if missing and since and utcnow() - datetime.fromisoformat(since) > timedelta(minutes=10):
+            # a create transaction's blockhash expires in about a minute; ten minutes on, it can't land any more
+            l.status, l.mint_address = "failed", None
+            await db.commit()
+        return _launch_out(l)
+    l.status, l.deployed_at = "live", l.deployed_at or utcnow()
+    await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id, {"mint": l.mint_address})
+    await db.commit()
+    return _launch_out(l)
 
 
 class ClaimBody(SpendConfirm):
@@ -695,11 +738,24 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
     return out
 
 
+STALE_JOB = timedelta(minutes=15)  # far beyond any confirmation or route wait
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     j = await db.get(Job, job_id)
     if not j or j.user_id != user.id:
         raise HTTPException(404, "job not found")
+    last_tx = (await db.execute(select(func.max(Transaction.created_at)).where(Transaction.job_id == j.id))).scalar()
+    quiet_since = max(j.updated_at, last_tx) if last_tx else j.updated_at
+    if j.status in ("pending", "submitted") and quiet_since < utcnow() - STALE_JOB:
+        # Work runs inside the API process; a restart (a deploy) mid-job stops it. Don't leave the user waiting
+        # forever: say it's unconfirmed, and that the explorer is the source of truth.
+        j.status = "unconfirmed"
+        j.params = {**(j.params or {}), "lost_track": True,
+                    "error": "Helm lost track of this job (the server restarted while it ran). "
+                    "Check the transactions on the explorer before trying again."}
+        await db.commit()
     txs = (await db.execute(select(Transaction).where(Transaction.job_id == j.id))).scalars().all()
     return {"id": j.id, "kind": j.kind, "status": j.status, "error": (j.params or {}).get("error"),
             "transactions": [{"id": t.id, "kind": t.kind, "status": t.status, "signature": t.signature,
@@ -883,7 +939,21 @@ async def launch_image(launch_id: str, db: AsyncSession = Depends(get_db)):
     l = await db.get(Launch, launch_id)
     if not l or not l.image_blob or l.status not in ("deploying", "live"):
         raise HTTPException(404, "not found")
-    head = l.image_blob[:12]
-    kind = ("image/png" if head.startswith(b"\x89PNG") else "image/gif" if head[:4] == b"GIF8"
-            else "image/webp" if head[8:12] == b"WEBP" else "image/jpeg")
-    return Response(l.image_blob, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    kind = _image_type(l.image_blob)
+    if kind is None:  # stored before uploads were checked; never serve arbitrary bytes from our domain
+        raise HTTPException(404, "not found")
+    return Response(l.image_blob, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable",
+                                                            "Content-Security-Policy": "default-src 'none'"})
+
+
+def _image_type(data: bytes) -> str | None:
+    head = data[:12]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    return None

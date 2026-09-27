@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { hasToken, setToken } from "./api";
+import { api, hasToken, setToken } from "./api";
 import { Icon, IconName, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
@@ -74,7 +74,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                 <Icon name="telegram" size={12} />{tg?.linked ? "Telegram linked" : "Telegram not linked"}
               </div>
             </Link>
-            <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => { setToken(null); nav("/login"); }}>
+            <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => { api("/auth/logout", { body: {} }).catch(() => {}).finally(() => { setToken(null); nav("/login"); }); }}>
               <Icon name="logout" size={15} />
             </button>
           </div>

@@ -15,7 +15,7 @@ interface Props {
   network?: string;
 }
 
-const TERMINAL = ["confirmed", "failed", "partial"];
+const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
 const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
@@ -153,6 +153,8 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [needs2fa, setNeeds2fa] = useState(false);
   const [error, setError] = useState("");
   const [job, setJob] = useState<any>(null);
+  const [jobId, setJobId] = useState("");
+  const [lost, setLost] = useState(false);
   const key = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -167,11 +169,17 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     setError("");
     try {
       const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, idempotency_key: key.current, totp: totp || undefined } });
+      setJobId(r.job_id);
       setPhase("polling");
-      let j = await api(`/jobs/${r.job_id}`);
+      // Every half second at first (most transactions land within a few seconds), then every 1.5 s. A dropped
+      // connection doesn't end the wait: the job keeps running on the server, so keep asking.
+      const started = Date.now();
+      let j: any = { status: r.status };
+      let misses = 0;
       while (!TERMINAL.includes(j.status)) {
-        await new Promise((res) => setTimeout(res, 1500));
-        j = await api(`/jobs/${r.job_id}`);
+        await new Promise((res) => setTimeout(res, Date.now() - started < 10_000 ? 500 : 1500));
+        try { j = await api(`/jobs/${r.job_id}`); misses = 0; setLost(false); }
+        catch { if (++misses >= 3) setLost(true); }
       }
       setJob(j);
       setPhase("done");
@@ -201,7 +209,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     );
 
   return (
-    <Modal title={title} sub={<Steps phase={phase} />} onClose={onClose} foot={foot} lock={busy}>
+    <Modal title={title} sub={<Steps phase={phase} />} onClose={onClose} foot={foot} lock={phase === "submitting"}>
       {phase === "loading" && (
         <div className="row" style={{ padding: "24px 0", justifyContent: "center", gap: 10 }} role="status"><Spinner /><span className="muted">Building the preview and checking balances…</span></div>
       )}
@@ -239,14 +247,26 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
         </>
       )}
 
+      {phase === "polling" && (
+        <Callout tone={lost ? "warn" : "info"}>
+          {lost
+            ? <><b>Can't reach Helm right now.</b> Your confirmation was received and keeps running on the server; this window will update when the connection comes back. Don't confirm it again.</>
+            : <><b>Submitted.</b> Signed and sent; waiting for the chain to confirm. You can close this window: the result will show in the Transactions tab.</>}
+          {jobId && <span className="muted small"> · job {jobId.slice(0, 8)}</span>}
+        </Callout>
+      )}
       {phase === "done" && job && (
         <>
           <div className="stack" style={{ alignItems: "center", textAlign: "center", padding: "8px 0" }}>
             <div className={`feed-ic ${job.status === "confirmed" ? "good" : job.status === "failed" ? "bad" : "warn"}`} style={{ width: 48, height: 48, borderRadius: 14 }}>
               <Icon name={job.status === "confirmed" ? "checkcircle" : job.status === "failed" ? "xcircle" : "alert"} size={24} />
             </div>
-            <h2 role="status">{job.status === "confirmed" ? "Confirmed on-chain" : job.status === "failed" ? "Failed" : "Partly completed"}</h2>
+            <h2 role="status">{job.status === "confirmed" ? "Confirmed on-chain" : job.status === "failed" ? "Failed"
+              : job.status === "unconfirmed" ? "Sent, not confirmed yet" : "Partly completed"}</h2>
             <p className="muted small">{job.transactions.length} transaction{job.transactions.length === 1 ? "" : "s"} recorded{job.status !== "confirmed" ? ". Nothing is retried automatically." : "."}</p>
+            {job.status === "unconfirmed" && (
+              <p className="small text-2" style={{ maxWidth: 420 }}>At least one transaction was sent but didn't confirm in time. It may still land: check it on the explorer before doing this again, or you could do it twice.</p>
+            )}
           </div>
           {job.error && <Callout tone="err">{job.error}</Callout>}
           <div className="card" style={{ background: "var(--bg-2)" }}>

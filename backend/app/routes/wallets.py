@@ -4,13 +4,13 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
 from solders.pubkey import Pubkey
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.solana import LAMPORTS_PER_SOL, SolanaRPC, build_unsigned, sol_transfer_ix
 from ..db import get_db
 from ..deps import (
-    SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
+    SpendConfirm, begin_spend, current_user, web_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
     two_fa_warnings, valid_address, valid_address_for,
 )
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
@@ -21,10 +21,18 @@ from ..services.preflight import build_preflight
 from ..chains.evm import EVM_CHAINS, WEI
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
+from ..services.guard import check_password, check_totp_once
 from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
 from ..signing.base import SigningError, parse_private_key
 
 router = APIRouter(tags=["wallets"])
+MAX_WALLETS = 500  # per account: each managed wallet is a key in the signing service, which has quotas and costs
+
+
+async def _check_room(db: AsyncSession, user: User, adding: int) -> None:
+    have = (await db.execute(select(func.count()).select_from(Wallet).where(Wallet.user_id == user.id))).scalar_one()
+    if have + adding > MAX_WALLETS:
+        raise HTTPException(400, f"an account can hold up to {MAX_WALLETS} wallets; you have {have}")
 log = logging.getLogger(__name__)
 TX_FEE_RESERVE = 10_000  # lamports kept back for fees
 
@@ -103,6 +111,7 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
         raise HTTPException(400, f"unsupported network {body.network}")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
+    await _check_room(db, user, body.count)
     created = []
     for i in range(body.count):
         label = f"{body.label_prefix} {i + 1}" if body.count > 1 else body.label_prefix
@@ -123,6 +132,7 @@ async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     address = body.address.strip()
+    await _check_room(db, user, 1)
     existing = (await db.execute(select(Wallet).where(
         Wallet.user_id == user.id, Wallet.network == body.network, Wallet.address == address))).scalar_one_or_none()
     if existing:
@@ -140,12 +150,22 @@ class ImportWallet(BaseModel):
     label: str = Field(default="Imported", max_length=80)
     all_evm: bool = False  # an EVM key works on every EVM chain: add it to each one
     folder_id: str | None = None
+    password: SecretStr  # re-entered: an imported wallet becomes a destination that needs no 2FA
+    totp: str | None = None  # required when the account has 2FA
 
 
 @router.post("/wallets/import", status_code=201)
-async def import_wallet(body: ImportWallet, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+async def import_wallet(body: ImportWallet, user: User = Depends(web_user), db: AsyncSession = Depends(get_db),
                         signer=Depends(get_signer)):
-    """Bring an existing wallet under Helm's signer. The key is encrypted by the signer and never returned or logged."""
+    """Bring an existing wallet under Helm's signer. The key is encrypted by the signer and never returned or logged.
+
+    An imported wallet is one of the user's own wallets from then on, so funds can move to it without 2FA. Someone
+    with a stolen session could import a key they hold and drain into it that way, so importing asks for the
+    password (and the 2FA code when 2FA is on), and only from the web app."""
+    if not await check_password(db, user, body.password.get_secret_value()):
+        raise HTTPException(400, "wrong password")
+    if user.totp_enabled and not await check_totp_once(db, user, body.totp):
+        raise HTTPException(401, "totp_required: enter your 2FA code to import a wallet")
     evm = body.network in EVM_CHAINS
     if body.network != "solana" and not evm:
         raise HTTPException(400, f"unsupported network {body.network}")
@@ -387,16 +407,19 @@ async def fund(body: FundBody, user: User = Depends(current_user), db: AsyncSess
         return prior
     src = await owned_wallet(db, user, body.funder_wallet_id)
     targets = [(await owned_wallet(db, user, a.wallet_id, managed=False), a.sol) for a in body.allocations]
+    # A watch-only target is an address someone typed in, not a wallet Helm holds the key to: sending there is money
+    # leaving the account, so it needs 2FA exactly like a withdrawal.
+    kind = "fund" if all(w.kind == "managed" for w, _ in targets) else "fund_external"
     if any(w.network != src.network for w, _ in targets):
         raise HTTPException(400, f"every wallet must be on {src.network}, the funder's network")
     if src.network in EVM_CHAINS:
-        return await _fund_evm(body, user, db, ex, src, targets)
+        return await _fund_evm(body, user, db, ex, src, targets, kind)
     total = sum(sol for _, sol in targets)
     bal = await rpc.get_balance(src.address)
     warnings = []
     if bal < int(total * LAMPORTS_PER_SOL) + TX_FEE_RESERVE:
         warnings.append(f"Funder balance {bal / LAMPORTS_PER_SOL:.4f} SOL is below the {total:.4f} SOL required plus fees.")
-    pf = build_preflight("fund", {
+    pf = build_preflight(kind, {
         "from": src.address,
         "to": [{"address": w.address, "sol": sol} for w, sol in targets],
         "total_sol": total, "platform_fee": "none",
@@ -405,7 +428,7 @@ async def fund(body: FundBody, user: User = Depends(current_user), db: AsyncSess
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
-    job, created = await begin_spend(db, user, body, pf, "fund", None, pf["preflight"])
+    job, created = await begin_spend(db, user, body, pf, kind, None, pf["preflight"])
     if created:
         async def work(session, j):
             blockhash = await ex.rpc.get_latest_blockhash()
@@ -473,7 +496,8 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
 # Amounts in the request bodies (`sol`, `amount_sol`) are in the chain's own coin here: ETH or BNB.
 
 
-async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, src: Wallet, targets: list):
+async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, src: Wallet, targets: list,
+                    kind: str = "fund"):
     sender = ex.evm(src.network)
     coin = EVM_CHAINS[src.network]["native"]
     wei = [(w, int(round(amt * WEI))) for w, amt in targets]
@@ -484,7 +508,7 @@ async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, 
     if bal < total + gas:
         warnings.append(f"Funder balance {bal / WEI:.6f} {coin} is below the {total / WEI:.6f} {coin} required "
                         f"plus about {gas / WEI:.6f} {coin} gas.")
-    pf = build_preflight("fund", {
+    pf = build_preflight(kind, {
         "network": src.network, "from": src.address,
         "to": [{"address": w.address, "amount": v / WEI, "coin": coin} for w, v in wei],
         "total": total / WEI, "coin": coin, "max_gas": gas / WEI, "platform_fee": "none",
@@ -493,7 +517,7 @@ async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, 
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
-    job, created = await begin_spend(db, user, body, pf, "fund", None, pf["preflight"])
+    job, created = await begin_spend(db, user, body, pf, kind, None, pf["preflight"])
     if created:
         async def work(session, j):
             j.status = "submitted"

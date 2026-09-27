@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg, fmt, short, usd } from "../api";
+import { useSession } from "../session";
 import Distribute from "../components/Distribute";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
@@ -135,6 +136,9 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
   const [secret, setSecret] = useState("");
   const [importLabel, setImportLabel] = useState("Imported");
   const [allEvm, setAllEvm] = useState(true);
+  const [password, setPassword] = useState("");
+  const [importCode, setImportCode] = useState("");
+  const { me } = useSession();
   const [count, setCount] = useState(1);
   const [prefix, setPrefix] = useState("Wallet");
   const [addr, setAddr] = useState("");
@@ -149,9 +153,9 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
       let imported = 0;
       if (tab === "managed") await api("/wallets", { body: { network, count, label_prefix: prefix, folder_id } });
       else if (tab === "import") {
-        const r = await api<unknown[]>("/wallets/import", { body: { network, private_key: secret.trim(), label: importLabel.trim() || "Imported", all_evm: network !== "solana" && allEvm, folder_id } });
+        const r = await api<unknown[]>("/wallets/import", { body: { network, private_key: secret.trim(), label: importLabel.trim() || "Imported", all_evm: network !== "solana" && allEvm, folder_id, password, totp: importCode || null } });
         imported = r.length;
-        setSecret("");
+        setSecret(""); setPassword(""); setImportCode("");
       } else await api("/wallets/watch", { body: { network, address: addr.trim(), folder_id } });
       const where = folder_id ? ` in ${folder === NEW_FOLDER ? newFolder.trim() : folders.find((f) => f.id === folder_id)?.name}` : "";
       toast("good", tab === "managed" ? `Created ${count} wallet${count === 1 ? "" : "s"}${where}`
@@ -162,7 +166,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
   return (
     <Modal title="Add wallets" onClose={onClose}
       foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" onClick={go} disabled={busy || (folder === NEW_FOLDER && !newFolder.trim()) || (tab === "watch" ? !addr.trim() : tab === "import" ? !secret.trim() : count < 1 || count > 50)}>{busy && <Spinner />}{tab === "managed" ? `Create ${count}` : tab === "import" ? "Import wallet" : "Add address"}</button></>}>
+        <button className="btn" onClick={go} disabled={busy || (folder === NEW_FOLDER && !newFolder.trim()) || (tab === "watch" ? !addr.trim() : tab === "import" ? !secret.trim() || !password || (!!me?.totp_enabled && importCode.length !== 6) : count < 1 || count > 50)}>{busy && <Spinner />}{tab === "managed" ? `Create ${count}` : tab === "import" ? "Import wallet" : "Add address"}</button></>}>
       <div className="seg full">
         <button className={tab === "managed" ? "on" : ""} onClick={() => { setTab("managed"); if (!MANAGED_NETWORKS.includes(network)) setNetwork("solana"); }}>New wallets</button>
         <button className={tab === "import" ? "on" : ""} onClick={() => { setTab("import"); if (!MANAGED_NETWORKS.includes(network)) setNetwork("solana"); }}>Import</button>
@@ -199,6 +203,16 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
             <input className="mono" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" spellCheck={false} autoCapitalize="off" autoCorrect="off" autoFocus />
           </Field>
           <Field label="Label"><input value={importLabel} onChange={(e) => setImportLabel(e.target.value)} maxLength={80} /></Field>
+          <div className="row" style={{ alignItems: "flex-start" }}>
+            <Field label="Your Helm password" hint="Imported wallets can receive funds without a 2FA code, so Helm checks it's you" style={{ flex: "1 1 220px", minWidth: 0 }}>
+              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            {me?.totp_enabled && (
+              <Field label="2FA code" style={{ width: 130 }}>
+                <input className="mono" inputMode="numeric" value={importCode} onChange={(e) => setImportCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="123456" />
+              </Field>
+            )}
+          </div>
           {network !== "solana" && (
             <label className="small" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <input type="checkbox" checked={allEvm} onChange={(e) => setAllEvm(e.target.checked)} style={{ marginTop: 2, flex: "none" }} />

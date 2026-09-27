@@ -12,7 +12,7 @@ from eth_account._utils.legacy_transactions import encode_transaction, serializa
 from eth_account.typed_transactions import TypedTransaction
 from eth_utils import to_checksum_address
 
-from ..chains.evm import EvmRPC, EvmRPCError
+from ..chains.evm import EvmRPC, EvmRPCError, EvmRPCUnavailable
 from ..signing.base import Signer, SigningError
 
 GAS_HEADROOM = 1.2
@@ -111,14 +111,30 @@ class EvmSender:
                 tx_hash = await self.rpc.send_raw("0x" + raw.hex())
             except EvmRPCError as e:
                 return EvmResult(None, "failed", f"rejected by node: {e}")
+            except EvmRPCUnavailable:
+                # No answer: it may have been broadcast. Track it by its hash (computable from the signed bytes)
+                # rather than calling it failed, and reserve the nonce so nothing else reuses it.
+                _next_nonce[key] = nonce + 1
+                from eth_utils import keccak
+
+                return await self.wait("0x" + keccak(raw).hex())
             _next_nonce[key] = nonce + 1
         return await self.wait(tx_hash)
 
     async def wait(self, tx_hash: str) -> EvmResult:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.confirm_timeout_s
+        misses = 0
         while loop.time() < deadline:
-            rec = await self.rpc.receipt(tx_hash)
+            try:
+                rec = await self.rpc.receipt(tx_hash)
+                misses = 0
+            except Exception:  # the node is flaky: keep waiting; the transaction is out there either way
+                misses += 1
+                if misses >= 5:
+                    return EvmResult(tx_hash, "timeout", "sent, but the receipt couldn't be read; check the explorer")
+                await asyncio.sleep(self.poll_s)
+                continue
             if rec:
                 cost = int(rec.get("gasUsed", "0x0"), 16) * int(rec.get("effectiveGasPrice", "0x0"), 16)
                 if rec.get("status") == "0x1":

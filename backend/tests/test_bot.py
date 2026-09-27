@@ -12,7 +12,7 @@ from helm_bot.controller import Controller
 from helm_bot.pending import PendingStore
 from helm_bot.render import render_launches, render_preflight, sid
 
-from .conftest import enable_2fa, signup
+from .conftest import enable_2fa, signup, totp_code
 from .test_api import live_launch, make_wallets
 
 KEY = "test-bot-key"
@@ -289,7 +289,7 @@ async def test_withdraw_flow_with_2fa_code(client, bot_key, fake_rpc):
     wrong = await say(ctl, 1001, "000000")
     assert "didn't work" in wrong.text and wrong.replies[0].delete_incoming and len(fake_rpc.sent) == base
 
-    right = await say(ctl, 1001, pyotp.TOTP(secret).now())
+    right = await say(ctl, 1001, await totp_code(secret))
     assert right.replies[0].delete_incoming and "Submitted" in right.replies[0].text
     assert "✅" in right.replies[-1].text and len(fake_rpc.sent) == base + 1
     assert ctl.awaiting == {}
@@ -340,7 +340,7 @@ async def test_claim_burn_and_send_commands(client, bot_key, fake_rpc):
 
     send = await say(ctl, 1001, f"/send {sid(lid)} {sid(holders[0]['id'])} {dev['address']} 10")
     await tap(ctl, 1001, send.confirm_data)
-    assert "✅" in (await say(ctl, 1001, pyotp.TOTP(secret).now())).replies[-1].text
+    assert "✅" in (await say(ctl, 1001, await totp_code(secret))).replies[-1].text
 
 
 async def test_bad_input_is_explained_not_sent(client, bot_key, fake_rpc):

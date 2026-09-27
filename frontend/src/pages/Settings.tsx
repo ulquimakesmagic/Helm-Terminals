@@ -21,6 +21,8 @@ function TwoFactor() {
   const [setup, setSetup] = useState<{ secret: string; provisioning_uri: string } | null>(null);
   const [qr, setQr] = useState("");
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +31,12 @@ function TwoFactor() {
     QRCode.toDataURL(setup.provisioning_uri, { margin: 1, width: 360, color: { dark: "#0b0e14", light: "#ffffff" } }).then(setQr).catch(() => setQr(""));
   }, [setup]);
 
-  const start = () => { setBusy(true); api("/auth/totp/enable", { body: {} }).then(setSetup).catch((e) => setError(errMsg(e))).finally(() => setBusy(false)); };
+  const start = () => {
+    setBusy(true); setError("");
+    api<{ secret: string; provisioning_uri: string }>("/auth/totp/enable", { body: { password } })
+      .then((r) => { setSetup(r); setPassword(""); setAsking(false); })
+      .catch((e) => setError(errMsg(e))).finally(() => setBusy(false));
+  };
   const verify = () => {
     setBusy(true); setError("");
     api("/auth/totp/verify", { body: { code } })
@@ -45,8 +52,17 @@ function TwoFactor() {
         {error && <Callout tone="err">{error}</Callout>}
         {me?.totp_enabled ? (
           <Callout tone="good">Your account is protected. Keep your authenticator app backed up.</Callout>
+        ) : !setup && !asking ? (
+          <button className="btn" style={{ alignSelf: "flex-start" }} onClick={() => setAsking(true)}><Icon name="shield" size={15} />Set up 2FA</button>
         ) : !setup ? (
-          <button className="btn" style={{ alignSelf: "flex-start" }} onClick={start} disabled={busy}>{busy ? <Spinner /> : <Icon name="shield" size={15} />}Set up 2FA</button>
+          <form className="row" style={{ alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); start(); }}>
+            <label className="field" style={{ flex: "1 1 240px", maxWidth: 320 }}>
+              <span>Confirm your password</span>
+              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+            </label>
+            <button className="btn" type="submit" disabled={!password || busy}>{busy && <Spinner />}Continue</button>
+            <button className="btn ghost" type="button" onClick={() => { setAsking(false); setPassword(""); }}>Cancel</button>
+          </form>
         ) : (
           <div className="row" style={{ alignItems: "flex-start", gap: 20 }}>
             <div style={{ background: "#fff", padding: 8, borderRadius: 12, width: 164, height: 164, flex: "none" }}>

@@ -14,7 +14,7 @@ from app.services.evm_exec import EvmCall, EvmSender
 from app.services.executor import Executor
 from app.signing import get_signer
 
-from .conftest import enable_2fa, signup
+from .conftest import enable_2fa, signup, totp_code
 
 ETH = 10**18
 
@@ -134,7 +134,7 @@ async def test_create_fund_and_withdraw_evm_wallets(client, fake_rpc):
     pf = (await client.post("/wallets/withdraw", json=wbody, headers=h)).json()
     assert not pf["preflight"]["warnings"], pf["preflight"]["warnings"]
     r = await client.post("/wallets/withdraw", json={**wbody, "confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                     "idempotency_key": "w1", "totp": pyotp.TOTP(secret).now()}, headers=h)
+                                                     "idempotency_key": "w1", "totp": await totp_code(secret)}, headers=h)
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed", job
     assert base.balances["0x" + "22" * 20] > 0.09 * ETH
