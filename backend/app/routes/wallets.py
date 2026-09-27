@@ -14,8 +14,10 @@ from ..deps import (
 )
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single
+from ..services import portfolio
+from ..services.chain_balances import STABLE_DECIMALS, native_coin, stable_for
 from ..services.preflight import build_preflight
-from ..chains.evm import EVM_CHAINS, WEI, shared_evm
+from ..chains.evm import EVM_CHAINS, WEI
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 
@@ -23,13 +25,20 @@ router = APIRouter(tags=["wallets"])
 TX_FEE_RESERVE = 10_000  # lamports kept back for fees
 
 
-def _wallet_out(w: Wallet, balance: int | None = None) -> dict:
+def _wallet_out(w: Wallet, balance: int | None = None, stable: float | None = None,
+                price: float | None = None) -> dict:
     out = {"id": w.id, "network": w.network, "address": w.address, "kind": w.kind, "label": w.label,
            "folder_id": w.folder_id}
     if balance is not None:
         native = balance / (LAMPORTS_PER_SOL if w.network == "solana" else WEI)
         out["balance"] = native  # in the chain's own coin: SOL, ETH or BNB
         out["balance_sol"] = native  # kept for older clients; same value
+        out["coin_usd"] = native * price if price is not None else None
+    if stable is not None:
+        out["stable"] = stable  # the chain's dollar stablecoin (USDC; USDG on Robinhood Chain)
+        out["stable_symbol"] = stable_for(w.network)[0]
+    if balance is not None and stable is not None and price is not None:
+        out["usd"] = out["coin_usd"] + stable  # the wallet's value in dollars
     return out  # signer_ref is never returned
 
 
@@ -49,21 +58,35 @@ class WatchWallet(BaseModel):
 
 @router.get("/wallets")
 async def list_wallets(with_balances: bool = False, user: User = Depends(current_user),
-                       db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc)):
+                       db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc),
+                       ex: Executor = Depends(get_executor)):
     rows = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
-    out = []
-    for w in rows:
-        bal = None
-        if with_balances:
+    if not with_balances:
+        return [_wallet_out(w) for w in rows]
+    prices = await portfolio.coin_prices()
+    sem = asyncio.Semaphore(8)
+
+    async def read(w: Wallet):
+        bal = stable = None
+        if w.kind != "managed" and w.network not in ("solana", *EVM_CHAINS):
+            return _wallet_out(w)
+        async with sem:
+            # Each read is separate so one chain (or one call) being down doesn't hide the rest.
             try:
-                if w.network == "solana":
-                    bal = await rpc.get_balance(w.address)
-                elif w.network in EVM_CHAINS:
-                    bal = await shared_evm(w.network).get_balance(w.address)
+                bal = await (rpc.get_balance(w.address) if w.network == "solana"
+                             else ex.evm(w.network).rpc.get_balance(w.address))
             except Exception:
-                bal = None  # one chain being down shouldn't hide the rest
-        out.append(_wallet_out(w, bal))
-    return out
+                bal = None
+            try:
+                token = stable_for(w.network)[1]
+                raw = await (rpc.get_token_balance(w.address, token) if w.network == "solana"
+                             else ex.evm(w.network).rpc.erc20_balance(token, w.address))
+                stable = raw / 10 ** STABLE_DECIMALS[w.network]
+            except Exception:
+                stable = None
+        return _wallet_out(w, bal, stable, prices.get(native_coin(w.network)))
+
+    return list(await asyncio.gather(*(read(w) for w in rows)))
 
 
 @router.post("/wallets", status_code=201)

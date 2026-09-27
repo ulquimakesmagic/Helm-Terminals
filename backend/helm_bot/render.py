@@ -80,6 +80,9 @@ def render_workspace(ws: dict, section: str = "all") -> str:
 
 
 def _value(v: object) -> str:
+    if isinstance(v, dict):  # e.g. a deploy's USDC funding step: one line per detail, internal ids left out
+        return "\n" + "\n".join(f"  • {e(k.replace('_', ' '))}: {_value(x)}" for k, x in v.items()
+                                if not k.endswith("_id") and k != "amount_usd")
     if isinstance(v, list):
         items = [(", ".join(f"{k}: {x}" for k, x in i.items()) if isinstance(i, dict) else str(i)) for i in v]
         extra = f"\n  … and {len(items) - MAX_LIST} more" if len(items) > MAX_LIST else ""

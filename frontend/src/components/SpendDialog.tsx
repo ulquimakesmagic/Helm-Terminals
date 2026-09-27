@@ -27,7 +27,9 @@ const LABELS: Record<string, string> = {
   asset: "Asset", token: "Token", chain: "Chain", split: "Split", transactions: "Transactions",
   network_fees_max: "Max network fees", skipped_empty: "Skipped (nothing to move)", transparency: "Transparency",
   send: "Send", send_asset: "Pay with", receive_asset: "Receive", from_chain: "From chain", to_chain: "To chain",
-  provider: "Route provider", quote: "Live quote",
+  provider: "Route provider", quote: "Live quote", funding: "Funding from USDC", funding_detail: "Funding covers",
+  dev_buy_usd: "Dev buy (USD, est.)", from_address: "From address", route_fee: "Route fee", receive: "Receive", leftover: "Leftover",
+  covers: "Covers",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -60,6 +62,20 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
       </div>
     );
   }
+  if ((k === "funding" || k === "funding_detail") && v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    const skip = new Set(["from_wallet_id", "from_network", "amount_usd"]);
+    return (
+      <div className="stack tight" style={{ alignItems: "flex-end" }}>
+        {Object.entries(o).filter(([kk]) => !skip.has(kk)).map(([kk, x]) => (
+          <span key={kk} className="row nowrap" style={{ gap: 8 }}>
+            <span className="muted small">{LABELS[kk] ?? kk.replace(/_/g, " ")}</span>
+            {isAddr(x) ? <Address address={x} network={String(o.from_network ?? network)} /> : <span>{String(x)}</span>}
+          </span>
+        ))}
+      </div>
+    );
+  }
   if (k === "quote" && v && typeof v === "object") {
     const q = v as { receive_estimate?: number; receive_minimum?: number; receive_symbol?: string; time_estimate_s?: number;
       fees_usd?: { network_gas?: number; relayer?: number; helm_route_fee?: number } };
@@ -78,6 +94,7 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
   }
   if (isAddr(v)) return <Address address={v} type={k === "mint" || k === "token" ? "token" : "account"} network={network} />;
   if (typeof v === "boolean") return <span className={v && k === "irreversible" ? "bad" : ""} style={{ fontWeight: 600 }}>{v ? "Yes" : "No"}</span>;
+  if (typeof v === "number" && k.endsWith("_usd")) return <span className="num" style={{ fontWeight: 600 }}>${fmt(v, 2)}</span>;
   if (typeof v === "number") {
     const unit = ["max_gas", "max_gas_each", "network_fees_max"].includes(k) ? ` ${coin}` : k.endsWith("_sol") || k === "total" ? ` ${cur}` : k === "send" ? "" : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
     return <span className="num" style={{ fontWeight: 600 }}>{fmt(v, 6)}{unit}</span>;
@@ -179,7 +196,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       <>
         <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
         <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || (needs2fa && totp.length !== 6)}>
-          {busy ? <><Spinner />{phase === "polling" ? "Waiting for confirmation…" : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
+          {busy ? <><Spinner />{phase === "polling" ? (kind === "deploy" && pre?.funding ? "Routing USDC, then deploying…" : "Waiting for confirmation…") : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
         </button>
       </>
     );
@@ -249,7 +266,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
                     <td style={{ textTransform: "capitalize" }}>{String(t.kind).replace(/_/g, " ")}</td>
                     <td><StatusBadge status={t.status} /></td>
                     <td className="r mono">
-                      {t.signature ? <a href={explorerUrl(network, "tx", t.signature)} target="_blank" rel="noreferrer">View on explorer <Icon name="ext" size={11} /></a> : null}
+                      {t.signature ? <a href={explorerUrl(String(t.kind).startsWith("fund_route") ? String(pre?.funding?.from_network ?? network) : network, "tx", t.signature)} target="_blank" rel="noreferrer">View on explorer <Icon name="ext" size={11} /></a> : null}
                       {t.error ? <span className="bad small"> {t.error}</span> : null}
                     </td>
                   </tr>

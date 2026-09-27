@@ -32,6 +32,11 @@ async def test_portfolio_sums_coins_and_stables_on_every_chain(client, fake_rpc,
 
         d = (await client.get("/dashboard", headers=h)).json()
         assert "by_chain" in d
+
+        # Each wallet also reports its stablecoin and its value in dollars.
+        ws = {w["address"]: w for w in (await client.get("/wallets?with_balances=true", headers=h)).json()}
+        w0 = ws[sol[0]["address"]]
+        assert w0["balance"] == 5 and w0["stable"] == 25 and w0["stable_symbol"] == "USDC" and w0["usd"] == 775
     finally:
         app.dependency_overrides.pop(get_executor, None)
 
@@ -83,3 +88,33 @@ async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, m
     finally:
         app.dependency_overrides.pop(get_executor, None)
         pf_mod._decimals.clear()
+
+
+async def test_net_flow_is_valued_in_usd_at_each_days_price(client, fake_rpc, monkeypatch):
+    from datetime import timedelta
+
+    from app.db import get_sessionmaker
+    from app.models import Job, Transaction, User
+    from app.models import utcnow
+    from sqlalchemy import select
+
+    h = await signup(client)
+    today = utcnow()
+    yday = today - timedelta(days=1)
+
+    async def history(coin, cid, days, client):
+        return {d: 100.0 for d in days}  # yesterday at $100; today uses the live $150
+
+    monkeypatch.setattr(pf_mod, "_fetch_history", history)
+    async with get_sessionmaker()() as db:
+        uid = (await db.execute(select(User.id))).scalars().first()
+        job = Job(user_id=uid, kind="trade_buy", params={}, idempotency_key="nf1", status="confirmed")
+        db.add(job)
+        await db.flush()
+        db.add(Transaction(job_id=job.id, kind="buy", status="confirmed", sol_delta_lamports=-2 * 10**9, created_at=yday))
+        db.add(Transaction(job_id=job.id, kind="sell", status="confirmed", sol_delta_lamports=3 * 10**9, created_at=today))
+        await db.commit()
+    d = (await client.get("/dashboard?period=7d", headers=h)).json()
+    s = d["series"]
+    assert [p["daily_usd"] for p in s] == [-200.0, 450.0] and s[-1]["cumulative_usd"] == 250.0
+    assert d["net_usd_flow"] == 250.0 and d["net_sol_flow"] == 1.0 and d["usd_priced"] is True

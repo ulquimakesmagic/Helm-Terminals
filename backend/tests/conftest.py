@@ -146,3 +146,20 @@ async def enable_2fa(client, headers):
     r = await client.post("/auth/totp/verify", json={"code": pyotp.TOTP(secret).now()}, headers=headers)
     assert r.status_code == 200, r.text
     return secret
+
+
+@pytest.fixture(autouse=True)
+def offline_prices(monkeypatch):
+    """No test reaches DefiLlama: fixed coin prices, and no historical data unless a test provides it."""
+    from app.services import portfolio as pf
+
+    async def prices(client=None):
+        return {"SOL": 150.0, "ETH": 3000.0, "BNB": 600.0}
+
+    async def history(coin, cid, days, client):
+        return {}
+
+    monkeypatch.setattr(pf, "coin_prices", prices)
+    monkeypatch.setattr(pf, "_fetch_history", history)
+    pf._price_cache = (0.0, {})
+    pf._day_prices.clear()

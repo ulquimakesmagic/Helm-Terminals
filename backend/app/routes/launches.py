@@ -22,6 +22,8 @@ from ..deps import (
 )
 from ..models import Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
 from ..services.executor import Executor, run_built, run_evm_plan, run_evm_trade, run_single, run_trade
+from ..services.auto_fund import detail as funding_detail
+from ..services.auto_fund import plan_funding, run_funding, usd_value
 from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
 from ..services.transparency import compute_transparency
@@ -279,7 +281,8 @@ async def restore(launch_id: str, user: User = Depends(current_user), db: AsyncS
 
 
 class DeployBody(SpendConfirm):
-    pass
+    # When the dev wallet is short of its chain's coin, fund it from your USDC through Relay as part of the deploy.
+    auto_fund: bool = True
 
 
 @router.post("/launches/{launch_id}/deploy")
@@ -299,9 +302,14 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         return await _deploy_evm(l, body, user, db, ex, dev, adapter)
     bal = await rpc.get_balance(dev.address)
     need = l.dev_buy_sol + MIN_DEPLOY_BUFFER_SOL
+    need_raw = int(need * LAMPORTS_PER_SOL)
     warnings = []
-    if bal < int(need * LAMPORTS_PER_SOL):
-        warnings.append(f"Dev wallet has {bal / LAMPORTS_PER_SOL:.4f} SOL; needs about {need:.4f} SOL (dev buy + rent and fees).")
+    funding = None
+    if bal < need_raw:
+        short = f"Dev wallet has {bal / LAMPORTS_PER_SOL:.4f} SOL; needs about {need:.4f} SOL (dev buy + rent and fees)."
+        funding, why = await plan_funding(db, ex, user.id, dev, need_raw - bal) if body.auto_fund else (None, None)
+        if not funding:
+            warnings.append(short + (f" {why}" if why else ""))
     if adapter.options_schema().get("requires_image") and not l.image_blob:
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
     if (reason := needs_setup(l.launchpad)):
@@ -329,19 +337,27 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         if s.bags_partner_wallet and s.bags_partner_config:
             summary["partner_share"] = "Bags pays Helm a partner share of this token's trading fees (from Bags' side, not yours)"
         summary["steps"] = "2 transactions: fee-share setup, then the launch"
+    if funding:
+        summary["funding"] = funding
     pf = build_preflight("deploy", summary, warnings)
+    if funding:
+        pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
+    pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
     if not body.confirm:
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
+        prior_status = l.status
         l.status = "deploying"
         await db.commit()
         slippage = (l.launchpad_params or {}).get("slippage_pct", 10.0)
 
         async def work(session, j):
             launch = await session.get(Launch, l.id)
+            if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
+                return
             req = CreateRequest(name=l.name, symbol=l.symbol, description=l.description, image_bytes=l.image_blob,
                                 socials=l.socials or {}, dev_pubkey=dev.address, dev_buy_sol=l.dev_buy_sol,
                                 slippage_pct=slippage, options=dict(l.launchpad_params or {}))
@@ -361,6 +377,22 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+async def _fund_first(session, ex: Executor, job: Job, launch: Launch, funding: dict, dev: Wallet, need_raw: int,
+                      prior_status: str) -> bool:
+    """Run the deploy's USDC funding route. On failure the job fails, the launch goes back to how it was, and
+    nothing is deployed."""
+    job.status = "submitted"
+    await session.commit()
+    err = await run_funding(session, ex, job, funding, dev, need_raw)
+    if err is None:
+        return True
+    job.status, job.params = "failed", {**job.params, "error": err}
+    job.updated_at = utcnow()
+    launch.status = prior_status
+    await session.commit()
+    return False
 
 
 # --- trading -------------------------------------------------------------------------------------
@@ -675,10 +707,15 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         except Exception:
             launch_fee = 0
     bal = await sender.rpc.get_balance(dev.address)
+    need_raw = dev_buy + launch_fee + gas
     warnings = []
-    if bal < dev_buy + launch_fee + gas:
-        warnings.append(f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {(dev_buy + launch_fee + gas) / WEI:.6f} "
-                        f"{coin} (dev buy, launch fee and gas).")
+    funding = None
+    if bal < need_raw:
+        short = (f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {need_raw / WEI:.6f} "
+                 f"{coin} (dev buy, launch fee and gas).")
+        funding, why = await plan_funding(db, ex, user.id, dev, need_raw - bal) if body.auto_fund else (None, None)
+        if not funding:
+            warnings.append(short + (f" {why}" if why else ""))
     if adapter.options_schema().get("requires_image") and not l.image_blob:
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
     summary = {
@@ -692,18 +729,26 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         warnings += adapter.deploy_warnings(l.dev_buy_sol, params)
     if launch_fee:
         summary["launch_fee"] = f"{launch_fee / WEI:g} {coin}, paid to {l.launchpad}"
+    if funding:
+        summary["funding"] = funding
     pf = build_preflight("deploy", summary, warnings)
+    if funding:
+        pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
+    pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
     if not body.confirm:
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
+        prior_status = l.status
         l.status = "deploying"
         await db.commit()
 
         async def work(session, j):
             launch = await session.get(Launch, l.id)
+            if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
+                return
             opts = dict(params)
             if l.image_blob:
                 opts["logo_url"] = f"{get_settings().public_api_url.rstrip('/')}/public/launch-images/{l.id}"

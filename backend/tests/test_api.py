@@ -503,18 +503,28 @@ async def test_import_explains_rpc_outage_vs_unknown_token(client, fake_rpc):
 
 
 async def test_evm_watch_wallet_balance_is_in_its_own_coin(client, fake_rpc, monkeypatch):
-    from app.routes import wallets as wroutes
+    from app.deps import get_executor
+    from app.main import app
+    from app.services.executor import Executor
+    from app.signing import get_signer
 
     class FakeEvm:
         async def get_balance(self, addr):
             return 2 * 10**18 + 5 * 10**17
 
-    monkeypatch.setattr(wroutes, "shared_evm", lambda network: FakeEvm())
-    h = await signup(client, "evmbal@example.com")
-    await client.post("/wallets/watch", json={"network": "robinhood", "address": "0x" + "ab" * 20}, headers=h)
-    ws = (await client.get("/wallets?with_balances=true", headers=h)).json()
-    rh = next(w for w in ws if w["network"] == "robinhood")
-    assert rh["balance"] == 2.5
+        async def erc20_balance(self, token, owner):
+            return 40 * 10**6  # 40 USDG
+
+    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"robinhood": FakeEvm()})
+    try:
+        h = await signup(client, "evmbal@example.com")
+        await client.post("/wallets/watch", json={"network": "robinhood", "address": "0x" + "ab" * 20}, headers=h)
+        ws = (await client.get("/wallets?with_balances=true", headers=h)).json()
+        rh = next(w for w in ws if w["network"] == "robinhood")
+        assert rh["balance"] == 2.5 and rh["stable"] == 40 and rh["stable_symbol"] == "USDG"
+        assert rh["usd"] == 2.5 * 3000 + 40
+    finally:
+        app.dependency_overrides.pop(get_executor, None)
 
 
 async def test_health_reports_rpc_setup_per_chain(client):

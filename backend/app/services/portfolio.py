@@ -6,6 +6,7 @@ Stablecoins are counted at $1.
 """
 
 import asyncio
+import json
 import time
 from datetime import datetime, timezone
 
@@ -42,6 +43,56 @@ async def coin_prices(client: httpx.AsyncClient | None = None) -> dict[str, floa
     if prices:
         _price_cache = (time.monotonic(), prices)
     return prices or _price_cache[1]
+
+
+HIST_URL = "https://coins.llama.fi/batchHistorical"
+_day_prices: dict[tuple[str, str], float] = {}  # (coin, YYYY-MM-DD) -> USD; past days never change
+
+
+async def _fetch_history(coin: str, cid: str, days: list[str], client: httpx.AsyncClient | None) -> dict[str, float]:
+    stamps = {int(datetime.fromisoformat(d).replace(hour=12, tzinfo=timezone.utc).timestamp()): d for d in days}
+    got: dict[str, float] = {}
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=10)
+    try:
+        keys = list(stamps)
+        for i in range(0, len(keys), 100):  # keep the query string a sane length
+            r = await client.get(HIST_URL, params={"coins": json.dumps({cid: keys[i:i + 100]}), "searchWidth": "43200"})
+            for pt in ((r.json().get("coins") or {}).get(cid) or {}).get("prices") or []:
+                day = datetime.fromtimestamp(int(pt["timestamp"]), timezone.utc).date().isoformat()
+                if day in days:
+                    _day_prices[(coin, day)] = got[day] = float(pt["price"])
+    except Exception:
+        pass
+    finally:
+        if own:
+            await client.aclose()
+    return got
+
+
+async def daily_prices(coin: str, days: list[str], client: httpx.AsyncClient | None = None) -> dict[str, float]:
+    """USD price of `coin` (SOL, ETH, BNB) on each day (noon UTC), from DefiLlama. Days it can't price are left out;
+    today uses the live price."""
+    cid = PRICE_IDS.get(coin)
+    if not cid or not days:
+        return {}
+    today = datetime.now(timezone.utc).date().isoformat()
+    out = {d: _day_prices[(coin, d)] for d in days if (coin, d) in _day_prices}
+    missing = [d for d in days if d not in out and d != today]
+    if missing:
+        out.update(await _fetch_history(coin, cid, missing, client))
+    if today in days:
+        live = (await coin_prices()).get(coin)
+        if live is not None:
+            out[today] = live
+    # Anything still unpriced (API down, a gap) uses the nearest priced day, else today's price.
+    live = out.get(today) or (await coin_prices()).get(coin)
+    for d in days:
+        if d not in out:
+            near = min((k for k in out), key=lambda k: abs(datetime.fromisoformat(k) - datetime.fromisoformat(d)), default=None)
+            if near is not None or live is not None:
+                out[d] = out[near] if near is not None else live
+    return out
 
 
 async def _stable_decimals(ex, network: str, token: str) -> int:

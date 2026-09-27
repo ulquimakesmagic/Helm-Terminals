@@ -31,12 +31,16 @@ export function summarize(pre: any, network: string): ReviewSummary | null {
 
   switch (pre.kind) {
     case "deploy": {
-      const cells: [string, ReactNode][] = [["Dev buy", `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}`]];
+      const devUsd = num(pre.dev_buy_usd);
+      const cells: [string, ReactNode][] = [["Dev buy", `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
+      const f = pre.funding && typeof pre.funding === "object" ? pre.funding : null;
+      if (f) cells.unshift(["Funded from", `${f.send} on ${f.from_chain}`]);
       if (pre.launch_fee) cells.push(["Launch fee", String(pre.launch_fee)]);
       cells.push(...gasCell, ["Platform fee", fee(pre.platform_fee)]);
       return {
         label: "Create token", value: `$${pre.symbol ?? ""}`, sub: <>{pre.name} on {padName(pre.launchpad)} · {chain.name}</>, cells,
         next: [
+          ...(f ? [`Helm routes ${f.send} from ${f.from} on ${f.from_chain} into ${coin} in your dev wallet through Relay (route fee: ${f.route_fee}) and waits for it to arrive. If the route doesn't complete, nothing is deployed. ${f.leftover}.`] : []),
           `Your dev wallet ${pre.dev_wallet ? short(pre.dev_wallet) : ""} signs the create transaction${num(pre.dev_buy_sol) ? " and the dev buy" : ""}.`,
           `Helm simulates it first, then sends it to ${chain.name}.`,
           "The launch turns live in its workspace once the chain confirms it. If it fails, nothing is retried automatically.",

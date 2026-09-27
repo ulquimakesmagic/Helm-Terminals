@@ -10,7 +10,7 @@ import {
   Address, Callout, ChainDot, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
-interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number }
+interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null }
 interface Folder { id: string; name: string; color: string; wallet_count?: number }
 const NEW_FOLDER = "__new__";
 const FOLDER_COLORS = ["#6366f1", "#38bdf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#f472b6", "#94a3b8"];
@@ -340,7 +340,12 @@ export default function Wallets() {
                     <td data-label="Address"><Address address={w.address} network={w.network} /></td>
                     <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : "watch-only"} /></td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
-                    <td className="r num" data-label="Balance">{typeof w.balance_sol === "number" ? <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></>
+                    <td className="r num" data-label="Balance">{typeof w.balance_sol === "number" ? (
+                      <div className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>
+                        <span style={{ fontWeight: 600 }}>{typeof w.usd === "number" ? usd(w.usd) : <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></>}</span>
+                        {typeof w.usd === "number" && <span className="muted small">{fmt(w.balance_sol, 4)} {chainOf(w.network).native} · {fmt(w.stable ?? 0, 2)} {w.stable_symbol}</span>}
+                        {typeof w.usd !== "number" && typeof w.stable === "number" && <span className="muted small">{fmt(w.stable, 2)} {w.stable_symbol}</span>}
+                      </div>)
                       : balances ? <span className="state unavailable" title="This balance couldn't be read. Refresh balances to retry."><Icon name="xcircle" size={12} />Unavailable</span>
                       : <span className="muted" title="Load balances to see">—<span className="sr-only"> not loaded</span></span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>

@@ -241,12 +241,12 @@ export default function Dashboard() {
               )}
           </Card>
 
-          <Card title="Net flow · Solana" icon="trend" sub="SOL in and out of your wallets from confirmed transactions, fees included"
+          <Card title="Net flow" icon="trend" sub="Value in and out of your wallets from confirmed transactions, in USD, fees included"
             actions={<Seg value={period} onChange={setPeriod} options={PERIODS} />}
-            foot={<>{data?.note} EVM launches show their flows in each launch workspace.</>}>
+            foot={<>{data?.note}{data && data.usd_priced === false && " Some days couldn't be priced and count as $0."}</>}>
             {error && !data ? <LoadError what="Net flow" error={error} onRetry={load} /> : !data ? <Skeleton h={220} /> : data.series.length === 0 ? (
-              <Empty icon="trend" title="No confirmed Solana transactions in this period" text="Deploys, trades and transfers on Solana show up here once confirmed." />
-            ) : <AreaChart points={data.series} height={220} />}
+              <Empty icon="trend" title="No confirmed transactions in this period" text="Deploys, trades and transfers show up here once confirmed." />
+            ) : <AreaChart points={data.series.map((p: any) => ({ date: p.date, total: p.cumulative_usd ?? 0, day: p.daily_usd ?? 0 }))} height={220} />}
           </Card>
         </div>
 

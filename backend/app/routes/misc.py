@@ -14,7 +14,7 @@ from ..models import (
     Activity, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Wallet, Watch, utcnow,
 )
 from ..services.executor import Executor
-from ..services.portfolio import build_portfolio
+from ..services.portfolio import build_portfolio, daily_prices
 
 router = APIRouter(tags=["misc"])
 PERIODS = {"all": None, "1y": timedelta(days=365), "1m": timedelta(days=30), "7d": timedelta(days=7), "1d": timedelta(days=1)}
@@ -51,18 +51,31 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
     daily: dict[str, int] = {}
     for delta, created in rows:
         daily[created.date().isoformat()] = daily.get(created.date().isoformat(), 0) + int(delta)
-    cum, series = 0, []
+    # Flows are measured in SOL (the coin that moved) and valued in USD at each day's price, so the chart reads in
+    # dollars like the rest of your balances.
+    prices = await daily_prices("SOL", sorted(daily))
+    cum = cum_usd = 0.0
+    priced = True
+    series = []
     for day in sorted(daily):
-        cum += daily[day]
-        series.append({"date": day, "daily_sol": daily[day] / LAMPORTS_PER_SOL, "cumulative_sol": cum / LAMPORTS_PER_SOL})
+        sol = daily[day] / LAMPORTS_PER_SOL
+        price = prices.get(day)
+        priced = priced and price is not None
+        day_usd = sol * price if price is not None else 0.0
+        cum += sol
+        cum_usd += day_usd
+        series.append({"date": day, "daily_sol": sol, "cumulative_sol": cum, "sol_price_usd": price,
+                       "daily_usd": day_usd, "cumulative_usd": cum_usd})
     return {
         "period": period,
         "total_launches": launches,
         "by_chain": by_chain,
-        "net_sol_flow": cum / LAMPORTS_PER_SOL,
+        "net_sol_flow": cum,
+        "net_usd_flow": cum_usd,
+        "usd_priced": priced,
         "series": series,
         "referral": await referral_summary(db, user),
-        "note": "Net SOL flow from confirmed on-chain transactions, including fees. Unsold token holdings are not valued.",
+        "note": "Measured coin in and out of your wallets from confirmed transactions, fees included, valued in USD at each day's price. Unsold token holdings are not valued.",
     }
 
 

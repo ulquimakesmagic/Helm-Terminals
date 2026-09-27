@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { fmt } from "../api";
 
-interface Pt { date: string; cumulative_sol: number; daily_sol: number }
+export interface Pt { date: string; total: number; day: number }
 
-/** Cumulative net SOL flow as an area chart with a hover crosshair. */
-export default function AreaChart({ points, height = 240 }: { points: Pt[]; height?: number }) {
+const signedUsd = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** A cumulative series as an area chart with a hover crosshair. `format` renders a value (default: US dollars). */
+export default function AreaChart({ points, height = 240, format = signedUsd }: { points: Pt[]; height?: number; format?: (v: number) => string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [w, setW] = useState(760);
@@ -18,8 +20,8 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
   const h = height, padL = 52, padR = 12, padT = 12, padB = 26;
 
   // One point draws nothing useful: pad with a zero start.
-  const pts = points.length === 1 ? [{ date: "", cumulative_sol: 0, daily_sol: 0 }, ...points] : points;
-  const ys = pts.map((p) => p.cumulative_sol);
+  const pts = points.length === 1 ? [{ date: "", total: 0, day: 0 }, ...points] : points;
+  const ys = pts.map((p) => p.total);
   let min = Math.min(0, ...ys), max = Math.max(0, ...ys);
   if (max === min) { max += 1; min -= 1; }
   // "Nice" tick step (1, 2 or 5 × 10^n) so axis labels read cleanly.
@@ -30,9 +32,9 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
   const span = max - min;
   const x = (i: number) => padL + (i * (w - padL - padR)) / Math.max(1, pts.length - 1);
   const y = (v: number) => padT + (1 - (v - min) / (max - min)) * (h - padT - padB);
-  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.cumulative_sol).toFixed(1)}`).join(" ");
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.total).toFixed(1)}`).join(" ");
   const area = `${line} L${x(pts.length - 1)},${y(0)} L${x(0)},${y(0)} Z`;
-  const last = pts[pts.length - 1]?.cumulative_sol ?? 0;
+  const last = pts[pts.length - 1]?.total ?? 0;
   const color = last >= 0 ? "var(--good)" : "var(--bad)";
   const ticks = Array.from({ length: Math.round(span / step) + 1 }, (_, i) => min + step * i);
 
@@ -58,7 +60,7 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={w - padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
-            <text x={padL - 8} y={y(t) + 3} textAnchor="end" className="axis">{tickLabel(t, step)}</text>
+            <text x={padL - 8} y={y(t) + 3} textAnchor="end" className="axis">{format === signedUsd ? usdTick(tickLabel(t, step)) : tickLabel(t, step)}</text>
           </g>
         ))}
         <line x1={padL} x2={w - padR} y1={y(0)} y2={y(0)} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />
@@ -73,18 +75,20 @@ export default function AreaChart({ points, height = 240 }: { points: Pt[]; heig
         )}
       </svg>
       {hp && (
-        <span style={{ position: "absolute", left: `${(x(hover!) / w) * 100}%`, top: `${(y(hp.cumulative_sol) / h) * 100}%`, width: 10, height: 10, borderRadius: "50%", background: "var(--bg)", border: `2px solid ${color}`, transform: "translate(-50%,-50%)", pointerEvents: "none" }} />
+        <span style={{ position: "absolute", left: `${(x(hover!) / w) * 100}%`, top: `${(y(hp.total) / h) * 100}%`, width: 10, height: 10, borderRadius: "50%", background: "var(--bg)", border: `2px solid ${color}`, transform: "translate(-50%,-50%)", pointerEvents: "none" }} />
       )}
       {hp && (
-        <div className="tip" style={{ left: `${(x(hover!) / w) * 100}%`, top: `${(y(hp.cumulative_sol) / h) * 100}%` }}>
+        <div className="tip" style={{ left: `${(x(hover!) / w) * 100}%`, top: `${(y(hp.total) / h) * 100}%` }}>
           <div className="d">{date(hp.date)}</div>
-          <div className="num"><b className={hp.cumulative_sol >= 0 ? "good" : "bad"}>{fmt(hp.cumulative_sol, 9)} SOL</b> total</div>
-          <div className="num muted">{hp.daily_sol >= 0 ? "+" : ""}{fmt(hp.daily_sol, 9)} that day</div>
+          <div className="num"><b className={hp.total >= 0 ? "good" : "bad"}>{format(hp.total)}</b> total</div>
+          <div className="num muted">{hp.day >= 0 ? "+" : ""}{format(hp.day)} that day</div>
         </div>
       )}
     </div>
   );
 }
+
+const usdTick = (label: string) => label.startsWith("-") ? `−$${label.slice(1)}` : `$${label}`;
 
 /** Enough decimals to tell ticks apart at this step, and never a "-0". */
 function tickLabel(v: number, step: number) {
