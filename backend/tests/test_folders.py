@@ -10,7 +10,7 @@ from .conftest import signup
 
 
 async def test_folder_lifecycle(client):
-    h = await signup(client)
+    h = await signup(client, main=False)
     f = (await client.post("/folders", json={"name": " Launch  squad "}, headers=h)).json()
     assert f["name"] == "Launch squad" and f["wallet_count"] == 0
     r = await client.post("/folders", json={"name": "launch SQUAD"}, headers=h)

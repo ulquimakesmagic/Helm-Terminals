@@ -17,7 +17,7 @@ async def test_portfolio_sums_coins_and_stables_on_every_chain(client, fake_rpc,
     base = TokenNode("base")
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base})
     try:
-        h = await signup(client)
+        h = await signup(client, main=False)
         sol = (await client.post("/wallets", json={"count": 2}, headers=h)).json()
         b = (await client.post("/wallets", json={"network": "base", "count": 1}, headers=h)).json()[0]
         fake_rpc.tokens[sol[0]["address"]] = 25 * 10**6  # 25 USDC (FakeRPC mints have 6 decimals)
@@ -65,7 +65,7 @@ async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, m
     pf_mod._decimals.clear()
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base, "ethereum": eth})
     try:
-        h = await signup(client)
+        h = await signup(client, main=False)
         b1, b2 = (await client.post("/wallets", json={"network": "base", "count": 2}, headers=h)).json()
         await client.post("/wallets", json={"network": "ethereum", "count": 1}, headers=h)
         bad.add(b2["address"].lower())
@@ -98,7 +98,7 @@ async def test_net_flow_is_valued_in_usd_at_each_days_price(client, fake_rpc, mo
     from app.models import utcnow
     from sqlalchemy import select
 
-    h = await signup(client)
+    h = await signup(client, main=False)
     today = utcnow()
     yday = today - timedelta(days=1)
 

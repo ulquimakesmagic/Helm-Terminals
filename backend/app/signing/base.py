@@ -17,6 +17,10 @@ class Signer(Protocol):
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef: ...
 
+    async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
+        """Take custody of an existing private key. Raises NotImplementedError where the backend can't."""
+        ...
+
     async def sign_message(self, signer_ref: str, message: bytes) -> bytes:
         """Return a raw 64-byte Ed25519 signature over `message` (Solana wallets)."""
         ...

@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,12 +10,15 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import current_user, log_activity, web_user
 from ..models import Profile, Referral, ReferralLink, Session, User, utcnow
+from ..services.main_wallet import ensure_main_wallets
+from ..signing import get_signer
 from ..security import (
     check_totp, decrypt_secret, encrypt_secret, hash_password, new_token, new_totp_secret,
     token_hash, totp_uri, verify_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+log = logging.getLogger(__name__)
 
 
 class Register(BaseModel):
@@ -34,7 +38,7 @@ class Code(BaseModel):
 
 
 @router.post("/register", status_code=201)
-async def register(body: Register, db: AsyncSession = Depends(get_db)):
+async def register(body: Register, db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
     email = body.email.lower()
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(409, "email already registered")
@@ -51,7 +55,16 @@ async def register(body: Register, db: AsyncSession = Depends(get_db)):
         db.add(ReferralLink(referred_user_id=user.id, referrer_user_id=ref.owner_user_id, code=ref.code))
     await log_activity(db, user.id, "account.created", payload={"referred": bool(ref)})
     await db.commit()
-    return {"id": user.id, "email": user.email}
+    # Every account gets its main wallet. A signer outage mustn't block sign-up: the Wallets page offers to finish it.
+    uid, email = user.id, user.email  # read before a rollback expires the object
+    main = False
+    try:
+        main = bool(await ensure_main_wallets(db, signer, uid))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        log.warning("main wallet not created at sign-up for user %s", uid, exc_info=True)
+    return {"id": uid, "email": email, "main_wallet": main}
 
 
 @router.post("/login")

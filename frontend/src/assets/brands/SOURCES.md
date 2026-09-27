@@ -17,7 +17,7 @@ segment), so their bytes differ; the artwork itself is unchanged.
 | File | Source | Why it's official | SHA-256 |
 |---|---|---|---|
 | `chains/solana.svg` | github.com/solana-foundation/solana-com @ e8a11bd2 `apps/web/public/src/img/branding/solanaLogoMark.svg` | Source of solana.com; the file is the logomark on solana.com/branding | 3d340110… |
-| `chains/base.svg` | github.com/base-org/brand-kit @ eba9e730 `logo/TheSquare/Digital/Base_square_blue.svg` | Base's official brand kit repo | b4f2b487… |
+| `chains/base.png` | Supplied by the Helm owner (blue ring mark, 224×224 PNG; white outside the ring made transparent, nothing else changed) | Owner-supplied | 7d2c8e9b… |
 | `chains/bsc.svg` | github.com/bnb-chain/bnb-chain.github.io @ 001ecbc1 `docs/assets/bnb.svg` | BNB Chain's official docs site (docs.bnbchain.org) | b8ff1ce0… |
 | `chains/ethereum.svg` | github.com/ethereum/ethereum-org-website @ 027a25f9 `public/images/assets/svgs/eth-glyph-colored.svg` | Source of ethereum.org; the file is on ethereum.org/assets | 86ba3592… |
 | `chains/robinhood.svg` | cdn.robinhood.com/assets/generated_assets/hoodchain_docsite/feather-dark.svg | The feather symbol used by docs.robinhood.com/chain. Its brand guidelines (docs.robinhood.com/chain/brand-guidelines) reserve the standalone feather for compact spaces and approve black on Robin Neon #ccff00, which is how it's shown | 82ef124f… |

@@ -15,7 +15,7 @@ async def test_profile_defaults_and_stats(client, fake_rpc):
     d = (await client.get("/profile", headers=h)).json()
     assert d["stats"]["launches"]["total"] == 1 and d["stats"]["launches"]["live"] == 1
     assert d["stats"]["launchpads"][0]["count"] == 1
-    assert d["stats"]["wallets"]["managed"] == 3
+    assert d["stats"]["wallets"]["managed"] == 3 + 5  # three made here, plus the main wallet on Solana and 4 EVM chains
     assert next(m for m in d["milestones"] if m["id"] == "first_launch")["done"]
     assert d["recent_launches"][0]["mint_address"]
 

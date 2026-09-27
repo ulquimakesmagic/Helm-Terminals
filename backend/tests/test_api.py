@@ -45,7 +45,7 @@ async def live_launch(client, h, fake_rpc, holders=2):
 
 async def test_auth_required_and_wallet_never_leaks_keys(client):
     assert (await client.get("/wallets")).status_code == 401
-    h = await signup(client)
+    h = await signup(client, main=False)
     ws = await make_wallets(client, h, 2)
     listed = (await client.get("/wallets", headers=h)).json()
     assert len(listed) == 2
@@ -312,10 +312,16 @@ async def test_burn_and_send_build_valid_transactions(client, fake_rpc):
 async def test_import_clone_archive_restore_tracker_dashboard(client, fake_rpc):
     h = await signup(client)
     mint = dev = (await make_wallets(client, h))[0]["address"]
+    # Import and clone both copy the token's metadata into a relaunch draft; neither pretends the token is launched.
     imp = await client.post("/launches/import", json={"mint": mint}, headers=h)
-    assert imp.status_code == 201 and imp.json()["imported"] and imp.json()["status"] == "live"
+    assert imp.status_code == 201, imp.text
+    assert imp.json()["status"] == "draft" and not imp.json()["imported"] and imp.json()["mint_address"] is None
+    assert imp.json()["name"] == "Cloned" and imp.json()["symbol"] == "CLN" and imp.json()["description"] == "d"
     cl = await client.post("/launches/clone", json={"mint": mint}, headers=h)
     assert cl.json()["name"] == "Cloned" and cl.json()["status"] == "draft"
+    # an unused draft can be deleted outright
+    assert (await client.delete(f"/launches/{imp.json()['id']}", headers=h)).json() == {"deleted": True}
+    assert (await client.get(f"/launches/{imp.json()['id']}", headers=h)).status_code == 404
 
     lid = cl.json()["id"]
     await client.post(f"/launches/{lid}/archive", headers=h)
@@ -487,19 +493,72 @@ async def test_import_explains_rpc_outage_vs_unknown_token(client, fake_rpc):
     h = await signup(client, "importer@example.com")
     mint = str(__import__("solders.keypair", fromlist=["Keypair"]).Keypair().pubkey())
 
-    async def not_a_mint(m):
-        raise RPCError("getTokenSupply: Invalid param: not a Token mint")
+    async def unknown(m):
+        raise RPCError("getAsset: Asset Not Found")
 
-    fake_rpc.get_token_supply = not_a_mint
+    fake_rpc.get_asset = unknown
     r = await client.post("/launches/import", json={"mint": mint}, headers=h)
-    assert r.status_code == 404 and "isn't a token mint" in r.json()["detail"]
+    assert r.status_code == 404 and "no token found" in r.json()["detail"]
 
     async def blocked(m):
         raise ConnectionError("403 Forbidden")
 
-    fake_rpc.get_token_supply = blocked
+    fake_rpc.get_asset = blocked
     r = await client.post("/launches/import", json={"mint": mint}, headers=h)
-    assert r.status_code == 502 and "SOLANA_RPC_URL" in r.json()["detail"]
+    assert r.status_code == 502 and "DAS-capable" in r.json()["detail"] and "403" not in r.json()["detail"]
+    assert (await client.post("/launches/import", json={"mint": "nope"}, headers=h)).status_code == 400
+
+
+async def test_clone_copies_image_and_socials_but_refuses_private_hosts(monkeypatch):
+    import httpx
+
+    from app.services import token_meta as tm
+
+    class Rpc:
+        async def get_asset(self, m):
+            return {"content": {"metadata": {"name": "Helm Cat", "symbol": "HCAT"},
+                                "json_uri": "https://meta.example/hcat.json", "links": {}}}
+
+    class Ex:
+        rpc = Rpc()
+
+    def handler(req):
+        if req.url.path == "/hcat.json":
+            return httpx.Response(200, json={"description": "gm", "image": "ipfs://QmCat", "twitter": "https://x.com/hcat",
+                                             "website": "https://hcat.example", "telegram": "javascript:alert(1)"})
+        if req.url.host == "ipfs.io":
+            return httpx.Response(200, content=b"\x89PNG....", headers={"content-type": "image/png"})
+        raise AssertionError(req.url)
+
+    async def public(url):
+        return "internal" not in url
+
+    monkeypatch.setattr(tm, "_public_host", public)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    m = await tm.source_metadata(Ex(), "solana", "mint", client=client)
+    assert m["name"] == "Helm Cat" and m["description"] == "gm" and m["image"].startswith(b"\x89PNG")
+    assert m["socials"] == {"twitter": "https://x.com/hcat", "website": "https://hcat.example"}  # the javascript: link is dropped
+    assert set(m["copied"]) >= {"name", "symbol", "description", "image", "twitter", "website"}
+
+    class RpcPrivate(Rpc):
+        async def get_asset(self, m):
+            return {"content": {"metadata": {"name": "X", "symbol": "X"}, "json_uri": "https://internal.host/meta.json",
+                                "links": {"image": "http://plain.example/i.png"}}}
+
+    Ex.rpc = RpcPrivate()
+    m = await tm.source_metadata(Ex(), "solana", "mint", client=client)  # nothing fetched: private host, non-https image
+    assert m["image"] is None and m["socials"] == {} and m["name"] == "X"
+
+
+async def test_delete_is_only_for_unused_drafts(client, fake_rpc):
+    h = await signup(client, "deleter@example.com")
+    lid, dev, holders = await live_launch(client, h, fake_rpc)
+    r = await client.delete(f"/launches/{lid}", headers=h)
+    assert r.status_code == 409 and "archive" in r.json()["detail"]  # deployed: archive, not delete
+    d = (await client.post("/launches", json={"name": "D", "symbol": "D", "dev_wallet_id": dev["id"]}, headers=h)).json()
+    h2 = await signup(client, "other@example.com")
+    assert (await client.delete(f"/launches/{d['id']}", headers=h2)).status_code == 404  # not yours
+    assert (await client.delete(f"/launches/{d['id']}", headers=h)).json() == {"deleted": True}
 
 
 async def test_evm_watch_wallet_balance_is_in_its_own_coin(client, fake_rpc, monkeypatch):

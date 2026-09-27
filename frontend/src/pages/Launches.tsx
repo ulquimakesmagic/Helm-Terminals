@@ -145,7 +145,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
       </div>
       <div className="divider" />
       <div className="row nowrap" style={{ alignItems: "flex-start" }}>
-        <Field label="Dev wallet" style={{ flex: 2 }} hint={wallets.length === 0 ? "Create a managed wallet on the Wallets page first." : "Signs the create transaction and makes the dev buy."}>
+        <Field label="Dev wallet" style={{ flex: 2 }} hint={wallets.length === 0 ? "Create a managed wallet on the Wallets page first." : "Signs the create transaction and makes the dev buy. Short of gas or dev-buy funds? At deploy, Helm offers to route USDC from your main wallet (or another wallet) into it."}>
           <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
             <option value="">Choose later…</option>
             {wallets.filter((w) => w.network === chain.id).map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
@@ -194,41 +194,81 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   );
 }
 
-function ImportLaunch({ wallets, onClose }: { wallets: W[]; onClose: () => void }) {
+/** Copy an existing token's metadata (name, ticker, description, image, socials) into a new draft for relaunch. */
+function ImportLaunch({ wallets, pads, onClose }: { wallets: W[]; pads: Pad[]; onClose: () => void }) {
   const nav = useNavigate();
-  const [mode, setMode] = useState<"import" | "clone">("import");
+  const usable = pads.filter((p) => p.status === "available");
+  const [source, setSource] = useState<ChainId>("solana");
   const [mint, setMint] = useState("");
+  const [pad, setPad] = useState(usable.find((p) => p.id === "pumpfun")?.id ?? usable[0]?.id ?? "pumpfun");
   const [dev, setDev] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const target = chainOf(pads.find((p) => p.id === pad)?.network);
+  const devs = wallets.filter((w) => w.kind === "managed" && w.network === target.id);
+  useEffect(() => { if (dev && !devs.some((w) => w.id === dev)) setDev(""); }, [pad]); // eslint-disable-line react-hooks/exhaustive-deps
   async function go() {
     setBusy(true); setError("");
     try {
-      const l = await api<Launch>(mode === "import" ? "/launches/import" : "/launches/clone", { body: mode === "import" ? { mint: mint.trim() } : { mint: mint.trim(), dev_wallet_id: dev || null } });
+      const l = await api<Launch>("/launches/clone", { body: { mint: mint.trim(), network: source, launchpad: pad, dev_wallet_id: dev || null } });
       nav(`/launches/${l.id}`);
     } catch (e) { setError(errMsg(e)); setBusy(false); }
   }
   return (
-    <Modal title="Import or clone a token" onClose={onClose}
+    <Modal title="Import or clone a token" sub="Copies an existing token's details into a new draft for you to relaunch" onClose={onClose}
       foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" disabled={!mint.trim() || busy} onClick={go}>{busy && <Spinner />}{mode === "import" ? "Import token" : "Clone into draft"}</button></>}>
-      <Seg full value={mode} onChange={setMode} options={[["import", "Import existing"], ["clone", "Clone metadata"]]} />
+        <button className="btn" disabled={!mint.trim() || !pad || busy} onClick={go}>{busy && <Spinner />}Copy into draft</button></>}>
       <p className="muted small">
-        {mode === "import"
-          ? "Attach your own wallets to a token that already exists so you can trade it here and see the supply transparency panel."
-          : "Copies the name, ticker and description of an existing token into a new draft. The image is not copied."}
+        Helm copies the name, ticker, description, image and social links it can find, into a draft you can edit. Nothing is
+        deployed until you review and confirm the draft's deployment. On EVM chains only the name and ticker are on-chain.
       </p>
       {error && <Callout tone="err">{error}</Callout>}
-      <Field label="Token mint address"><input value={mint} onChange={(e) => setMint(e.target.value)} className="mono" placeholder="e.g. 7xKX…pump" autoFocus /></Field>
-      {mode === "clone" && (
+      <div className="grid g-form">
+        <Field label="Token is on">
+          <select value={source} onChange={(e) => setSource(e.target.value as ChainId)}>
+            {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name}</option>)}
+          </select>
+        </Field>
+        <Field label="Token address">
+          <input value={mint} onChange={(e) => setMint(e.target.value)} className="mono" placeholder={source === "solana" ? "e.g. 7xKX…pump" : "0x…"} autoFocus spellCheck={false} />
+        </Field>
+      </div>
+      <div className="grid g-form">
+        <Field label="Relaunch on" hint={<span className="row nowrap" style={{ gap: 6 }}>Deploys on <ChainLabel network={target.id} size={14} /></span>}>
+          <select value={pad} onChange={(e) => setPad(e.target.value)}>
+            {usable.map((p) => <option key={p.id} value={p.id}>{padName(p.id)} · {chainOf(p.network).name}</option>)}
+          </select>
+        </Field>
         <Field label="Dev wallet (optional)">
           <select value={dev} onChange={(e) => setDev(e.target.value)}>
             <option value="">Choose later…</option>
-            {wallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
+            {devs.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-      )}
+      </div>
     </Modal>
+  );
+}
+
+/** Delete control for a draft that never ran anything. Two steps, no browser dialog. */
+export function DeleteDraft({ id, name, onDeleted, compact }: { id: string; name: string; onDeleted: () => void; compact?: boolean }) {
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  if (!ask) return (
+    <button type="button" className={`btn ${compact ? "sm" : ""} ghost danger-text`} onClick={(e) => { stop(e); setAsk(true); }} onKeyDown={stop}
+      aria-label={`Delete draft ${name}`}><Icon name="trash" size={13} />{compact ? "Delete" : "Delete draft"}</button>
+  );
+  return (
+    <span className="row nowrap confirm-del" onClick={stop} onKeyDown={stop} role="group" aria-label={`Confirm deleting ${name}`}>
+      <span className="small">{err || "Delete this draft?"}</span>
+      <button type="button" className="btn sm danger" disabled={busy} autoFocus onClick={() => {
+        setBusy(true);
+        api(`/launches/${id}`, { method: "DELETE" }).then(onDeleted).catch((e) => { setErr(errMsg(e)); setBusy(false); });
+      }}>{busy ? <Spinner /> : "Delete"}</button>
+      <button type="button" className="btn sm ghost" onClick={() => { setAsk(false); setErr(""); }}>Cancel</button>
+    </span>
   );
 }
 
@@ -268,7 +308,7 @@ export default function Launches() {
 
   return (
     <>
-      <PageHeader title="Launches" sub="Create tokens on any supported chain and launchpad, import ones you hold, and open a workspace to trade and manage each one."
+      <PageHeader title="Launches" sub="Create tokens on any supported chain and launchpad, copy an existing token's details for a relaunch, and open a workspace to trade and manage each one."
         actions={<>
           <button className="btn secondary" onClick={() => setModal("import")}><Icon name="download" size={15} />Import / clone</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />New launch</button>
@@ -311,6 +351,9 @@ export default function Launches() {
                 </div>
                 <StatusBadge status={l.status} />
               </div>
+              {(l.status === "draft" || l.imported) && (
+                <div className="lcard-del"><DeleteDraft id={l.id} name={l.name} compact onDeleted={load} /></div>
+              )}
               {l.description && <p className="muted small" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{l.description}</p>}
               <div className="meta">
                 <div><span className="k">Chain</span><ChainLabel network={l.network} size={16} /></div>
@@ -330,7 +373,7 @@ export default function Launches() {
       )}
 
       {modal === "create" && <CreateLaunch pads={pads} wallets={wallets} onClose={() => setModal(null)} />}
-      {modal === "import" && <ImportLaunch wallets={wallets} onClose={() => setModal(null)} />}
+      {modal === "import" && <ImportLaunch wallets={wallets} pads={pads} onClose={() => setModal(null)} />}
     </>
   );
 }

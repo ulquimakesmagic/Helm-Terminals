@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.relay import DONE
 from ..config import get_settings
+from .main_wallet import main_wallet_ids
 from ..models import Job, Wallet
 from . import portfolio
 from .chain_balances import STABLE_DECIMALS, chain_name, fee_reserve, native_coin, stable_for
@@ -40,8 +41,9 @@ async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet
         return None, f"{coin}'s price couldn't be read, so a USDC top-up can't be sized right now."
     fee_bps = ex.relay.fee_bps
     wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.kind == "managed"))).scalars().all()
-    # Prefer the dev wallet itself, then its chain, then anywhere else.
-    ordered = sorted(wallets, key=lambda w: (w.id != dst.id, w.network != dst.network))[:MAX_SCAN]
+    mains = await main_wallet_ids(db, user_id)
+    # Prefer the dev wallet itself, then the account's main wallets, then the dev wallet's chain, then anywhere else.
+    ordered = sorted(wallets, key=lambda w: (w.id != dst.id, w.id not in mains, w.network != dst.network))[:MAX_SCAN]
     sem = asyncio.Semaphore(8)
 
     async def read(w: Wallet):
@@ -64,7 +66,8 @@ async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet
         usd = math.ceil(cover * price * BUFFER / (1 - fee_bps / 10_000) + FLAT_USD)
         if native < gas_raw or stable < usd * 10 ** STABLE_DECIMALS[w.network]:
             continue
-        group = (w.id != dst.id, w.network != dst.network)
+        # Same chain is the cheapest route, so it still wins; among equals a main wallet goes first, then more USDC.
+        group = (w.id != dst.id, w.network != dst.network, w.id not in mains)
         if best is None or group < best[0] or (group == best[0] and stable > best[2]):
             best = (group, w, stable, usd)
     if best is None:

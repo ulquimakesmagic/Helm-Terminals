@@ -1,4 +1,5 @@
 import base64
+import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
-from ..chains.evm import EVM_CHAINS, WEI
+from ..chains.evm import EVM_CHAINS, WEI, EvmRPCUnavailable
 from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, list_launchpads, needs_setup
 from ..chains.solana import (
     LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
@@ -20,14 +21,14 @@ from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
     two_fa_warnings, valid_address, valid_address_for,
 )
-from ..models import Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
+from ..models import Automation, Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
 from ..services.executor import Executor, run_built, run_evm_plan, run_evm_trade, run_single, run_trade
 from ..services.auto_fund import detail as funding_detail
 from ..services.auto_fund import plan_funding, run_funding, usd_value
 from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
+from ..services.token_meta import source_metadata
 from ..services.transparency import compute_transparency
-from ..services.market_data import get_market_snapshot, get_pool_ohlcv
 
 router = APIRouter(tags=["launches"])
 MIN_DEPLOY_BUFFER_SOL = 0.03  # rent for mint/metadata/ATA accounts plus fees
@@ -165,66 +166,75 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
 
 
 class CloneBody(BaseModel):
-    mint: str
-    launchpad: str = "pumpfun"
+    mint: str  # the existing token's address (mint on Solana, contract on EVM chains)
+    network: str = "solana"  # where that token lives
+    launchpad: str = "pumpfun"  # where the relaunch will go
     dev_wallet_id: str | None = None
 
 
+# Import and clone are the same thing: copy an existing token's metadata into a new draft for relaunch. Nothing is
+# deployed and the draft is never treated as live; it goes through the normal deploy review like any other draft.
 @router.post("/launches/clone", status_code=201)
+@router.post("/launches/import", status_code=201)
 async def clone_launch(body: CloneBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                       rpc: SolanaRPC = Depends(get_rpc)):
-    """Copy an existing token's name, symbol and description into a new draft. The image is not copied."""
-    if not valid_address(body.mint):
-        raise HTTPException(400, "invalid mint address")
+                       ex: Executor = Depends(get_executor)):
+    network = body.network
+    if network == "solana":
+        if not valid_address(body.mint):
+            raise HTTPException(400, "that isn't a valid Solana token address")
+    elif network in EVM_CHAINS:
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", body.mint):
+            raise HTTPException(400, f"that isn't a valid {EVM_CHAINS[network]['name']} token address")
+    else:
+        raise HTTPException(400, f"unsupported network {network}")
     if body.launchpad not in IMPLEMENTED:
         raise HTTPException(400, f"launchpad '{body.launchpad}' is not implemented yet")
-    try:
-        asset = await rpc.get_asset(body.mint)
-    except Exception as e:
-        raise HTTPException(502, f"could not read token metadata (needs a DAS-capable RPC such as Helius): {e}")
-    meta = (asset.get("content") or {}).get("metadata") or {}
+    target = get_adapter(body.launchpad).network
     if body.dev_wallet_id:
-        await owned_wallet(db, user, body.dev_wallet_id)
-    l = Launch(user_id=user.id, network="solana", launchpad=body.launchpad, name=(meta.get("name") or "Untitled")[:32],
-               symbol=(meta.get("symbol") or "TKN")[:10].upper(), description=(meta.get("description") or "")[:500],
-               dev_wallet_id=body.dev_wallet_id, launchpad_params={"slippage_pct": 10.0})
-    db.add(l)
-    await db.commit()
-    return _launch_out(l)
-
-
-class ImportBody(BaseModel):
-    mint: str
-    network: str = "solana"
-
-
-@router.post("/launches/import", status_code=201)
-async def import_token(body: ImportBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                       rpc: SolanaRPC = Depends(get_rpc)):
-    if body.network != "solana" or not valid_address(body.mint):
-        raise HTTPException(400, "invalid solana mint")
+        dev = await owned_wallet(db, user, body.dev_wallet_id)
+        if dev.network != target:
+            raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {target}")
     try:
-        await rpc.get_token_supply(body.mint)
+        meta = await source_metadata(ex, network, body.mint)
     except RPCError as e:
-        # The node answered: the address exists but isn't a token mint, or doesn't exist at all.
-        raise HTTPException(404, f"that address isn't a token mint on Solana mainnet ({str(e)[:120]})")
+        raise HTTPException(404, f"no token found at that address ({str(e)[:120]})")
     except Exception as e:
-        # The node didn't answer properly (rate limit, blocked, bad URL): not the user's fault.
-        detail = str(e)[:200] if isinstance(e, RPCUnavailable) else type(e).__name__  # never echo URLs or keys
-        raise HTTPException(502, f"couldn't reach the Solana RPC to check this token ({detail}). "
-                                 "Check SOLANA_RPC_URL on the server; the public endpoint often blocks cloud hosts.")
-    name, symbol = body.mint[:6], "TKN"
-    try:
-        meta = ((await rpc.get_asset(body.mint)).get("content") or {}).get("metadata") or {}
-        name, symbol = meta.get("name") or name, (meta.get("symbol") or symbol)
-    except Exception:
-        pass
-    l = Launch(user_id=user.id, network="solana", launchpad="pumpfun", status="live", name=name[:32],
-               symbol=symbol[:10].upper(), mint_address=body.mint, imported=True, deployed_at=utcnow())
+        detail = str(e)[:160] if isinstance(e, (RPCUnavailable, EvmRPCUnavailable)) else type(e).__name__
+        raise HTTPException(502, f"couldn't read that token's metadata ({detail}). Solana needs a DAS-capable RPC such as Helius.")
+    if not meta["name"] and not meta["symbol"]:
+        raise HTTPException(404, "that address has no token name or ticker to copy")
+    l = Launch(user_id=user.id, network=target, launchpad=body.launchpad, status="draft",
+               name=(meta["name"] or "Untitled")[:32], symbol=(meta["symbol"] or "TKN")[:10].upper(),
+               description=meta["description"] or "", image_blob=meta["image"], socials=meta["socials"],
+               dev_wallet_id=body.dev_wallet_id,
+               launchpad_params={"slippage_pct": 10.0, "cloned_from": {"network": network, "address": body.mint,
+                                                                      "copied": meta["copied"]}})
     db.add(l)
-    await log_activity(db, user.id, "launch.imported", "launch", l.id, {"mint": body.mint})
+    await log_activity(db, user.id, "launch.created", "launch", l.id,
+                       {"launchpad": body.launchpad, "cloned_from": {"network": network, "address": body.mint}})
     await db.commit()
+    if body.dev_wallet_id:
+        db.add(LaunchWallet(launch_id=l.id, wallet_id=body.dev_wallet_id, role="dev"))
+        await db.commit()
     return _launch_out(l)
+
+
+@router.delete("/launches/{launch_id}")
+async def delete_launch(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Delete a draft that never ran anything (or a legacy import). Anything with Helm jobs or plans is archived instead."""
+    l = await _owned_launch(db, user, launch_id)
+    if l.status != "draft" and not l.imported:
+        raise HTTPException(409, "only drafts can be deleted; archive a deployed launch instead")
+    used = (await db.execute(select(Job.id).where(Job.launch_id == l.id).limit(1))).first() or \
+           (await db.execute(select(Automation.id).where(Automation.launch_id == l.id).limit(1))).first()
+    if used:
+        raise HTTPException(409, "this launch has transactions or plans in Helm; archive it instead")
+    for lw in (await db.execute(select(LaunchWallet).where(LaunchWallet.launch_id == l.id))).scalars().all():
+        await db.delete(lw)
+    await log_activity(db, user.id, "launch.deleted", "launch", None, {"name": l.name, "symbol": l.symbol})
+    await db.delete(l)
+    await db.commit()
+    return {"deleted": True}
 
 
 @router.get("/launches")
@@ -674,32 +684,6 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
     if evm:
         out["pnl"]["note"] = "Net flow isn't tracked for EVM launches yet. Wallet balances above are live."
     return out
-
-
-@router.get("/launches/{launch_id}/market")
-async def launch_market(launch_id: str, pool_address: str | None = None,
-                        user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    """Read-only, provider-sourced market data. This route is deliberately separate from trade previews."""
-    l = await _owned_launch(db, user, launch_id)
-    if l.status != "live" or not l.mint_address:
-        return {"status": "pending", "reason": "Market data appears after the token is live and an eligible pool is indexed.",
-                "source": "GeckoTerminal Public API",
-                "source_url": "https://www.geckoterminal.com", "updated_at": None, "stale": False,
-                "pairs": [], "selected_pool": None}
-    return await get_market_snapshot(l.network, l.mint_address, pool_address)
-
-
-@router.get("/launches/{launch_id}/market/{pool_address}/ohlcv")
-async def launch_market_ohlcv(launch_id: str, pool_address: str, timeframe: str = "24h",
-                              user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    """Historical OHLCV is resolved by launch chain, exact token address and a verified selected pool."""
-    l = await _owned_launch(db, user, launch_id)
-    if l.status != "live" or not l.mint_address:
-        return {"status": "pending", "reason": "The token must be live before a market chart is available.",
-                "timeframe": timeframe, "candles": [], "updated_at": None, "stale": False,
-                "source": "GeckoTerminal Public API",
-                "source_url": "https://www.geckoterminal.com"}
-    return await get_pool_ohlcv(l.network, l.mint_address, pool_address, timeframe)
 
 
 @router.get("/jobs/{job_id}")

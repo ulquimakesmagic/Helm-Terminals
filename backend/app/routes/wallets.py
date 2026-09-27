@@ -1,7 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from solders.pubkey import Pubkey
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,15 +20,17 @@ from ..services.preflight import build_preflight
 from ..chains.evm import EVM_CHAINS, WEI
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
+from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
+from ..signing.base import SigningError
 
 router = APIRouter(tags=["wallets"])
 TX_FEE_RESERVE = 10_000  # lamports kept back for fees
 
 
 def _wallet_out(w: Wallet, balance: int | None = None, stable: float | None = None,
-                price: float | None = None) -> dict:
+                price: float | None = None, mains: set[str] | None = None) -> dict:
     out = {"id": w.id, "network": w.network, "address": w.address, "kind": w.kind, "label": w.label,
-           "folder_id": w.folder_id}
+           "folder_id": w.folder_id, "is_main": bool(mains and w.id in mains)}
     if balance is not None:
         native = balance / (LAMPORTS_PER_SOL if w.network == "solana" else WEI)
         out["balance"] = native  # in the chain's own coin: SOL, ETH or BNB
@@ -61,15 +63,18 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
                        db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc),
                        ex: Executor = Depends(get_executor)):
     rows = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
+    mains = await main_wallet_ids(db, user.id)
+    # Main wallets first, so they're easy to find and are the first place people look for USDC.
+    rows = sorted(rows, key=lambda w: w.id not in mains)
     if not with_balances:
-        return [_wallet_out(w) for w in rows]
+        return [_wallet_out(w, mains=mains) for w in rows]
     prices = await portfolio.coin_prices()
     sem = asyncio.Semaphore(8)
 
     async def read(w: Wallet):
         bal = stable = None
         if w.kind != "managed" and w.network not in ("solana", *EVM_CHAINS):
-            return _wallet_out(w)
+            return _wallet_out(w, mains=mains)
         async with sem:
             # Each read is separate so one chain (or one call) being down doesn't hide the rest.
             try:
@@ -84,7 +89,7 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
                 stable = raw / 10 ** STABLE_DECIMALS[w.network]
             except Exception:
                 stable = None
-        return _wallet_out(w, bal, stable, prices.get(native_coin(w.network)))
+        return _wallet_out(w, bal, stable, prices.get(native_coin(w.network)), mains)
 
     return list(await asyncio.gather(*(read(w) for w in rows)))
 
@@ -125,6 +130,71 @@ async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db
     db.add(w)
     await db.commit()
     return _wallet_out(w)
+
+
+class ImportWallet(BaseModel):
+    network: str = "solana"
+    private_key: SecretStr  # SecretStr so it's masked if it ever appears in an error or log
+    label: str = Field(default="Imported", max_length=80)
+    all_evm: bool = False  # an EVM key works on every EVM chain: add it to each one
+    folder_id: str | None = None
+
+
+@router.post("/wallets/import", status_code=201)
+async def import_wallet(body: ImportWallet, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                        signer=Depends(get_signer)):
+    """Bring an existing wallet under Helm's signer. The key is encrypted by the signer and never returned or logged."""
+    evm = body.network in EVM_CHAINS
+    if body.network != "solana" and not evm:
+        raise HTTPException(400, f"unsupported network {body.network}")
+    if body.folder_id:
+        await _owned_folder(db, user, body.folder_id)
+    try:
+        ref = await signer.import_wallet(user.id, body.network, body.private_key.get_secret_value())
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
+    except SigningError as e:
+        raise HTTPException(400, str(e))  # messages describe the expected format only, never the key
+    networks = list(EVM_CHAINS) if evm and body.all_evm else [body.network]
+    created, skipped = [], []
+    for n in networks:
+        existing = (await db.execute(select(Wallet).where(
+            Wallet.user_id == user.id, Wallet.network == n, Wallet.address == ref.address))).scalar_one_or_none()
+        if existing and existing.kind == "managed":
+            skipped.append(n)
+            continue
+        if existing:  # a watched address becomes a managed one now that its key is here
+            existing.kind, existing.signer_ref = "managed", ref.signer_ref
+            existing.label = existing.label or body.label
+            created.append(existing)
+            continue
+        w = Wallet(user_id=user.id, network=n, address=ref.address, kind="managed", signer_ref=ref.signer_ref,
+                   label=body.label, folder_id=body.folder_id)
+        db.add(w)
+        created.append(w)
+    if not created:
+        raise HTTPException(409, "that wallet is already in your account")
+    await log_activity(db, user.id, "wallets.imported",
+                       payload={"count": len(created), "network": body.network, "address": ref.address})
+    await db.commit()
+    return [_wallet_out(w) for w in created]
+
+
+@router.post("/wallets/main", status_code=201)
+async def setup_main_wallets(user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                             signer=Depends(get_signer)):
+    """Create the account's main wallets if any are missing (accounts made before main wallets, or a signer outage
+    at sign-up). Safe to call again."""
+    try:
+        created = await ensure_main_wallets(db, signer, user.id)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(502, f"couldn't create the main wallet right now ({type(e).__name__}); try again shortly")
+    if created:
+        await log_activity(db, user.id, "wallets.main_created", payload={"count": len(created)})
+    await db.commit()
+    mains = await main_wallet_ids(db, user.id)
+    return [_wallet_out(w, mains=mains) for w in created]
 
 
 # --- folders -------------------------------------------------------------------------------------

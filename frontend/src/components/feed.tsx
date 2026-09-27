@@ -21,8 +21,11 @@ const KINDS: Record<string, Meta> = {
   "referral.payout_set": { icon: "gift", tone: "info", label: "Referral payout address set", group: "security" },
   "profile.updated": { icon: "user", tone: "", label: "Profile updated", group: "security", routine: true },
   "wallets.created": { icon: "wallet", tone: "info", label: "Wallets created", group: "wallets" },
+  "wallets.imported": { icon: "download", tone: "info", label: "Wallet imported", group: "wallets" },
+  "wallets.main_created": { icon: "wallet", tone: "good", label: "Main wallet set up", group: "wallets" },
   "launch.created": { icon: "rocket", tone: "info", label: "Launch draft created", group: "launches" },
   "launch.imported": { icon: "download", tone: "violet", label: "Token imported", group: "launches" },
+  "launch.deleted": { icon: "trash", tone: "", label: "Draft deleted", group: "launches" },
   "launch.archived": { icon: "archive", tone: "", label: "Launch archived", group: "launches" },
   "deploy.confirmed": { icon: "rocket", tone: "info", label: "Deployment started", group: "transactions" },
   "trade_buy.confirmed": { icon: "trend", tone: "info", label: "Buy order sent", group: "transactions" },
@@ -64,7 +67,13 @@ function kindMeta0(kind: string): Meta {
 function detail(a: ActivityRow): string {
   const p = a.payload ?? {};
   if (a.kind === "wallets.created" && p.count) return `${p.count} wallet${p.count === 1 ? "" : "s"} on ${chainOf(String(p.network ?? "solana")).name}`;
+  if (a.kind === "launch.created" && p.cloned_from && typeof p.cloned_from === "object") {
+    const c = p.cloned_from as { network?: string; address?: string };
+    return `copied from ${chainOf(String(c.network ?? "solana")).name} token ${short(String(c.address ?? ""))}${p.launchpad ? ` · on ${padName(String(p.launchpad))}` : ""}`;
+  }
   if (a.kind === "launch.created" && p.launchpad) return `on ${padName(String(p.launchpad))}`;
+  if (a.kind === "wallets.imported" && typeof p.address === "string") return `${short(p.address)} on ${p.count && Number(p.count) > 1 ? `${p.count} chains` : chainOf(String(p.network ?? "solana")).name}`;
+  if (a.kind === "launch.deleted" && p.name) return String(p.name);
   if (a.kind === "launch.imported" && typeof p.mint === "string") return `token ${short(p.mint)}`;
   if (a.kind === "automation.scheduled") {
     const side = p.side === "sell" ? "sells" : "buys";

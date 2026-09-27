@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { api, errMsg, fmt, usd } from "../api";
 import AreaChart from "../components/Chart";
 import ReferralCard from "../components/Referrals";
-import RouteFunds from "../components/RouteFunds";
 import SpendDialog from "../components/SpendDialog";
 import type { SpendRequest } from "../components/Distribute";
 import { CHAIN_ORDER, CHAINS, Pad, padName } from "../chains";
@@ -56,7 +55,6 @@ export default function Dashboard() {
   const [folio, setFolio] = useState<any>(null);
   const [folioErr, setFolioErr] = useState("");
   const [folioBusy, setFolioBusy] = useState(false);
-  const [routing, setRouting] = useState(false);
   const [dialog, setDialog] = useState<SpendRequest | null>(null);
   const [, tick] = useState(0);
 
@@ -145,7 +143,6 @@ export default function Dashboard() {
           {noWallets ? (
             <Link to="/wallets" className="btn"><Icon name="wallet" size={15} />Create wallets</Link>
           ) : <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>}
-          {!noWallets && <button className="btn secondary" onClick={() => setRouting(true)}><Icon name="globe" size={15} />Route USDC</button>}
           <Link to="/automation" className="btn secondary"><Icon name="calendar" size={15} />Automation</Link>
         </div>
       </section>
@@ -181,7 +178,6 @@ export default function Dashboard() {
       <div className="grid g-main">
         <div className="col">
           <Card title="Balances by chain" icon="globe" sub="Coins and stablecoins in your managed wallets"
-            actions={!noWallets && <button className="btn sm secondary" onClick={() => setRouting(true)}><Icon name="globe" size={13} />Top up a chain</button>}
             foot={folio && <>{folio.note}{incomplete.length > 0 && " Totals only count balances that were read."}</>} flush>
             {folioErr ? <LoadError what="Balances" error={folioErr} onRetry={() => loadFolio(true)} busy={folioBusy} /> : !folio ? <Loading rows={5} />
               : folio.wallets === 0 ? <Empty icon="wallet" title="No managed wallets yet" text="Balances appear per chain once you create and fund a wallet. Use Create wallets above." /> : (
@@ -309,7 +305,6 @@ export default function Dashboard() {
           <ReferralCard data={data?.referral ?? null} onChange={load} />
         </div>
       </div>
-      {routing && <RouteFunds onClose={() => setRouting(false)} onReview={(r) => { setRouting(false); setDialog(r); }} />}
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => loadFolio(true)} />}
     </>
   );

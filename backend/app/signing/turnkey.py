@@ -88,6 +88,11 @@ class TurnkeySigner:
         pk = result["createPrivateKeysResultV2"]["privateKeys"][0]
         return WalletRef(signer_ref=pk["privateKeyId"], address=pk["addresses"][0]["address"])
 
+    async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
+        # Turnkey imports keys through its own encrypted import flow (the key is encrypted to Turnkey's enclave on
+        # the user's device), which Helm doesn't implement yet. Refuse rather than handle the raw key here.
+        raise NotImplementedError("importing a private key isn't available with this server's signer yet")
+
     async def sign_message(self, signer_ref: str, message: bytes) -> bytes:
         result = await self._submit(
             "/public/v1/submit/sign_raw_payload",

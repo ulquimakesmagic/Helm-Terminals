@@ -130,9 +130,22 @@ async def client(fake_rpc):
     settings.platform_fee_bps, settings.platform_fee_wallet = saved
 
 
-async def signup(client, email="a@example.com", password="correct-horse-battery"):
+async def signup(client, email="a@example.com", password="correct-horse-battery", main=True):
+    """Register and sign in. `main=False` removes the main wallets sign-up creates, for tests that count wallets
+    or balances and predate main wallets."""
     r = await client.post("/auth/register", json={"email": email, "password": password})
     assert r.status_code == 201, r.text
+    if not main:
+        from sqlalchemy import delete, select
+
+        from app.db import get_sessionmaker
+        from app.models import Funder, User, Wallet
+
+        async with get_sessionmaker()() as db:
+            uid = (await db.execute(select(User.id).where(User.email == email.lower()))).scalar_one()
+            await db.execute(delete(Funder).where(Funder.user_id == uid))
+            await db.execute(delete(Wallet).where(Wallet.user_id == uid))
+            await db.commit()
     r = await client.post("/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['token']}"}

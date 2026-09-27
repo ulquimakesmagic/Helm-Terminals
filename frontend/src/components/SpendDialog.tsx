@@ -1,5 +1,4 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import { ReviewHero, summarize } from "./review";
@@ -212,14 +211,6 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
         <>
           {summary && <ReviewHero s={summary} />}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
-          {kind !== "bridge" && lowFunds(warnings) && fundAddress(pre) && (
-            <div className="row" style={{ gap: 8 }}>
-              <Link className="btn sm secondary" to={`/wallets?route_to=${encodeURIComponent(fundAddress(pre)!)}`} onClick={onClose}>
-                <Icon name="globe" size={13} />Top up this wallet from USDC
-              </Link>
-              <span className="muted small">Routes your dollar balance into {chainOf(network).native} on {chainOf(network).name}.</span>
-            </div>
-          )}
           {summary && !blocked && (
             <div className="review-section">
               <h3>What happens when you confirm</h3>
@@ -278,15 +269,4 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       )}
     </Modal>
   );
-}
-
-// A blocked preview caused by a thin native balance can be fixed by routing USDC in from another chain.
-function lowFunds(warnings: string[]): boolean {
-  return warnings.some((w) => /too little|needs about|is below|less than|for network fees|plus gas|balance/i.test(w));
-}
-
-function fundAddress(pre: any): string | null {
-  const pick = (v: unknown): string | null => typeof v === "string" && isAddr(v) ? v
-    : v && typeof v === "object" && isAddr((v as any).address) ? (v as any).address : null;
-  return pick(pre?.dev_wallet) ?? pick(pre?.wallet) ?? pick(pre?.from) ?? (Array.isArray(pre?.wallets) ? pick(pre.wallets[0]) : null);
 }

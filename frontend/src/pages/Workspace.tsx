@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl } from "../chains";
+import MarketTerminal from "../components/Market";
+import { DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
-import MarketPanel from "../components/MarketPanel";
 import { ChainLabel, PadLabel } from "../components/marks";
 import {
   Address, Callout, Card, Empty, Field, Icon, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, UnitInput,
@@ -105,8 +106,26 @@ function downloadPnlCard(launch: any, pnl: any) {
 const BUY_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
 const SELL_PRESETS = ["10", "25", "50", "75", "100"];
 
+/** Bottom panel of the terminal: one section at a time, like a trading terminal's tables. */
+function WsTabs({ tabs }: { tabs: [string, string, React.ReactNode][] }) {
+  const [on, setOn] = useState(tabs[0][0]);
+  const cur = tabs.find((t) => t[0] === on) ?? tabs[0];
+  return (
+    <section className="ws-tabs">
+      <div className="ws-tablist" role="tablist" aria-label="Launch sections">
+        {tabs.map(([k, label]) => (
+          <button key={k} type="button" role="tab" id={`wt-${k}`} aria-selected={cur[0] === k} aria-controls="wt-panel"
+            className={cur[0] === k ? "on" : ""} onClick={() => setOn(k)}>{label}</button>
+        ))}
+      </div>
+      <div id="wt-panel" role="tabpanel" aria-labelledby={`wt-${cur[0]}`}>{cur[2]}</div>
+    </section>
+  );
+}
+
 export default function Workspace() {
   const { id } = useParams();
+  const nav = useNavigate();
   const toast = useToast();
   const [ws, setWs] = useState<any>(null);
   const [allWallets, setAllWallets] = useState<any[]>([]);
@@ -178,75 +197,8 @@ export default function Workspace() {
   const attach = () => api(`/launches/${id}/wallets`, { body: { wallet_ids: [attachId] } })
     .then(() => { setAttachId(""); toast("good", "Wallet attached"); load(); }).catch((e) => toast("bad", errMsg(e)));
 
-  return (
-    <>
-      <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
-
-      <header className="page-head">
-        <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
-          <TokenImage launch={l} size={52} />
-          <div style={{ minWidth: 0 }}>
-            <div className="row" style={{ gap: 10 }}>
-              <h1 className="truncate">{l.name}</h1>
-              <span className="mono muted" style={{ fontSize: 14 }}>${l.symbol}</span>
-              {l.imported && <span className="badge violet">imported</span>}
-            </div>
-            <div className="row small muted" style={{ gap: 8, marginTop: 4 }}>
-              <ChainLabel network={l.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={l.launchpad} network={l.network} size={18} />
-              {l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
-              {l.mint_address && <><span aria-hidden="true">·</span><Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
-            </div>
-          </div>
-        </div>
-        <div className="actions">
-          {updated && (
-            <span className="muted small hide-sm row nowrap" style={{ gap: 6 }} aria-live="polite">
-              {refreshing ? <Spinner /> : <span className="badge good pulse" style={{ padding: "0 5px" }}><span className="dot" /></span>}
-              Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </span>
-          )}
-          {live && <Link to={`/automation?launch=${id}`} className="btn secondary"><Icon name="calendar" size={14} />Schedule</Link>}
-          <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
-          <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
-            .then(() => { toast("good", l.status === "archived" ? "Launch restored" : "Launch archived"); load(); }).catch((e) => toast("bad", errMsg(e)))}>
-            <Icon name="archive" size={14} />{l.status === "archived" ? "Restore" : "Archive"}
-          </button>
-        </div>
-      </header>
-
-      <Pipeline status={l.status} />
-
-      {error && <Callout tone="err">Latest refresh failed: {error}</Callout>}
-      {ws.rpc_error && <Callout tone="warn"><b>Chain data is partly unavailable.</b> Balances may be missing. {ws.rpc_error}</Callout>}
-
-      {(l.status === "draft" || l.status === "failed") && (
-        <div className={`next-action ${l.status === "failed" ? "bad" : ""}`}>
-          <span className="na-ic"><Icon name={l.status === "failed" ? "alert" : "rocket"} size={18} /></span>
-          <div className="grow">
-            <h2>{l.status === "failed" ? "Deployment failed. Review and retry." : "Next: deploy this token"}</h2>
-            <p className="muted small" style={{ marginTop: 2 }}>
-              {l.dev_wallet_id ? <>Dev buy <b className="text-2 mono">{fmt(l.dev_buy_sol, 6)} {cur}</b> from the dev wallet. The preview shows every cost before anything is sent.</> : "This launch has no dev wallet yet. Set one before deploying."}
-            </p>
-          </div>
-          <button className="btn" disabled={!l.dev_wallet_id} onClick={() => setDialog({ title: `Deploy ${l.name}`, path: `/launches/${id}/deploy`, body: {} })}>
-            Review deployment<Icon name="arrowright" size={15} />
-          </button>
-        </div>
-      )}
-      {l.status === "deploying" && <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>}
-
-      <Metrics label="Launch figures" items={[
-        { label: `Net ${cur} flow`, value: signed(flow), unit: cur, tone: flow > 0 ? "good" : flow < 0 ? "bad" : undefined, hint: `${ws.pnl.confirmed_txs} confirmed tx${ws.pnl.confirmed_txs === 1 ? "" : "s"}` },
-        { label: "Supply you hold", value: ws.transparency ? `${fmt(ws.transparency.controlled_pct, 2)}%` : "—", tone: ws.transparency?.warnings?.length ? "warn" : undefined, hint: ws.transparency ? "across attached wallets" : "once the token is live" },
-        { label: "Tokens held", value: compact(totalTok), hint: `$${l.symbol}` },
-        { label: `${cur} in wallets`, value: fmt(totalSol, 4), unit: cur, hint: "for trades and gas" },
-        { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
-      ]} />
-
-      <MarketPanel launchId={id!} network={l.network} mint={l.mint_address} live={live} symbol={l.symbol} native={cur} />
-
-      <div className="grid g-main">
-        <div className="col">
+  // Sections, shared by the terminal layout (tokens with an address) and the draft layout.
+  const walletsCard = (
           <Card title="Wallets" icon="wallet" sub={sel.length ? `${sel.length} selected · ${fmt(selSol, 4)} ${cur} · ${compact(selTok)} tokens` : "Select the wallets to trade or operate from"} flush
             actions={<div className="row nowrap">
               <label className="sr-only" htmlFor="attach-wallet">Attach a wallet</label>
@@ -281,11 +233,8 @@ export default function Workspace() {
               </table></div>
             )}
           </Card>
-
-        </div>
-
-        <div className="col">
-          {live && (
+  );
+  const ticketCard = live ? (
             <Card title="Order ticket" icon="zap" sub="Manual orders from the selected wallets">
               <div className="stack">
                 <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={[["buy", "Buy"], ["sell", "Sell"]]} />
@@ -324,13 +273,15 @@ export default function Workspace() {
                 <p className="muted small">The next step shows the server's preview, fees and any blockers. Nothing is sent until you confirm.</p>
               </div>
             </Card>
-          )}
-
+  ) : null;
+  const transparencyCard = (
+    <>
           {ws.transparency ? <TransparencyPanel t={ws.transparency} network={l.network} symbol={l.symbol} /> : (
             <Card title="Supply transparency" icon="pie"><p className="muted small">Measured once the token is live and chain data loads.</p></Card>
           )}
-
-          {live && (
+    </>
+  );
+  const opsCard = live ? (
             <Card title="Token operations" icon="layers" sub="Claim, burn or send from your wallets">
               <div className="stack">
                 <Seg full value={op} onChange={setOp} options={[["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"]]} />
@@ -370,17 +321,16 @@ export default function Workspace() {
                 )}
               </div>
             </Card>
-          )}
-
+  ) : null;
+  const perfCard = (
           <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnlCard(l, ws.pnl)}><Icon name="download" size={13} />Share card</button>}>
             <div className={`num ${flow > 0 ? "good" : flow < 0 ? "bad" : ""}`} style={{ font: "500 26px var(--mono)" }}>
               {signed(flow)} <span className="muted" style={{ fontSize: 14 }}>{cur}</span>
             </div>
             <p className="muted small" style={{ marginTop: 6 }}>{ws.pnl.note}</p>
           </Card>
-        </div>
-      </div>
-
+  );
+  const txCard = (
       <Card title="Transactions" icon="activity" flush sub="Latest 50 for this launch, newest first">
         {ws.transactions.length === 0 ? <Empty icon="activity" title="No transactions yet" text="Deploys, trades, claims and transfers for this token appear here." /> : (
           <div className="table-wrap"><table>
@@ -400,6 +350,101 @@ export default function Workspace() {
           </table></div>
         )}
       </Card>
+  );
+  const position = (
+      <Metrics label="Launch figures" items={[
+        { label: `Net ${cur} flow`, value: signed(flow), unit: cur, tone: flow > 0 ? "good" : flow < 0 ? "bad" : undefined, hint: `${ws.pnl.confirmed_txs} confirmed tx${ws.pnl.confirmed_txs === 1 ? "" : "s"}` },
+        { label: "Supply you hold", value: ws.transparency ? `${fmt(ws.transparency.controlled_pct, 2)}%` : "—", tone: ws.transparency?.warnings?.length ? "warn" : undefined, hint: ws.transparency ? "across attached wallets" : "once the token is live" },
+        { label: "Tokens held", value: compact(totalTok), hint: `$${l.symbol}` },
+        { label: `${cur} in wallets`, value: fmt(totalSol, 4), unit: cur, hint: "for trades and gas" },
+        { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
+      ]} />
+  );
+  const terminal = !!l.mint_address;
+
+  return (
+    <>
+      <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
+
+      <header className="page-head">
+        <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
+          <TokenImage launch={l} size={52} />
+          <div style={{ minWidth: 0 }}>
+            <div className="row" style={{ gap: 10 }}>
+              <h1 className="truncate">{l.name}</h1>
+              <span className="mono muted" style={{ fontSize: 14 }}>${l.symbol}</span>
+              {l.imported && <span className="badge violet">imported</span>}
+            </div>
+            <div className="row small muted" style={{ gap: 8, marginTop: 4 }}>
+              <ChainLabel network={l.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={l.launchpad} network={l.network} size={18} />
+              {l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
+              {l.mint_address && <><span aria-hidden="true">·</span><Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
+            </div>
+          </div>
+        </div>
+        <div className="actions">
+          {updated && (
+            <span className="muted small hide-sm row nowrap" style={{ gap: 6 }} aria-live="polite">
+              {refreshing ? <Spinner /> : <span className="badge good pulse" style={{ padding: "0 5px" }}><span className="dot" /></span>}
+              Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
+          {live && <Link to={`/automation?launch=${id}`} className="btn secondary"><Icon name="calendar" size={14} />Schedule</Link>}
+          <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
+          {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
+          <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
+            .then(() => { toast("good", l.status === "archived" ? "Launch restored" : "Launch archived"); load(); }).catch((e) => toast("bad", errMsg(e)))}>
+            <Icon name="archive" size={14} />{l.status === "archived" ? "Restore" : "Archive"}
+          </button>
+        </div>
+      </header>
+
+      <Pipeline status={l.status} />
+
+      {error && <Callout tone="err">Latest refresh failed: {error}</Callout>}
+      {ws.rpc_error && <Callout tone="warn"><b>Chain data is partly unavailable.</b> Balances may be missing. {ws.rpc_error}</Callout>}
+
+      {(l.status === "draft" || l.status === "failed") && (
+        <div className={`next-action ${l.status === "failed" ? "bad" : ""}`}>
+          <span className="na-ic"><Icon name={l.status === "failed" ? "alert" : "rocket"} size={18} /></span>
+          <div className="grow">
+            <h2>{l.status === "failed" ? "Deployment failed. Review and retry." : "Next: deploy this token"}</h2>
+            <p className="muted small" style={{ marginTop: 2 }}>
+              {l.dev_wallet_id ? <>Dev buy <b className="text-2 mono">{fmt(l.dev_buy_sol, 6)} {cur}</b> from the dev wallet. The preview shows every cost before anything is sent.</> : "This launch has no dev wallet yet. Set one before deploying."}
+            </p>
+          </div>
+          <button className="btn" disabled={!l.dev_wallet_id} onClick={() => setDialog({ title: `Deploy ${l.name}`, path: `/launches/${id}/deploy`, body: {} })}>
+            Review deployment<Icon name="arrowright" size={15} />
+          </button>
+        </div>
+      )}
+      {l.status === "deploying" && <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>}
+
+      {terminal ? (
+        <>
+          <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} ticket={ticketCard} />
+          <section className="your-position" aria-labelledby="pos-h">
+            <h2 id="pos-h" className="sec-kicker"><Icon name="wallet" size={12} />Your position · from your Helm wallets</h2>
+            {position}
+          </section>
+          <WsTabs tabs={[
+            ["wallets", `Wallets${ws.wallets.length ? ` · ${ws.wallets.length}` : ""}`, walletsCard],
+            ["tx", `Transactions${ws.transactions.length ? ` · ${ws.transactions.length}` : ""}`, txCard],
+            ["supply", "Supply", transparencyCard],
+            ...(opsCard ? [["ops", "Token operations", opsCard] as [string, string, React.ReactNode]] : []),
+            ["perf", "Performance", perfCard],
+          ]} />
+        </>
+      ) : (
+        <>
+          {position}
+          <div className="grid g-main">
+            <div className="col">{walletsCard}</div>
+            <div className="col">{ticketCard}{transparencyCard}{opsCard}{perfCard}</div>
+          </div>
+          {txCard}
+        </>
+      )}
 
       {dialog && <SpendDialog {...dialog} network={l.network} onClose={() => setDialog(null)} onDone={load} />}
     </>

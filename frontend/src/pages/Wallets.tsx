@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
 import Distribute from "../components/Distribute";
-import RouteFunds from "../components/RouteFunds";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
@@ -10,7 +8,7 @@ import {
   Address, Callout, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
-interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null }
+interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null; is_main?: boolean }
 interface Folder { id: string; name: string; color: string; wallet_count?: number }
 const NEW_FOLDER = "__new__";
 const FOLDER_COLORS = ["#6366f1", "#38bdf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#f472b6", "#94a3b8"];
@@ -133,7 +131,10 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
   const toast = useToast();
   const [folder, setFolder] = useState(defaultFolder);
   const [newFolder, setNewFolder] = useState("");
-  const [tab, setTab] = useState<"managed" | "watch">("managed");
+  const [tab, setTab] = useState<"managed" | "import" | "watch">("managed");
+  const [secret, setSecret] = useState("");
+  const [importLabel, setImportLabel] = useState("Imported");
+  const [allEvm, setAllEvm] = useState(true);
   const [count, setCount] = useState(1);
   const [prefix, setPrefix] = useState("Wallet");
   const [addr, setAddr] = useState("");
@@ -145,26 +146,33 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
     setBusy(true); setError("");
     try {
       const folder_id = folder === NEW_FOLDER ? (await ensureFolder(newFolder, folders)).id : folder || null;
+      let imported = 0;
       if (tab === "managed") await api("/wallets", { body: { network, count, label_prefix: prefix, folder_id } });
-      else await api("/wallets/watch", { body: { network, address: addr.trim(), folder_id } });
+      else if (tab === "import") {
+        const r = await api<unknown[]>("/wallets/import", { body: { network, private_key: secret.trim(), label: importLabel.trim() || "Imported", all_evm: network !== "solana" && allEvm, folder_id } });
+        imported = r.length;
+        setSecret("");
+      } else await api("/wallets/watch", { body: { network, address: addr.trim(), folder_id } });
       const where = folder_id ? ` in ${folder === NEW_FOLDER ? newFolder.trim() : folders.find((f) => f.id === folder_id)?.name}` : "";
-      toast("good", tab === "managed" ? `Created ${count} wallet${count === 1 ? "" : "s"}${where}` : `Watch-only address added${where}`);
+      toast("good", tab === "managed" ? `Created ${count} wallet${count === 1 ? "" : "s"}${where}`
+        : tab === "import" ? `Wallet imported${imported > 1 ? ` on ${imported} chains` : ""}${where}` : `Watch-only address added${where}`);
       onDone(); onClose();
     } catch (e) { setError(errMsg(e)); setBusy(false); }
   }
   return (
     <Modal title="Add wallets" onClose={onClose}
       foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" onClick={go} disabled={busy || (folder === NEW_FOLDER && !newFolder.trim()) || (tab === "watch" ? !addr.trim() : count < 1 || count > 50)}>{busy && <Spinner />}{tab === "managed" ? `Create ${count}` : "Add address"}</button></>}>
+        <button className="btn" onClick={go} disabled={busy || (folder === NEW_FOLDER && !newFolder.trim()) || (tab === "watch" ? !addr.trim() : tab === "import" ? !secret.trim() : count < 1 || count > 50)}>{busy && <Spinner />}{tab === "managed" ? `Create ${count}` : tab === "import" ? "Import wallet" : "Add address"}</button></>}>
       <div className="seg full">
-        <button className={tab === "managed" ? "on" : ""} onClick={() => { setTab("managed"); if (!MANAGED_NETWORKS.includes(network)) setNetwork("solana"); }}>Managed wallets</button>
-        <button className={tab === "watch" ? "on" : ""} onClick={() => setTab("watch")}>Watch-only</button>
+        <button className={tab === "managed" ? "on" : ""} onClick={() => { setTab("managed"); if (!MANAGED_NETWORKS.includes(network)) setNetwork("solana"); }}>New wallets</button>
+        <button className={tab === "import" ? "on" : ""} onClick={() => { setTab("import"); if (!MANAGED_NETWORKS.includes(network)) setNetwork("solana"); }}>Import</button>
+        <button className={tab === "watch" ? "on" : ""} onClick={() => { setTab("watch"); setSecret(""); }}>Watch-only</button>
       </div>
       <div className="field">
         <span>Chain</span>
         <div className="chips">
           {CHAIN_ORDER.map((c) => {
-            const off = tab === "managed" && !MANAGED_NETWORKS.includes(c);
+            const off = tab !== "watch" && !MANAGED_NETWORKS.includes(c);
             return (
               <button key={c} type="button" disabled={off} className={`chip ${network === c ? "on" : ""}`} style={off ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
                 onClick={() => setNetwork(c)} title={off ? "Managed wallets on this chain are coming soon" : undefined}>
@@ -182,6 +190,21 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
             <Field label="How many" hint="1 to 50" style={{ width: 120 }}><input type="number" min={1} max={50} value={count} onChange={(e) => setCount(+e.target.value)} autoFocus /></Field>
             <Field label="Label prefix" hint={`e.g. ${prefix || "Wallet"} 1, ${prefix || "Wallet"} 2`} style={{ flex: 1 }}><input value={prefix} onChange={(e) => setPrefix(e.target.value)} /></Field>
           </div>
+          <FolderSelect folders={folders} value={folder} onChange={setFolder} newName={newFolder} onNewName={setNewFolder} />
+        </>
+      ) : tab === "import" ? (
+        <>
+          <p className="muted small">Bring a wallet you already have into Helm so you can launch and trade from it. The key is handed to the signing service, stored encrypted, and never shown again. Anyone with this key controls the wallet, so only paste it here, never in a chat or email.</p>
+          <Field label={`${CHAINS[network].name} private key`} hint={network === "solana" ? "The base58 key your wallet app exports, or a solana-keygen JSON array" : "64 hex characters, with or without 0x"}>
+            <input className="mono" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" spellCheck={false} autoCapitalize="off" autoCorrect="off" autoFocus />
+          </Field>
+          <Field label="Label"><input value={importLabel} onChange={(e) => setImportLabel(e.target.value)} maxLength={80} /></Field>
+          {network !== "solana" && (
+            <label className="small" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={allEvm} onChange={(e) => setAllEvm(e.target.checked)} style={{ marginTop: 2, flex: "none" }} />
+              <span>Add it on every EVM chain (the same address works on Base, BNB Chain, Ethereum and Robinhood Chain)</span>
+            </label>
+          )}
           <FolderSelect folders={folders} value={folder} onChange={setFolder} newName={newFolder} onNewName={setNewFolder} />
         </>
       ) : (
@@ -206,7 +229,7 @@ export default function Wallets() {
   const [chainF, setChainF] = useState<"all" | ChainId>("all");
   const [balances, setBalances] = useState(false);
   const [loadingBal, setLoadingBal] = useState(false);
-  const [modal, setModal] = useState<null | "create" | "fund" | "withdraw" | "folders" | "move" | "disperse" | "consolidate" | "route">(null);
+  const [modal, setModal] = useState<null | "create" | "fund" | "withdraw" | "folders" | "move" | "disperse" | "consolidate">(null);
   const [moveTo, setMoveTo] = useState("");
   const [moveNew, setMoveNew] = useState("");
   const [moving, setMoving] = useState(false);
@@ -215,8 +238,7 @@ export default function Wallets() {
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [folio, setFolio] = useState<any>(null);
-  const [search, setSearch] = useSearchParams();
-  const [routeTo, setRouteTo] = useState<string | undefined>();
+  const [settingMain, setSettingMain] = useState(false);
 
   const [loadErr, setLoadErr] = useState("");
   const load = async (withBal = balances) => {
@@ -232,17 +254,15 @@ export default function Wallets() {
     finally { setLoadingBal(false); }
   };
   useEffect(() => { load(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Arriving from a blocked preview ("Top up this wallet from USDC"): open the route form aimed at that wallet.
-  useEffect(() => {
-    const addr = search.get("route_to");
-    if (!addr || !wallets) return;
-    const w = wallets.find((x) => x.address.toLowerCase() === addr.toLowerCase());
-    if (w) { setRouteTo(w.id); setModal("route"); }
-    search.delete("route_to"); setSearch(search, { replace: true });
-  }, [wallets]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = wallets ?? [];
   const managed = all.filter((w) => w.kind === "managed");
+  const hasMain = all.some((w) => w.is_main);
+  const setupMain = () => {
+    setSettingMain(true);
+    api<unknown[]>("/wallets/main", { method: "POST" }).then(() => { toast("good", "Main wallet ready"); load(); })
+      .catch((e) => toast("bad", errMsg(e))).finally(() => setSettingMain(false));
+  };
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     return all.filter((w) =>
@@ -270,7 +290,6 @@ export default function Wallets() {
       <PageHeader title="Wallets" sub="Managed wallets you trade and launch from, plus addresses you watch, on every chain."
         actions={<>
           <button className="btn secondary" onClick={() => load(true)} disabled={loadingBal}>{loadingBal ? <Spinner /> : <Icon name="refresh" size={15} />}{balances ? "Refresh balances" : "Load balances"}</button>
-          <button className="btn secondary" onClick={() => setModal("route")} title="Turn USDC into gas on any chain"><Icon name="globe" size={15} />Route funds</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />Add wallets</button>
         </>} />
 
@@ -282,6 +301,15 @@ export default function Wallets() {
         { label: "Watch-only", value: wallets ? String(all.length - managed.length) : "—", hint: "tracked, can't sign" },
         { label: "Folders", value: String(folders.length), hint: funders.length ? `${funders.length} funder${funders.length === 1 ? "" : "s"}` : "no funders set" },
       ]} />
+
+      {wallets && !hasMain && (
+        <Callout tone="info">
+          <div className="row between" style={{ gap: 10 }}>
+            <span><b>Your account has no main wallet yet.</b> It's one Solana wallet and one EVM address (on Base, BNB Chain, Ethereum and Robinhood Chain) that you can keep USDC in; launches on any chain route from it when the dev wallet is short.</span>
+            <button className="btn sm" onClick={setupMain} disabled={settingMain}>{settingMain ? <Spinner /> : <Icon name="plus" size={13} />}Set up main wallet</button>
+          </div>
+        </Callout>
+      )}
 
       {balances && unread.length > 0 && (
         <Callout tone="warn">
@@ -333,7 +361,8 @@ export default function Wallets() {
                     <td className="cb"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${w.label || w.address}`} /></td>
                     <td className="span"><div className="row" style={{ gap: 8 }}>
                       <span style={{ fontWeight: 550 }}>{w.label || "Untitled"}</span>
-                      {fu && <span className="badge info">funder{fu.is_default ? " · default" : ""}</span>}
+                      {w.is_main ? <span className="badge good" title="Your account's main wallet. Launches draw USDC from it first.">main</span>
+                        : fu && <span className="badge info">funder{fu.is_default ? " · default" : ""}</span>}
                       {w.kind !== "managed" && <span className="badge show-sm">watch-only</span>}
                     </div></td>
                     <td data-label="Chain"><ChainLabel network={w.network} size={16} /></td>
@@ -437,7 +466,6 @@ export default function Wallets() {
           onReview={(r) => { setModal(null); setDialog(r); }} />
       )}
 
-      {modal === "route" && <RouteFunds wallets={all} toWalletId={routeTo} onClose={() => { setModal(null); setRouteTo(undefined); }} onReview={(r) => { setModal(null); setDialog(r); }} />}
 
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => { setSelected(new Set()); load(true); }} />}
     </>

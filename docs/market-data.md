@@ -1,26 +1,67 @@
-# Launch workspace market data
+# Launch terminal market data
 
-The workspace market view reads third-party DEX market data from the GeckoTerminal Public API. Helm does not use DEX Screener: its documented pair API has no documented OHLCV endpoint, and its API terms restrict products whose primary purpose competes directly with DEX Screener.
+The terminal view of a live launch shows indicative, third-party market data next to the launch's own Helm data
+(wallets, supply, transactions, operations). The two are kept apart: market data is labelled as such, and it never
+feeds quotes, previews, confirmations or anything that executes.
 
-## Provider access, limits, and attribution
+## Providers and endpoints
 
-The backend defaults to `https://api.geckoterminal.com/api/v2`; no API key is required. `GECKOTERMINAL_API_URL` is an optional backend-only override for the public API base URL. The frontend never calls the provider directly and no provider key should be placed in a `VITE_` variable.
+Both are documented public APIs called from the backend only (the browser never calls a provider, and no provider
+key lives in a `VITE_` variable). Nothing is scraped and no undocumented embed is used.
 
-The public API is in beta and may change. Its current endpoint documentation describes a variable limit of approximately 10 requests per minute; an older official FAQ states 30 requests per minute, so Helm should budget conservatively and handle rate-limit responses. Provider endpoints are cached for about one minute. Helm caches token-pool and OHLCV responses for five minutes, caches network/DEX coverage for twelve hours, and the browser refreshes no more often than every two minutes. The UI shows the time Helm last fetched the market data. There is no SLA for the public API.
+| What | Provider | Endpoint |
+|---|---|---|
+| Pools that trade the token, with DEX, pair address, quote asset, liquidity, price, price change, volume, buy/sell counts, FDV and market cap | DEX Screener | `GET https://api.dexscreener.com/token-pairs/v1/{chainId}/{tokenAddress}` |
+| Price candles (OHLCV) for one pool | GeckoTerminal | `GET {GECKOTERMINAL_API_URL}/networks/{network}/pools/{pool}/ohlcv/{timeframe}` |
 
-The UI attributes market data to GeckoTerminal and links to its site. The API remains informational: its output never authorizes or feeds trade quotes or transaction execution. Before operating a commercial, user-facing product on the public API, review the current [GeckoTerminal API terms](https://www.geckoterminal.com/terms-conditions) and confirm the permitted use for Helm. Public, no-cost access is not an uptime commitment or an automatic commercial redistribution license.
+DEX Screener documents no candle endpoint and no chart embed with parameters, so it isn't used for chart history.
+`GECKOTERMINAL_API_URL` defaults to `https://api.geckoterminal.com/api/v2`; no key is needed.
 
-## Endpoints used
+Helm routes:
 
-- `GET /networks` checks whether the provider currently lists the mapped network.
-- `GET /networks/{network}/dexes` checks whether the provider reports DEX coverage on that network.
-- `GET /networks/{network}/tokens/{token_address}/pools` resolves pools using Helm's network and exact token address.
-- `GET /networks/{network}/pools/{pool_address}/ohlcv/{timeframe}` retrieves documented OHLCV candles for the selected pool and exact token address.
+- `GET /launches/{id}/market` returns the token's pools (largest liquidity first) and a `state`: `ok`, `no_pool`
+  (not indexed yet), `no_token` (a draft), `unsupported` (a chain the provider doesn't cover) or `error`.
+- `GET /launches/{id}/market/candles?pool=&tf=` returns candles for one of that token's own pools (any other pool is
+  refused with 404). Timeframes: `5m`, `15m`, `1h`, `4h`, `1d`, which map to GeckoTerminal's documented
+  `minute/5`, `minute/15`, `hour/1`, `hour/4` and `day/1`. Up to 200 candles.
 
-The four chart ranges map to documented intervals: 1H uses 1-minute candles; 24H uses 5-minute candles; 7D uses hourly candles; 30D uses 4-hour candles. No synthetic candles are generated.
+## Chain mapping
 
-## Chain mapping and boundaries
+| Helm | DEX Screener | GeckoTerminal |
+|---|---|---|
+| Solana | `solana` | `solana` |
+| Base (8453) | `base` | `base` |
+| BNB Chain (56) | `bsc` | `bsc` |
+| Ethereum (1) | `ethereum` | `eth` |
+| Robinhood Chain (4663) | `robinhood` | `robinhood` |
 
-Helm maps Solana to `solana`, Base (8453) to `base`, BNB Chain (56) to `bsc`, Ethereum (1) to `eth`, and Robinhood Chain (4663) to `robinhood`. GeckoTerminal identifies networks with provider slugs rather than numeric EVM chain IDs. Helm first checks its canonical EVM chain-ID mapping, then confirms the provider slug appears in the provider's network index and that at least one DEX is listed for it. The provider network resource does not expose a numeric EVM chain ID, so this integration does not claim a provider-side numeric chain-ID check. If a slug or DEX coverage is absent, or token lookup returns no matching token address, the UI reports coverage unavailable or no indexed pool.
+Pools are resolved from the launch's own chain and token address, never by ticker. A pool is kept only when its
+chain matches and the token is its base or quote token (Solana addresses compared case-sensitively).
 
-Third-party market data is informational and separate from Helm wallet balances, supply transparency, transaction history, quotes, and confirmations. FDV and market cap are displayed only when separately returned by the provider; one is never calculated from the other.
+## Honesty rules
+
+- A missing number stays missing ("—"); it never becomes zero, and FDV and market cap are shown only as each is
+  returned. One is never calculated from the other.
+- When the launch token is the pool's quote token, DEX Screener's price, FDV and market cap describe the other token,
+  so they're withheld and the view says so; candles are requested for the quote side.
+- Malformed candle rows are dropped, never filled in. No synthetic candles.
+
+## Limits, caching and failure
+
+GeckoTerminal's public tier allows 30 calls a minute per its FAQ and about 10 per its product page, with no SLA.
+Helm keeps one shared cache and budget per server: pools are reused for 30 seconds, candles for 60, and uncached
+candle requests are capped at 8 a minute. A provider's 429 starts a back-off (its `Retry-After`, else 60 seconds).
+When a provider fails, the last good answer up to 30 minutes old is shown and marked stale with its age; past that,
+the view shows an error with a retry.
+
+## Terms
+
+DEX Screener's API terms restrict products whose *primary purpose* competes with DEX Screener; Helm's is launching
+and managing tokens, and the market view is a supporting panel with attribution. GeckoTerminal's public API terms
+should be reviewed before relying on it commercially. Both providers are credited in the view, with links.
+
+## Not covered
+
+- No live trades feed (neither provider documents one in these APIs), so the terminal shows buy/sell counts per
+  window instead of individual trades.
+- A freshly created token shows "no pool yet" until the providers index it.

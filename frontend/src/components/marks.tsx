@@ -33,7 +33,7 @@ const PAD_BRAND: Record<string, string> = {
  * of the three pairings in its brand guidelines.
  */
 const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: boolean }> = {
-  "chains/solana": { fit: "pad" }, "chains/base": { fit: "fill" }, "chains/bsc": { fit: "pad" },
+  "chains/solana": { fit: "pad" }, "chains/base": { fit: "fill", round: true }, "chains/bsc": { fit: "pad" },
   "chains/ethereum": { fit: "pad" }, "chains/robinhood": { fit: "pad", bg: "#ccff00" },
   "launchpads/pumpfun": { fit: "pad" }, "launchpads/four-meme": { fit: "pad" }, "launchpads/meteora": { fit: "pad" },
   "launchpads/flap": { fit: "pad" }, "launchpads/uniswap": { fit: "fill" }, "launchpads/bankr": { fit: "fill" },
