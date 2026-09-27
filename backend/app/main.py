@@ -13,7 +13,7 @@ from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import auth, automations, launches, misc, profile, telegram, wallets
+from .routes import auth, automations, bridge, distribute, launches, misc, profile, telegram, wallets
 from .signing import get_signer
 
 
@@ -44,7 +44,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for r in (auth.router, wallets.router, launches.router, automations.router, misc.router, telegram.router, profile.router):
+    for r in (auth.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+              misc.router, telegram.router, profile.router):
         app.include_router(r)
 
     # Upstream failures (RPC down, launchpad API changed, signer unreachable) become clear 502s. These are

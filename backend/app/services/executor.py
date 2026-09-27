@@ -29,12 +29,25 @@ class SubmitResult:
 
 class Executor:
     def __init__(self, rpc: SolanaRPC, signer: Signer, confirm_timeout_s: float = 60,
-                 evm_rpcs: dict | None = None, dex=None) -> None:
+                 evm_rpcs: dict | None = None, dex=None, relay=None) -> None:
         self.rpc = rpc
         self.signer = signer
         self.confirm_timeout_s = confirm_timeout_s
         self.evm_rpcs = evm_rpcs or {}  # tests inject fake EVM nodes here
         self._dex = dex
+        self._relay = relay
+
+    @property
+    def relay(self):
+        """Cross-chain router (Relay) for moving USDC or coins between chains."""
+        if self._relay is None:
+            from ..chains.relay import Relay
+            from ..config import get_settings
+
+            s = get_settings()
+            self._relay = Relay(s.relay_api_url, s.relay_api_key, fee_bps=s.route_fee_bps,
+                                fee_recipient=s.platform_fee_wallet_evm)
+        return self._relay
 
     @property
     def dex(self):
@@ -336,8 +349,10 @@ async def run_evm_plan(db: AsyncSession, ex: Executor, job: Job, wallet: Wallet,
 
 
 async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token: str, wallets: list[Wallet],
-                        side: str, amount: float, mode: str, stagger_ms: int, slippage_pct: float) -> None:
-    """Buys spend `amount` native coin per wallet; sells sell `amount` percent of each wallet's tokens."""
+                        side: str, amount: float, mode: str, stagger_ms: int, slippage_pct: float,
+                        execution_guard: Callable[[], Awaitable[bool]] | None = None) -> None:
+    """Buys spend `amount` native coin per wallet; sells sell `amount` percent of each wallet's tokens.
+    `execution_guard`, when given, is checked before each wallet's trade; if it returns False nothing more is sent."""
     from ..chains.base import EvmTradeRequest
 
     job.status = "submitted"
@@ -365,6 +380,11 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
             return None, str(e)
 
     async def one(w: Wallet) -> SubmitResult:
+        if execution_guard and not await execution_guard():
+            res = SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent.")
+            await _record(db, job, w, side, res, None)
+            await db.commit()
+            return res
         plan, err = await plan_for(w)
         if plan is None:
             res = SubmitResult(None, "failed", err)
@@ -374,6 +394,8 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
         return await _run_evm_steps(db, ex, job, w, side, plan)
 
     results = []
+    if mode == "parallel" and execution_guard and not await execution_guard():
+        mode = "stagger"  # each wallet then records the stop individually
     if mode == "parallel":
         # Different wallets never share a nonce, so they can go at once. DB writes stay on one session in order.
         plans = await asyncio.gather(*(plan_for(w) for w in wallets))

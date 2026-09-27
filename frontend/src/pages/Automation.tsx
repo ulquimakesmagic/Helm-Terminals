@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short } from "../api";
 import { Address, Callout, Card, Empty, Field, Icon, Loading, PageHeader, StatusBadge, useToast } from "../components/ui";
+import { chainOf, native } from "../chains";
 
 interface Launch { id: string; name: string; symbol: string; network: string; status: string; mint_address: string | null }
 interface Wallet { id: string; address: string; label: string; sol: number; tokens: number; role: string }
 interface Automation {
   id: string; launch_id: string; launch_name: string | null; launch_symbol: string | null; network: string;
-  status: string; side: "buy" | "sell"; wallet_count: number; order_sol: number; sell_percent: number;
+  coin?: string; status: string; side: "buy" | "sell"; wallet_count: number; order_sol: number; sell_percent: number;
   total_orders: number; interval_seconds: number; slippage_pct: number; planned_trade_sol: number | null;
   planned_position_exit_pct: number | null; runs_completed: number; next_run_at: string;
   last_job_id: string | null; error: string | null; created_at: string;
@@ -60,7 +61,7 @@ export default function Automation() {
       setLaunches(launchRows);
       setAutomations(autoRows);
       setError("");
-      if (!launchId) setLaunchId(launchRows.find((l) => l.status === "live" && l.network === "solana")?.id ?? "");
+      if (!launchId) setLaunchId(launchRows.find((l) => l.status === "live")?.id ?? "");
     } catch (e) { setError(errMsg(e)); }
   }, [launchId]);
 
@@ -81,6 +82,7 @@ export default function Automation() {
   }, [launchId]);
 
   const launch = launches?.find((l) => l.id === launchId);
+  const coin = native(launch?.network);
   const plannedTrade = side === "buy" ? (+amount || 0) * selected.size * (+orders || 0) : 0;
   const plannedExitPercent = side === "sell" ? (1 - (1 - Math.min(100, +amount || 0) / 100) ** (+orders || 0)) * 100 : 0;
   const activePlans = useMemo(() => automations?.filter((a) => active.has(a.status)) ?? [], [automations]);
@@ -113,7 +115,7 @@ export default function Automation() {
         body: { ...formBody(), confirm: true, preflight_hash: preview.preflight_hash, idempotency_key: idempotencyKey() },
       });
       setPreview(null);
-      toast("good", "Scheduled buy plan created");
+      toast("good", side === "buy" ? "Scheduled buy plan created" : "Scheduled sell plan created");
       await load();
     } catch (e) { setError(errMsg(e)); setPreview(null); }
     finally { setBusy(false); }
@@ -162,7 +164,7 @@ export default function Automation() {
       </Callout>
 
       <div className="grid automation-layout">
-        <Card title="Build a trade schedule" icon="zap" sub="Solana · one launch · selected managed wallets">
+        <Card title="Build a trade schedule" icon="zap" sub={`${launch ? chainOf(launch.network).name : "Any chain"} · one launch · selected managed wallets`}>
           {!launches ? <Loading rows={4} /> : (
             <div className="automation-form">
               <div className="automation-direction" role="group" aria-label="Schedule direction">
@@ -171,10 +173,10 @@ export default function Automation() {
                 <button type="button" className={`btn sm ${side === "sell" ? "" : "secondary"}`} aria-pressed={side === "sell"}
                   onClick={() => { setSide("sell"); setAmount("25"); clearPreview(); }}>Staged sells</button>
               </div>
-              <Field label="Live Solana launch" hint="Scheduled buys currently support Solana launches.">
+              <Field label="Live launch" hint="Works on Solana, Base, BNB Chain, Robinhood Chain and Ethereum launches.">
                 <select value={launchId} onChange={(e) => { setLaunchId(e.target.value); clearPreview(); }}>
                   <option value="">Choose a live launch…</option>
-                  {launches.filter((l) => l.status === "live" && l.network === "solana").map((l) => (
+                  {launches.filter((l) => l.status === "live").map((l) => (
                     <option key={l.id} value={l.id}>{l.name} · ${l.symbol}</option>
                   ))}
                 </select>
@@ -195,8 +197,8 @@ export default function Automation() {
                       <label className={`automation-wallet ${selected.has(w.id) ? "selected" : ""}`} key={w.id}>
                         <input type="checkbox" checked={selected.has(w.id)} onChange={() => toggleWallet(w.id)} />
                         <span className="wallet-avatar"><Icon name="wallet" size={15} /></span>
-                        <span className="grow"><strong>{w.label || "Untitled wallet"}</strong><span><Address address={w.address} network="solana" /></span></span>
-                        <span className="wallet-balance">{side === "buy" ? `${fmt(w.sol, 3)} SOL` : `${fmt(w.tokens, 2)} $${launch?.symbol ?? "tokens"}`}</span>
+                        <span className="grow"><strong>{w.label || "Untitled wallet"}</strong><span><Address address={w.address} network={launch?.network ?? "solana"} /></span></span>
+                        <span className="wallet-balance">{side === "buy" ? `${fmt(w.sol, 3)} ${coin}` : `${fmt(w.tokens, 2)} $${launch?.symbol ?? "tokens"}`}</span>
                       </label>
                     ))}
                   </div>
@@ -205,7 +207,7 @@ export default function Automation() {
 
               <div className="grid automation-fields">
                 <Field label={side === "buy" ? "Buy size · per wallet, each time" : "Sell from remaining balance · each time"}>
-                  <div className="input-wrap"><input inputMode="decimal" min="0" max={side === "buy" ? 10 : 100} value={amount} onChange={(e) => { setAmount(e.target.value); clearPreview(); }} /><span className="unit">{side === "buy" ? "SOL" : "%"}</span></div>
+                  <div className="input-wrap"><input inputMode="decimal" min="0" max={side === "buy" ? 10 : 100} value={amount} onChange={(e) => { setAmount(e.target.value); clearPreview(); }} /><span className="unit">{side === "buy" ? coin : "%"}</span></div>
                 </Field>
                 <Field label="Number of orders"><select value={orders} onChange={(e) => { setOrders(e.target.value); clearPreview(); }}>{[2, 3, 4, 6, 8, 12].map((n) => <option key={n} value={n}>{n} {side === "buy" ? "buys" : "sells"}</option>)}</select></Field>
                 <Field label="Time between orders"><select value={interval} onChange={(e) => { setInterval(e.target.value); clearPreview(); }}>{[5, 10, 15, 30, 60, 240, 1440].map((n) => <option key={n} value={n}>{n < 60 ? `${n} minutes` : n < 1440 ? `${n / 60} hours` : "24 hours"}</option>)}</select></Field>
@@ -215,13 +217,13 @@ export default function Automation() {
 
               <div className="automation-budget">
                 {side === "buy" ? <>
-                  <div className="row between"><span>Planned trade amount</span><strong>{fmt(plannedTrade, 4)} SOL</strong></div>
-                  <div className="budget-equation">{fmt(+amount || 0, 4)} SOL × {selected.size} wallet{selected.size === 1 ? "" : "s"} × {+orders || 0} buys</div>
-                  <div className="muted small">Network fees vary and are additional. SOL funding is checked before each order.</div>
+                  <div className="row between"><span>Planned trade amount</span><strong>{fmt(plannedTrade, 4)} {coin}</strong></div>
+                  <div className="budget-equation">{fmt(+amount || 0, 4)} {coin} × {selected.size} wallet{selected.size === 1 ? "" : "s"} × {+orders || 0} buys</div>
+                  <div className="muted small">Network fees vary and are additional. {coin} funding is checked before each order.</div>
                 </> : <>
                   <div className="row between"><span>Maximum planned position exit</span><strong>{fmt(plannedExitPercent, 2)}%</strong></div>
                   <div className="budget-equation">{fmt(+amount || 0, 2)}% of each wallet’s remaining tokens × {+orders || 0} sells</div>
-                  <div className="muted small">The percentage applies to the balance at each execution. Token prices and proceeds vary; SOL for network fees is checked before each order. The plan can finish early when no sellable tokens remain.</div>
+                  <div className="muted small">The percentage applies to the balance at each execution. Token prices and proceeds vary; {coin} for network fees is checked before each order. The plan can finish early when no sellable tokens remain.</div>
                 </>}
               </div>
 
@@ -230,12 +232,12 @@ export default function Automation() {
                   <div className="row between"><div><div className="eyebrow">REVIEW BEFORE SCHEDULING</div><strong>{preview.preflight.launch}</strong></div><span className="badge info">{preview.preflight.strategy}</span></div>
                   <div className="automation-review-grid">
                     <div><span>Orders</span><strong>{preview.preflight.number_of_orders}</strong></div>
-                    <div><span>Per order / wallet</span><strong>{side === "buy" ? `${fmt(preview.preflight.amount_sol_per_wallet_per_order ?? 0, 4)} SOL` : `${fmt(preview.preflight.sell_percent_of_remaining_per_order ?? 0, 2)}% of remaining`}</strong></div>
-                    <div><span>{side === "buy" ? "Total planned buys" : "Maximum position exit"}</span><strong>{side === "buy" ? `${fmt(preview.preflight.planned_trade_sol ?? 0, 4)} SOL` : `${fmt(preview.preflight.maximum_position_exit_percent ?? 0, 2)}%`}</strong></div>
+                    <div><span>Per order / wallet</span><strong>{side === "buy" ? `${fmt(preview.preflight.amount_sol_per_wallet_per_order ?? 0, 4)} ${coin}` : `${fmt(preview.preflight.sell_percent_of_remaining_per_order ?? 0, 2)}% of remaining`}</strong></div>
+                    <div><span>{side === "buy" ? "Total planned buys" : "Maximum position exit"}</span><strong>{side === "buy" ? `${fmt(preview.preflight.planned_trade_sol ?? 0, 4)} ${coin}` : `${fmt(preview.preflight.maximum_position_exit_percent ?? 0, 2)}%`}</strong></div>
                     <div><span>First order</span><strong>In {preview.preflight.first_order_in_minutes} min</strong></div>
                   </div>
                   <div className="stack tight">
-                    {preview.preflight.wallets.map((w) => <div key={w.address} className="row between small"><span>{w.label} · <span className="mono">{short(w.address)}</span>{side === "sell" && <span className="muted"> · {fmt(w.token_balance ?? 0, 2)} ${launch?.symbol}</span>}</span><Address address={w.address} network="solana" /></div>)}
+                    {preview.preflight.wallets.map((w) => <div key={w.address} className="row between small"><span>{w.label} · <span className="mono">{short(w.address)}</span>{side === "sell" && <span className="muted"> · {fmt(w.token_balance ?? 0, 2)} ${launch?.symbol}</span>}</span><Address address={w.address} network={launch?.network ?? "solana"} /></div>)}
                   </div>
                   <div className="small text-2">Platform fee: {preview.preflight.platform_fee}<br />Network fees: {preview.preflight.network_fees}</div>
                   {preview.preflight.warnings.map((warning) => <Callout key={warning} tone="warn">{warning}</Callout>)}
@@ -266,11 +268,11 @@ export default function Automation() {
                   return (
                     <article className="automation-plan" key={a.id}>
                       <div className="row between nowrap">
-                        <div className="grow"><strong>{a.launch_name || "Launch"} <span className="muted">${a.launch_symbol}</span></strong><div className="muted small">{a.wallet_count} wallet{a.wallet_count === 1 ? "" : "s"} · {a.side === "buy" ? `${fmt(a.order_sol, 4)} SOL per buy` : `${fmt(a.sell_percent, 2)}% of remaining per sell`}</div></div>
+                        <div className="grow"><strong>{a.launch_name || "Launch"} <span className="muted">${a.launch_symbol}</span></strong><div className="muted small">{a.wallet_count} wallet{a.wallet_count === 1 ? "" : "s"} · {a.side === "buy" ? `${fmt(a.order_sol, 4)} ${a.coin ?? native(a.network)} per buy` : `${fmt(a.sell_percent, 2)}% of remaining per sell`}</div></div>
                         <StatusBadge status={a.status} />
                       </div>
                       <div className="bar thin"><div style={{ width: `${pct}%` }} /></div>
-                      <div className="row between small muted"><span>{a.runs_completed} of {a.total_orders} {a.side === "buy" ? "buys" : "sells"} complete{a.side === "sell" && a.status === "completed" && a.runs_completed < a.total_orders ? " · position exhausted" : ""}</span><span>{a.side === "buy" ? `${fmt(a.planned_trade_sol ?? 0, 4)} SOL planned` : `up to ${fmt(a.planned_position_exit_pct ?? 0, 2)}% of starting holdings`}</span></div>
+                      <div className="row between small muted"><span>{a.runs_completed} of {a.total_orders} {a.side === "buy" ? "buys" : "sells"} complete{a.side === "sell" && a.status === "completed" && a.runs_completed < a.total_orders ? " · position exhausted" : ""}</span><span>{a.side === "buy" ? `${fmt(a.planned_trade_sol ?? 0, 4)} ${a.coin ?? native(a.network)} planned` : `up to ${fmt(a.planned_position_exit_pct ?? 0, 2)}% of starting holdings`}</span></div>
                       {a.status === "scheduled" && <div className="small text-2">Next order {displayTime(a.next_run_at)}</div>}
                       {a.error && <Callout tone="warn">{a.error}</Callout>}
                       <div className="row between">

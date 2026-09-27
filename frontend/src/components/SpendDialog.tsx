@@ -1,4 +1,5 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import { Address, Callout, Icon, Modal, Spinner, StatusBadge } from "./ui";
@@ -15,22 +16,28 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial"];
-const HIDDEN = new Set(["launch_id"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
   irreversible: "Irreversible", launchpad: "Launchpad", destination: "Destination", wallets: "Wallets", wallet: "Wallet",
   network: "Chain", coin: "Coin", total: "Total", max_gas: "Max gas", max_gas_each: "Max gas per transfer",
   percent: "Percent", tokens: "Tokens", side: "Side", amount: "Amount", mode: "Mode", name: "Name", symbol: "Ticker",
+  asset: "Asset", token: "Token", chain: "Chain", split: "Split", transactions: "Transactions",
+  network_fees_max: "Max network fees", skipped_empty: "Skipped (nothing to move)", transparency: "Transparency",
+  send: "Send", send_asset: "Pay with", receive_asset: "Receive", from_chain: "From chain", to_chain: "To chain",
+  provider: "Route provider", quote: "Live quote",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
+  disperse: "disperse", consolidate: "consolidate", bridge: "route",
 };
 
 const isAddr = (v: unknown): v is string => typeof v === "string" && (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v) || /^0x[0-9a-fA-F]{40}$/.test(v));
 
-function Value({ k, v, network }: { k: string; v: unknown; network?: string }): ReactNode {
-  const cur = chainOf(network).native;
+function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
+  const coin = chainOf(network).native;
+  const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
   if (Array.isArray(v)) {
     return (
       <div className="stack tight" style={{ alignItems: "flex-end" }}>
@@ -52,10 +59,26 @@ function Value({ k, v, network }: { k: string; v: unknown; network?: string }): 
       </div>
     );
   }
-  if (isAddr(v)) return <Address address={v} type={k === "mint" ? "token" : "account"} network={network} />;
+  if (k === "quote" && v && typeof v === "object") {
+    const q = v as { receive_estimate?: number; receive_minimum?: number; receive_symbol?: string; time_estimate_s?: number;
+      fees_usd?: { network_gas?: number; relayer?: number; helm_route_fee?: number } };
+    const f = q.fees_usd ?? {};
+    return (
+      <div className="stack tight" style={{ alignItems: "flex-end" }}>
+        <span className="num" style={{ fontWeight: 600 }}>≈ {fmt(q.receive_estimate ?? 0, 6)} {q.receive_symbol}</span>
+        <span className="muted small">at least {fmt(q.receive_minimum ?? 0, 6)} {q.receive_symbol}{q.time_estimate_s ? ` · about ${Math.max(1, Math.round(q.time_estimate_s))}s` : ""}</span>
+        <span className="muted small">fees ≈ ${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)} Relay + gas · ${fmt(f.helm_route_fee ?? 0, 2)} Helm</span>
+      </div>
+    );
+  }
+  if (v && typeof v === "object" && isAddr((v as Record<string, unknown>).address)) {
+    const o = v as Record<string, unknown>;
+    return <span className="row nowrap" style={{ gap: 8 }}>{typeof o.label === "string" && <span className="muted small">{o.label}</span>}<Address address={o.address as string} network={network} /></span>;
+  }
+  if (isAddr(v)) return <Address address={v} type={k === "mint" || k === "token" ? "token" : "account"} network={network} />;
   if (typeof v === "boolean") return <span className={v && k === "irreversible" ? "bad" : ""} style={{ fontWeight: 600 }}>{v ? "Yes" : "No"}</span>;
   if (typeof v === "number") {
-    const unit = k.endsWith("_sol") || ["total", "max_gas", "max_gas_each"].includes(k) ? ` ${cur}` : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
+    const unit = ["max_gas", "max_gas_each", "network_fees_max"].includes(k) ? ` ${coin}` : k.endsWith("_sol") || k === "total" ? ` ${cur}` : k === "send" ? "" : k.endsWith("_pct") || k === "percent" ? "%" : k.endsWith("_ms") ? " ms" : "";
     return <span className="num" style={{ fontWeight: 600 }}>{fmt(v, 6)}{unit}</span>;
   }
   if (k === "network") return <span style={{ fontWeight: 600 }}>{chainOf(String(v)).name}</span>;
@@ -143,7 +166,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   }
 
   const { warnings = [], kind, ...rest } = pre ?? {};
-  const rows = Object.entries(rest).filter(([k]) => !HIDDEN.has(k));
+  const rows = Object.entries(rest).filter(([k, v]) => !HIDDEN.has(k) && v !== null);
   const busy = phase === "submitting" || phase === "polling";
   const blocked = warnings.length > 0;
   const danger = kind === "burn" || kind === "withdraw" || kind === "send_tokens";
@@ -173,11 +196,19 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
             {rows.map(([k, v]) => (
               <Fragment key={k}>
                 <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
-                <div className="v"><Value k={k} v={v} network={network} /></div>
+                <div className="v"><Value k={k} v={v} network={network} asset={typeof pre?.asset === "string" ? pre.asset : undefined} /></div>
               </Fragment>
             ))}
           </div>
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
+          {kind !== "bridge" && lowFunds(warnings) && fundAddress(pre) && (
+            <div className="row" style={{ gap: 8 }}>
+              <Link className="btn sm secondary" to={`/wallets?route_to=${encodeURIComponent(fundAddress(pre)!)}`} onClick={onClose}>
+                <Icon name="globe" size={13} />Top up this wallet from USDC
+              </Link>
+              <span className="muted small">Routes your dollar balance into {chainOf(network).native} on {chainOf(network).name}.</span>
+            </div>
+          )}
           {error && <Callout tone="err">{error}</Callout>}
           {needs2fa && !blocked && (
             <div className="stack tight" style={{ alignItems: "center", padding: "6px 0" }}>
@@ -217,4 +248,15 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       )}
     </Modal>
   );
+}
+
+// A blocked preview caused by a thin native balance can be fixed by routing USDC in from another chain.
+function lowFunds(warnings: string[]): boolean {
+  return warnings.some((w) => /too little|needs about|is below|less than|for network fees|plus gas|balance/i.test(w));
+}
+
+function fundAddress(pre: any): string | null {
+  const pick = (v: unknown): string | null => typeof v === "string" && isAddr(v) ? v
+    : v && typeof v === "object" && isAddr((v as any).address) ? (v as any).address : null;
+  return pick(pre?.dev_wallet) ?? pick(pre?.wallet) ?? pick(pre?.from) ?? (Array.isArray(pre?.wallets) ? pick(pre.wallets[0]) : null);
 }

@@ -5,6 +5,7 @@ import base64
 from typing import Sequence
 
 import httpx
+from solders.address_lookup_table_account import AddressLookupTableAccount
 from solders.hash import Hash
 from solders.instruction import AccountMeta, Instruction
 from solders.keypair import Keypair
@@ -19,6 +20,7 @@ from ..keyring import KeyRing, parse_list, retry_after
 from ..signing.base import Signer, SigningError
 
 TOKEN_PROGRAM = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+TOKEN_2022_PROGRAM = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
 ATA_PROGRAM = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 SYSTEM_PROGRAM = Pubkey.from_string("11111111111111111111111111111111")
 LAMPORTS_PER_SOL = 1_000_000_000
@@ -104,6 +106,22 @@ class SolanaRPC:
             total += int(acc["account"]["data"]["parsed"]["info"]["tokenAmount"]["amount"])
         return total
 
+    async def get_lookup_table(self, address: str) -> AddressLookupTableAccount | None:
+        """An address lookup table's addresses (they start after the table's 56-byte header)."""
+        res = await self._call("getAccountInfo", [address, {"encoding": "base64", "commitment": "confirmed"}])
+        value = (res or {}).get("value")  # type: ignore[union-attr]
+        if not value:
+            return None
+        raw = base64.b64decode(value["data"][0])
+        keys = [Pubkey.from_bytes(raw[i:i + 32]) for i in range(56, len(raw) - 31, 32)]
+        return AddressLookupTableAccount(Pubkey.from_string(address), keys)
+
+    async def get_mint_program(self, mint: str) -> Pubkey:
+        """The token program that owns a mint: classic SPL Token or Token-2022."""
+        res = await self._call("getAccountInfo", [mint, {"encoding": "base64", "commitment": "confirmed"}])
+        owner = ((res or {}).get("value") or {}).get("owner")  # type: ignore[union-attr]
+        return TOKEN_2022_PROGRAM if owner == str(TOKEN_2022_PROGRAM) else TOKEN_PROGRAM
+
     async def get_token_supply(self, mint: str) -> tuple[int, int]:
         """Return (raw_supply, decimals)."""
         res = await self._call("getTokenSupply", [mint, {"commitment": "confirmed"}])
@@ -177,8 +195,9 @@ class SolanaRPC:
 # --- Transaction building -------------------------------------------------------------------------
 
 
-def build_unsigned(payer: Pubkey, instructions: list[Instruction], blockhash: str) -> bytes:
-    msg = MessageV0.try_compile(payer, instructions, [], Hash.from_string(blockhash))
+def build_unsigned(payer: Pubkey, instructions: list[Instruction], blockhash: str,
+                   lookup_tables: list[AddressLookupTableAccount] | None = None) -> bytes:
+    msg = MessageV0.try_compile(payer, instructions, lookup_tables or [], Hash.from_string(blockhash))
     n = msg.header.num_required_signatures
     tx = VersionedTransaction.populate(msg, [Signature.default()] * n)
     return bytes(tx)
@@ -273,8 +292,9 @@ def find_ata(owner: Pubkey, mint: Pubkey, token_program: Pubkey = TOKEN_PROGRAM)
     return Pubkey.find_program_address([bytes(owner), bytes(token_program), bytes(mint)], ATA_PROGRAM)[0]
 
 
-def create_ata_idempotent_ix(payer: Pubkey, owner: Pubkey, mint: Pubkey) -> Instruction:
-    ata = find_ata(owner, mint)
+def create_ata_idempotent_ix(payer: Pubkey, owner: Pubkey, mint: Pubkey,
+                             token_program: Pubkey = TOKEN_PROGRAM) -> Instruction:
+    ata = find_ata(owner, mint, token_program)
     return Instruction(
         ATA_PROGRAM,
         bytes([1]),
@@ -284,17 +304,18 @@ def create_ata_idempotent_ix(payer: Pubkey, owner: Pubkey, mint: Pubkey) -> Inst
             AccountMeta(owner, False, False),
             AccountMeta(mint, False, False),
             AccountMeta(SYSTEM_PROGRAM, False, False),
-            AccountMeta(TOKEN_PROGRAM, False, False),
+            AccountMeta(token_program, False, False),
         ],
     )
 
 
-def token_transfer_checked_ix(owner: Pubkey, dest_owner: Pubkey, mint: Pubkey, amount: int, decimals: int) -> Instruction:
-    src = find_ata(owner, mint)
-    dst = find_ata(dest_owner, mint)
+def token_transfer_checked_ix(owner: Pubkey, dest_owner: Pubkey, mint: Pubkey, amount: int, decimals: int,
+                              token_program: Pubkey = TOKEN_PROGRAM) -> Instruction:
+    src = find_ata(owner, mint, token_program)
+    dst = find_ata(dest_owner, mint, token_program)
     data = bytes([12]) + amount.to_bytes(8, "little") + bytes([decimals])
     return Instruction(
-        TOKEN_PROGRAM,
+        token_program,
         data,
         [
             AccountMeta(src, False, True),

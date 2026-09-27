@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # DEX trading on EVM chains (graduated launchpad tokens, Uniswap V2 launches) goes through KyberSwap's aggregator.
     kyber_api_url: str = "https://aggregator-api.kyberswap.com"
     kyber_client_id: str = "HelmTerminals"
+    # Cross-chain routes (USDC to gas on any chain) go through Relay (relay.link). A key is optional but raises
+    # rate limits. ROUTE_FEE_BPS is Helm's fee on each route, paid by Relay to PLATFORM_FEE_WALLET_EVM as USDC
+    # (claim it at relay.link). Always shown in the route preview; 0 or no EVM fee wallet turns it off.
+    relay_api_url: str = "https://api.relay.link"
+    relay_api_key: str = ""
+    route_fee_bps: int = Field(default=30, ge=0, le=300)
+    route_poll_seconds: float = 3.0
+    route_wait_seconds: float = 180.0
     # Public base URL of this API. Launchpads that store an image URL on-chain (Pons) get the token image from here.
     public_api_url: str = "https://api.helmterminals.xyz"
     # Bags (bags.fm). Get an API key at https://dev.bags.fm. Without one, Bags shows as "needs setup".
@@ -103,6 +111,8 @@ class Settings(BaseSettings):
     automation_worker_enabled: bool = True
     automation_poll_seconds: float = Field(default=5.0, gt=0, le=60)
     automation_max_budget_sol: float = Field(default=10.0, gt=0, le=100)
+    # Per-chain caps for EVM scheduled buys, in each chain's native coin ("network=amount,...").
+    automation_max_budgets: str = "base=2,ethereum=2,robinhood=2,bsc=10"
 
     run_jobs_inline: bool = False  # tests: await jobs in the request instead of a background task
     cors_origins: str = "http://localhost:5173"

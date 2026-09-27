@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..chains.solana import LAMPORTS_PER_SOL
 from ..db import get_db
 from ..config import get_settings
-from ..deps import current_user, log_activity, valid_address_for, web_user
+from ..deps import current_user, get_executor, log_activity, valid_address_for, web_user
 from ..models import (
-    Activity, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Watch, utcnow,
+    Activity, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Wallet, Watch, utcnow,
 )
+from ..services.executor import Executor
+from ..services.portfolio import build_portfolio
 
 router = APIRouter(tags=["misc"])
 PERIODS = {"all": None, "1y": timedelta(days=365), "1m": timedelta(days=30), "7d": timedelta(days=7), "1d": timedelta(days=1)}
@@ -32,6 +34,20 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
         tq = tq.where(Transaction.created_at >= since)
     launches = (await db.execute(lq)).scalar_one()
     rows = (await db.execute(tq)).all()
+    # Activity per chain: launches, and confirmed transactions from your wallets.
+    cq = (select(Launch.network, func.count(Launch.id)).where(Launch.user_id == user.id, Launch.status != "archived",
+                                                             Launch.imported.is_(False)).group_by(Launch.network))
+    xq = (select(Wallet.network, func.count(Transaction.id)).join(Job, Job.id == Transaction.job_id)
+          .join(Wallet, Wallet.id == Transaction.wallet_id)
+          .where(Job.user_id == user.id, Transaction.status == "confirmed").group_by(Wallet.network))
+    if since:
+        cq = cq.where(Launch.created_at >= since)
+        xq = xq.where(Transaction.created_at >= since)
+    by_chain: dict[str, dict] = {}
+    for net, n in (await db.execute(cq)).all():
+        by_chain.setdefault(net, {"launches": 0, "transactions": 0})["launches"] = n
+    for net, n in (await db.execute(xq)).all():
+        by_chain.setdefault(net, {"launches": 0, "transactions": 0})["transactions"] = n
     daily: dict[str, int] = {}
     for delta, created in rows:
         daily[created.date().isoformat()] = daily.get(created.date().isoformat(), 0) + int(delta)
@@ -42,11 +58,20 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
     return {
         "period": period,
         "total_launches": launches,
+        "by_chain": by_chain,
         "net_sol_flow": cum / LAMPORTS_PER_SOL,
         "series": series,
         "referral": await referral_summary(db, user),
         "note": "Net SOL flow from confirmed on-chain transactions, including fees. Unsold token holdings are not valued.",
     }
+
+
+@router.get("/portfolio")
+async def portfolio(fresh: bool = False, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                    ex: Executor = Depends(get_executor)):
+    """Coins and dollar stablecoins across every chain, valued in USD."""
+    wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
+    return await build_portfolio(ex, user.id, list(wallets), fresh=fresh)
 
 
 @router.post("/referrals", status_code=201)

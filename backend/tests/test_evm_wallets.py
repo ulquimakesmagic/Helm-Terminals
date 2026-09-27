@@ -25,11 +25,11 @@ def decode(raw: bytes) -> dict:
     if raw[0] == 2:
         d = TypedTransaction.from_bytes(HexBytes(raw)).as_dict()
         return {"from": sender, "to": "0x" + bytes(d["to"]).hex(), "value": d["value"], "nonce": d["nonce"],
-                "chainId": d["chainId"], "type": 2}
+                "chainId": d["chainId"], "type": 2, "data": bytes(d.get("data") or b"")}
     nonce, gas_price, gas, to, value, data, v, r, s = rlp.decode(raw)
     v = int.from_bytes(v, "big")
     return {"from": sender, "to": "0x" + to.hex(), "value": int.from_bytes(value, "big"),
-            "nonce": int.from_bytes(nonce, "big"), "chainId": (v - 35) // 2, "type": 0}
+            "nonce": int.from_bytes(nonce, "big"), "chainId": (v - 35) // 2, "type": 0, "data": bytes(data)}
 
 
 class FakeEvm:

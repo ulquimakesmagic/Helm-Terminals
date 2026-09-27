@@ -60,4 +60,5 @@ export const solscan = (sig: string) => `https://solscan.io/tx/${sig}`;
 export const short = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 export const fmt = (n: number, d = 4) => n.toLocaleString(undefined, { maximumFractionDigits: d });
 export const sol = (n: number, d = 4) => `${fmt(n, d)} SOL`;
+export const usd = (n: number) => `$${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const errMsg = (e: unknown) => (e as ApiError)?.detail ?? String(e);

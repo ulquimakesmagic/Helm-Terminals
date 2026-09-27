@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, errMsg, fmt, short } from "../api";
+import { useSearchParams } from "react-router-dom";
+import { api, errMsg, fmt, short, usd } from "../api";
+import Distribute from "../components/Distribute";
+import RouteFunds from "../components/RouteFunds";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
 import {
@@ -202,7 +205,7 @@ export default function Wallets() {
   const [chainF, setChainF] = useState<"all" | ChainId>("all");
   const [balances, setBalances] = useState(false);
   const [loadingBal, setLoadingBal] = useState(false);
-  const [modal, setModal] = useState<null | "create" | "fund" | "withdraw" | "folders" | "move">(null);
+  const [modal, setModal] = useState<null | "create" | "fund" | "withdraw" | "folders" | "move" | "disperse" | "consolidate" | "route">(null);
   const [moveTo, setMoveTo] = useState("");
   const [moveNew, setMoveNew] = useState("");
   const [moving, setMoving] = useState(false);
@@ -210,6 +213,9 @@ export default function Wallets() {
   const [fundAmount, setFundAmount] = useState("0.05");
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [folio, setFolio] = useState<any>(null);
+  const [search, setSearch] = useSearchParams();
+  const [routeTo, setRouteTo] = useState<string | undefined>();
 
   const load = async (withBal = balances) => {
     if (withBal) setLoadingBal(true);
@@ -218,11 +224,19 @@ export default function Wallets() {
         api<W[]>(`/wallets${withBal ? "?with_balances=true" : ""}`), api<Folder[]>("/folders"), api<Funder[]>("/funders"),
       ]);
       setWallets(w); setFolders(f); setFunders(fu);
-      if (withBal) setBalances(true);
+      if (withBal) { setBalances(true); api("/portfolio?fresh=true").then(setFolio).catch(() => setFolio(null)); }
     } catch (e) { toast("bad", errMsg(e)); setWallets((x) => x ?? []); }
     finally { setLoadingBal(false); }
   };
   useEffect(() => { load(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Arriving from a blocked preview ("Top up this wallet from USDC"): open the route form aimed at that wallet.
+  useEffect(() => {
+    const addr = search.get("route_to");
+    if (!addr || !wallets) return;
+    const w = wallets.find((x) => x.address.toLowerCase() === addr.toLowerCase());
+    if (w) { setRouteTo(w.id); setModal("route"); }
+    search.delete("route_to"); setSearch(search, { replace: true });
+  }, [wallets]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = wallets ?? [];
   const managed = all.filter((w) => w.kind === "managed");
@@ -233,7 +247,6 @@ export default function Wallets() {
       (folderFilter === "all" || (folderFilter === "none" ? !w.folder_id : w.folder_id === folderFilter)) &&
       (!s || w.label.toLowerCase().includes(s) || w.address.toLowerCase().includes(s)));
   }, [all, folderFilter, q, chainF]);
-  const totalSol = all.filter((w) => (w.network ?? "solana") === "solana").reduce((s, w) => s + (w.balance_sol ?? 0), 0);
   const sel = [...selected];
   const selManaged = sel.filter((id) => managed.some((w) => w.id === id));
   const selNets = [...new Set(selManaged.map((id) => managed.find((w) => w.id === id)?.network ?? "solana"))];
@@ -253,14 +266,18 @@ export default function Wallets() {
       <PageHeader title="Wallets" sub="Managed wallets you trade and launch from, plus addresses you watch, on every chain."
         actions={<>
           <button className="btn secondary" onClick={() => load(true)} disabled={loadingBal}>{loadingBal ? <Spinner /> : <Icon name="refresh" size={15} />}{balances ? "Refresh balances" : "Load balances"}</button>
+          <button className="btn secondary" onClick={() => setModal("route")} title="Turn USDC into gas on any chain"><Icon name="globe" size={15} />Route funds</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />Add wallets</button>
         </>} />
 
       <div className="grid g-stats">
-        <Stat accent label="Solana balance" icon="coins" value={balances ? fmt(totalSol) : "—"} unit={balances ? "SOL" : undefined} hint={balances ? "across Solana wallets" : "Load balances to see totals"} />
-        <Stat label="Managed" icon="key" value={wallets ? managed.length : "–"} hint="can sign transactions" />
-        <Stat label="Watch-only" icon="eye" value={wallets ? all.length - managed.length : "–"} hint="read-only tracking" />
-        <Stat label="Funders" icon="arrowdown" value={funders.length} hint={funders.find((f) => f.is_default) ? `default: ${funders.find((f) => f.is_default)!.label}` : "none set"} />
+        <Stat accent label="Total across chains" icon="coins" value={folio ? usd(folio.totals.usd) : "—"}
+          hint={folio ? `${folio.priced ? "" : "prices unavailable · "}coins and stablecoins in ${folio.wallets} managed wallets` : "Load balances to see totals"} />
+        <Stat label="Dollar balance" icon="shield" value={folio ? usd(folio.totals.stable_usd) : "—"} hint="USDC, and USDG on Robinhood Chain" />
+        {(folio?.chains ?? []).filter((c: any) => c.wallets > 0).slice(0, 3).map((c: any) => (
+          <Stat key={c.network} label={c.name} icon="wallet" value={fmt(c.native, 4)} unit={c.coin}
+            hint={`${fmt(c.stable, 2)} ${c.stable_symbol}${c.error ? " · some balances unreadable" : ""}`} />
+        ))}
       </div>
 
       <div className="card">
@@ -324,9 +341,11 @@ export default function Wallets() {
           <b className="num">{sel.length} selected</b>
           {selManaged.length !== sel.length && <span className="muted small">({sel.length - selManaged.length} watch-only ignored)</span>}
           <div className="grow" />
-          {selNets.length > 1 && <span className="warn-t small">Pick wallets on one chain to fund or withdraw</span>}
+          {selNets.length > 1 && <span className="warn-t small">Pick wallets on one chain to fund, withdraw, disperse or consolidate</span>}
           <button className="btn sm buy" disabled={!selNet} onClick={() => setModal("fund")}><Icon name="arrowdown" size={14} />Fund</button>
           <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
+          <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("disperse")} title="Split a coin or token from one wallet across the selected wallets"><Icon name="send" size={14} />Disperse</button>
+          <button className="btn sm secondary" disabled={!selNet} onClick={() => setModal("consolidate")} title="Gather a coin or token from the selected wallets into one"><Icon name="download" size={14} />Consolidate</button>
           <button className="btn sm secondary" onClick={() => { setMoveTo(""); setMoveNew(""); setModal("move"); }}><Icon name="folder" size={14} />Move to folder</button>
           <button className="btn sm ghost" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
@@ -388,6 +407,13 @@ export default function Wallets() {
           <Callout tone="warn" icon="shield">Withdrawals need your 2FA code on the next step.</Callout>
         </Modal>
       )}
+
+      {(modal === "disperse" || modal === "consolidate") && selNet && (
+        <Distribute mode={modal} network={selNet} wallets={all} selected={selManaged} onClose={() => setModal(null)}
+          onReview={(r) => { setModal(null); setDialog(r); }} />
+      )}
+
+      {modal === "route" && <RouteFunds wallets={all} toWalletId={routeTo} onClose={() => { setModal(null); setRouteTo(undefined); }} onReview={(r) => { setModal(null); setDialog(r); }} />}
 
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => { setSelected(new Set()); load(true); }} />}
     </>

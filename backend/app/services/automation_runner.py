@@ -12,12 +12,13 @@ from contextlib import suppress
 from sqlalchemy import select, update
 
 from ..chains.registry import get_adapter
-from ..chains.solana import LAMPORTS_PER_SOL, shared_rpc
+from ..chains.solana import shared_rpc
 from ..config import get_settings
 from ..db import get_sessionmaker
 from ..deps import log_activity
 from ..models import Automation, Job, Launch, LaunchWallet, User, Wallet, utcnow
-from ..services.executor import Executor, run_trade
+from ..services.chain_balances import fee_reserve, native_balance, native_coin, token_balance_raw
+from ..services.executor import Executor, run_evm_trade, run_trade
 from ..services.fees import fee_plan_for
 from ..signing import get_signer
 
@@ -95,9 +96,6 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
             if not launch or launch.status != "live" or not launch.mint_address:
                 await _stop_in_session(db, automation, "Launch is no longer live; scheduled trades stopped.")
                 return True
-            if launch.network != "solana":
-                await _stop_in_session(db, automation, "This scheduled-trade plan is no longer supported on its network.")
-                return True
             if not user:
                 await _stop_in_session(db, automation, "Account is unavailable; scheduled trades stopped.")
                 return True
@@ -114,39 +112,40 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                 await _stop_in_session(db, automation, "The plan has no attached managed wallets.")
                 return True
 
-            fee_plan = await fee_plan_for(db, user, launch.network)
+            net = launch.network
+            coin = native_coin(net)
+            fee_plan = await fee_plan_for(db, user, net)
             remaining = automation.total_orders - automation.runs_completed
             if automation.side == "buy":
-                per_wallet_required = automation.order_sol * remaining * (1 + (fee_plan.bps / 10_000 if fee_plan.active else 0)) + remaining * 0.01
+                fee_mult = 1 + (fee_plan.bps / 10_000 if fee_plan.active and net == "solana" else 0)
+                per_wallet_required = automation.order_sol * remaining * fee_mult + await fee_reserve(ex, net, remaining)
                 for wallet in wallets:
-                    balance = await ex.rpc.get_balance(wallet.address) / LAMPORTS_PER_SOL
-                    if balance < per_wallet_required:
-                        await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough SOL for the remaining plan.")
+                    if await native_balance(ex, net, wallet.address) < per_wallet_required:
+                        await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough {coin} for the remaining plan.")
                         return True
                 amount = automation.order_sol
             else:
                 sell_percent = automation.sell_percent
                 sellable: list[Wallet] = []
                 for wallet in wallets:
-                    token_balance = await ex.rpc.get_token_balance(wallet.address, launch.mint_address)
+                    token_balance = await token_balance_raw(ex, net, launch.mint_address, wallet.address)
                     if int(token_balance * sell_percent / 100) > 0:
                         sellable.append(wallet)
                 if not sellable:
                     automation.status = "completed"
                     automation.error = None
                     await log_activity(db, user.id, "automation.sell_plan_exhausted", "automation", automation.id, {
-                        "order_number": automation.runs_completed + 1,
+                        "order_number": automation.runs_completed + 1, "side": "sell",
                     })
                     await db.commit()
                     return True
                 wallets = sellable
-                per_wallet_fee_reserve = remaining * 0.01
+                per_wallet_fee_reserve = await fee_reserve(ex, net, remaining * (1 if net == "solana" else 2))
                 for wallet in wallets:
-                    balance = await ex.rpc.get_balance(wallet.address) / LAMPORTS_PER_SOL
-                    if balance < per_wallet_fee_reserve:
-                        await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough SOL for network fees.")
+                    if await native_balance(ex, net, wallet.address) < per_wallet_fee_reserve:
+                        await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough {coin} for network fees.")
                         return True
-                amount = f"{sell_percent:g}%"
+                amount = f"{sell_percent:g}%" if net == "solana" else sell_percent
 
             order_number = automation.runs_completed + 1
             job = Job(
@@ -177,12 +176,19 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                     state = await guard_db.get(Automation, automation_id)
                     return bool(state and state.status == "executing")
 
-            await run_trade(
-                db, ex, get_adapter(launch.launchpad), job, launch.mint_address, wallets,
-                automation.side, amount, automation.side == "buy", "stagger", 500,
-                automation.slippage_pct, fee_plan,
-                execution_guard=still_executing,
-            )
+            if net == "solana":
+                await run_trade(
+                    db, ex, get_adapter(launch.launchpad), job, launch.mint_address, wallets,
+                    automation.side, amount, automation.side == "buy", "stagger", 500,
+                    automation.slippage_pct, fee_plan,
+                    execution_guard=still_executing,
+                )
+            else:
+                await run_evm_trade(
+                    db, ex, get_adapter(launch.launchpad), job, launch.mint_address, wallets,
+                    automation.side, amount, "stagger", 500, automation.slippage_pct,
+                    execution_guard=still_executing,
+                )
             await db.refresh(job)
             await db.refresh(automation)
             if automation.status != "executing":
@@ -206,7 +212,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                 automation.status = "failed"
                 automation.error = f"Order {order_number} ended as {job.status}; the remaining schedule was stopped."
                 await log_activity(db, user.id, "automation.order_failed", "automation", automation.id, {
-                    "job_id": job.id, "order_number": order_number, "status": job.status,
+                    "job_id": job.id, "order_number": order_number, "status": job.status, "side": automation.side,
                 })
             await db.commit()
     except Exception as exc:

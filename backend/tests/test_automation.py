@@ -182,3 +182,102 @@ async def test_sell_schedule_rejects_wallet_without_tokens(client, fake_rpc):
     }, headers=headers)
     assert response.status_code == 200
     assert any("no tokens to sell" in warning for warning in response.json()["preflight"]["warnings"])
+
+
+async def confirm_plan(client, headers, path, body, preview, key):
+    return await client.post(path, json={**body, "confirm": True, "preflight_hash": preview["preflight_hash"],
+                                         "idempotency_key": key}, headers=headers)
+
+
+async def test_budget_cap_counts_every_active_buy_plan_on_the_chain(client, fake_rpc, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "automation_max_budget_sol", 0.5)
+    h = await signup(client)
+    launch_id, _, wallets = await live_launch(client, h, fake_rpc)
+    ids = [w["id"] for w in wallets]
+    body, preview, path = await make_plan(client, h, launch_id, ids)  # 0.1 x 2 wallets x 2 orders = 0.4
+    assert not preview["preflight"]["warnings"]
+    first = await confirm_plan(client, h, path, body, preview, "cap-one-key")
+    assert first.status_code == 200, first.text
+
+    body, preview, path = await make_plan(client, h, launch_id, ids)
+    warning = " ".join(preview["preflight"]["warnings"])
+    assert "other active scheduled buys" in warning and "0.4 SOL still to spend" in warning
+    assert (await confirm_plan(client, h, path, body, preview, "cap-two-key")).status_code == 400
+
+    # Sell plans don't count against the buy budget, and a cancelled plan frees its budget.
+    assert (await client.post(f"/automations/{first.json()['id']}/cancel", headers=h)).status_code == 200
+    body, preview, path = await make_plan(client, h, launch_id, ids)
+    assert not preview["preflight"]["warnings"]
+    listed = (await client.get("/automations", headers=h)).json()
+    assert listed[0]["remaining_trade_sol"] == 0.4 and listed[0]["coin"] == "SOL"
+
+
+async def test_scheduled_buys_and_sells_run_on_evm_chains(client, fake_rpc):
+    import base64
+
+    import httpx
+
+    from app.chains import registry
+    from app.chains.flap import FlapAdapter
+    from app.deps import get_executor
+    from app.main import app
+
+    from .test_evm_wallets import ETH
+    from .test_flap import PNG, FlapNode, upload_transport
+
+    node = FlapNode("bsc")
+    registry._cache["flap-sh"] = FlapAdapter("flap-sh", "bsc", node, client=httpx.AsyncClient(transport=upload_transport([])))
+    make_ex = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"bsc": node})  # noqa: E731
+    app.dependency_overrides[get_executor] = make_ex
+    try:
+        h = await signup(client)
+        dev, holder = (await client.post("/wallets", json={"network": "bsc", "count": 2}, headers=h)).json()
+        for w in (dev, holder):
+            node.balances[w["address"].lower()] = ETH
+        r = await client.post("/launches", json={"launchpad": "flap-sh", "name": "Helm Cat", "symbol": "hcat",
+                                                 "dev_wallet_id": dev["id"], "dev_buy_sol": 0,
+                                                 "image_b64": base64.b64encode(PNG).decode()}, headers=h)
+        lid = r.json()["id"]
+        pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
+        await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
+                                                           "idempotency_key": "d1"}, headers=h)
+        await client.post(f"/launches/{lid}/wallets", json={"wallet_ids": [holder["id"]]}, headers=h)
+
+        body, preview, path = await make_plan(client, h, lid, [holder["id"]], amount_sol=0.001)
+        assert preview["preflight"]["coin"] == "BNB" and preview["preflight"]["amount_unit"] == "BNB per wallet per order"
+        assert not preview["preflight"]["warnings"], preview
+        created = await confirm_plan(client, h, path, body, preview, "evm-buy-key")
+        assert created.status_code == 200, created.text
+        aid = created.json()["id"]
+        for _ in range(2):
+            async with get_sessionmaker()() as db:
+                a = await db.get(Automation, aid)
+                a.next_run_at = utcnow() - timedelta(seconds=1)
+                await db.commit()
+            assert await run_due_automation_once(make_ex())
+        async with get_sessionmaker()() as db:
+            a = await db.get(Automation, aid)
+            assert a.status == "completed" and a.runs_completed == 2, a.error
+            job = await db.get(Job, a.last_job_id)
+            assert job.status == "confirmed"
+
+        node.tokens[holder["address"].lower()] = 10**21
+        body, preview, path = await make_plan(client, h, lid, [holder["id"]], amount_sol=None, side="sell",
+                                              sell_percent=50)
+        assert not preview["preflight"]["warnings"], preview
+        assert preview["preflight"]["wallets"][0]["token_balance"] == 1000
+        created = await confirm_plan(client, h, path, body, preview, "evm-sell-key")
+        aid = created.json()["id"]
+        async with get_sessionmaker()() as db:
+            a = await db.get(Automation, aid)
+            a.next_run_at = utcnow() - timedelta(seconds=1)
+            await db.commit()
+        assert await run_due_automation_once(make_ex())
+        async with get_sessionmaker()() as db:
+            a = await db.get(Automation, aid)
+            assert a.runs_completed == 1 and a.status == "scheduled", a.error
+    finally:
+        registry._cache.pop("flap-sh", None)
+        app.dependency_overrides.pop(get_executor, None)

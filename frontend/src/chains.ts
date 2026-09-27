@@ -66,3 +66,7 @@ export function padsByChain(pads: Pad[]) {
 
 /** Wallet networks the signing service can create keys on today. */
 export const MANAGED_NETWORKS: ChainId[] = ["solana", "base", "bsc", "robinhood", "ethereum"];
+
+/** The dollar stablecoin kept on each chain. Robinhood Chain has no native USDC; it uses Paxos' USDG. */
+export const STABLE: Record<ChainId, string> = { solana: "USDC", base: "USDC", bsc: "USDC", robinhood: "USDG", ethereum: "USDC" };
+export const stableOf = (id: string | null | undefined) => STABLE[chainOf(id).id];

@@ -26,12 +26,30 @@ const KINDS: Record<string, Meta> = {
   "claim_fees.confirmed": { icon: "coins", tone: "good", label: "Creator fee claim confirmed", group: "transactions" },
   "burn.confirmed": { icon: "flame", tone: "bad", label: "Token burn confirmed", group: "transactions" },
   "send_tokens.confirmed": { icon: "send", tone: "warn", label: "Token send confirmed", group: "transactions" },
-  "automation.scheduled": { icon: "calendar", tone: "info", label: "Scheduled buys created", group: "transactions" },
-  "automation.order_confirmed": { icon: "checkcircle", tone: "good", label: "Scheduled buy confirmed", group: "transactions" },
-  "automation.order_failed": { icon: "alert", tone: "bad", label: "Scheduled buys stopped", group: "transactions" },
+  "automation.scheduled": { icon: "calendar", tone: "info", label: "Scheduled plan created", group: "transactions" },
+  "automation.order_confirmed": { icon: "checkcircle", tone: "good", label: "Scheduled order confirmed", group: "transactions" },
+  "automation.order_failed": { icon: "alert", tone: "bad", label: "Scheduled plan stopped", group: "transactions" },
+  "automation.sell_plan_exhausted": { icon: "checkcircle", tone: "", label: "Scheduled sells finished: nothing left to sell", group: "transactions" },
+  "disperse.confirmed": { icon: "send", tone: "info", label: "Disperse sent", group: "transactions" },
+  "consolidate.confirmed": { icon: "download", tone: "info", label: "Consolidate sent", group: "transactions" },
+  "bridge.confirmed": { icon: "globe", tone: "info", label: "Cross-chain route sent", group: "transactions" },
 };
 
-export function kindMeta(kind: string): Meta {
+// Automation events name their side in the payload; older events without one keep the neutral label.
+const SIDED: Record<string, (s: string) => string> = {
+  "automation.scheduled": (s) => `Scheduled ${s}s created`,
+  "automation.order_confirmed": (s) => `Scheduled ${s} confirmed`,
+  "automation.order_failed": (s) => `Scheduled ${s}s stopped`,
+};
+
+export function kindMeta(kind: string, payload?: Record<string, unknown>): Meta {
+  const base = kindMeta0(kind);
+  const side = payload?.side === "sell" || payload?.side === "buy" ? payload.side : null;
+  if (SIDED[kind] && side) return { ...base, label: SIDED[kind](side), tone: kind === "automation.order_confirmed" && side === "sell" ? "warn" : base.tone };
+  return base;
+}
+
+function kindMeta0(kind: string): Meta {
   return KINDS[kind] ?? { icon: "activity", tone: "", label: kind.replace(/[._]/g, " "), group: kind.endsWith(".confirmed") ? "transactions" : "other" };
 }
 
@@ -40,13 +58,17 @@ function detail(a: ActivityRow): string {
   if (a.kind === "wallets.created" && p.count) return `${p.count} wallet${p.count === 1 ? "" : "s"} on ${p.network ?? "solana"}`;
   if (a.kind === "launch.created" && p.launchpad) return `on ${p.launchpad}`;
   if (a.kind === "launch.imported" && typeof p.mint === "string") return `mint ${short(p.mint)}`;
-  if (a.kind === "automation.scheduled") return `${String(p.orders ?? "")} buys · ${String(p.wallet_count ?? "")} wallets`;
+  if (a.kind === "automation.scheduled") {
+    const side = p.side === "sell" ? "sells" : "buys";
+    const size = p.side === "sell" ? (p.sell_percent ? ` · ${p.sell_percent}% each` : "") : p.planned_trade_sol ? ` · ${p.planned_trade_sol} ${p.coin ?? "SOL"}` : "";
+    return `${String(p.orders ?? "")} ${side} · ${String(p.wallet_count ?? "")} wallets${size}`;
+  }
   if (a.kind.startsWith("automation.order_") && p.order_number) return `Order ${p.order_number}`;
   return "";
 }
 
 export function FeedItem({ a }: { a: ActivityRow }) {
-  const m = kindMeta(a.kind);
+  const m = kindMeta(a.kind, a.payload);
   const d = detail(a);
   return (
     <div className="feed-item">

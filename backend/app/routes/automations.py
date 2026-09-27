@@ -1,5 +1,11 @@
-"""Bounded launch automations: finite scheduled buys and staged sells with explicit preflights."""
+"""Bounded launch automations: finite scheduled buys and staged sells with explicit preflights.
 
+Works on every chain Helm trades on. `amount_sol` is the per-order amount in the launch chain's native coin
+(SOL, ETH or BNB); the field keeps its original name so existing clients keep working.
+"""
+
+import asyncio
+from collections import defaultdict
 from datetime import timedelta
 from typing import Literal
 
@@ -9,15 +15,46 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..chains.solana import LAMPORTS_PER_SOL, SolanaRPC
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user, get_rpc, log_activity, owned_wallet, web_user
+from ..deps import current_user, get_executor, log_activity, owned_wallet, web_user
 from ..models import Automation, Launch, LaunchWallet, User, Wallet, utcnow
+from ..services.chain_balances import (chain_name, fee_reserve, native_balance, native_coin, token_balance_raw,
+                                       token_decimals)
+from ..services.executor import Executor
 from ..services.fees import describe, fee_plan_for
 from ..services.preflight import build_preflight
 
 router = APIRouter()
+ACTIVE = ("scheduled", "executing", "paused")
+_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def budget_cap(network: str) -> float:
+    """Most native coin one account may have committed to scheduled buys on a chain at once."""
+    s = get_settings()
+    if network == "solana":
+        return s.automation_max_budget_sol
+    for part in (s.automation_max_budgets or "").split(","):
+        name, _, value = part.partition("=")
+        if name.strip() == network:
+            try:
+                return float(value)
+            except ValueError:
+                break
+    return 1.0
+
+
+def remaining_buy(a: Automation) -> float:
+    return a.order_sol * len(a.wallet_ids or []) * max(a.total_orders - a.runs_completed, 0) if a.side == "buy" else 0.0
+
+
+async def committed_buys(db: AsyncSession, user: User, network: str) -> float:
+    """Native coin still to be spent by this account's active scheduled buys on `network`."""
+    rows = (await db.execute(select(Automation).join(Launch, Launch.id == Automation.launch_id).where(
+        Automation.user_id == user.id, Automation.side == "buy", Automation.status.in_(ACTIVE),
+        Launch.network == network))).scalars().all()
+    return sum(remaining_buy(a) for a in rows)
 
 
 class AutomationBody(BaseModel):
@@ -49,6 +86,7 @@ def _out(a: Automation, launch: Launch | None = None) -> dict:
         "launch_name": launch.name if launch else None,
         "launch_symbol": launch.symbol if launch else None,
         "network": launch.network if launch else "solana",
+        "coin": native_coin(launch.network) if launch else "SOL",
         "status": a.status,
         "side": a.side,
         "wallet_count": len(a.wallet_ids or []),
@@ -58,6 +96,7 @@ def _out(a: Automation, launch: Launch | None = None) -> dict:
         "interval_seconds": a.interval_seconds,
         "slippage_pct": a.slippage_pct,
         "planned_trade_sol": a.order_sol * len(a.wallet_ids or []) * a.total_orders if a.side == "buy" else None,
+        "remaining_trade_sol": remaining_buy(a) if a.side == "buy" else None,
         "planned_position_exit_pct": (1 - (1 - a.sell_percent / 100) ** a.total_orders) * 100 if a.side == "sell" else None,
         "runs_completed": a.runs_completed,
         "next_run_at": a.next_run_at.isoformat() + "Z" if a.next_run_at else None,
@@ -98,12 +137,19 @@ async def list_automations(user: User = Depends(current_user), db: AsyncSession 
 @router.post("/launches/{launch_id}/automations")
 @router.post("/launches/{launch_id}/automations/dca", include_in_schema=False)
 async def schedule_automation(launch_id: str, body: AutomationBody, user: User = Depends(web_user),
-                       db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc)):
+                              db: AsyncSession = Depends(get_db), ex: Executor = Depends(get_executor)):
     if not get_settings().automation_worker_enabled:
         raise HTTPException(503, "Scheduled trades are temporarily disabled on this server")
+    if not body.confirm:
+        return await _schedule(launch_id, body, user, db, ex)
+    async with _locks[user.id]:  # so two confirms can't both slip under the budget cap
+        return await _schedule(launch_id, body, user, db, ex)
+
+
+async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncSession, ex: Executor):
     launch = await _owned_launch(db, user, launch_id)
-    if launch.network != "solana":
-        raise HTTPException(422, "Scheduled trades are currently available on Solana launches")
+    net = launch.network
+    coin = native_coin(net)
     if launch.status != "live" or not launch.mint_address:
         raise HTTPException(409, "Launch must be live before it can have a scheduled trade plan")
     wallets = await _wallets_for_schedule(db, user, launch, body.wallet_ids)
@@ -114,17 +160,21 @@ async def schedule_automation(launch_id: str, body: AutomationBody, user: User =
         "launch_id": launch.id,
         "launch": f"{launch.name} (${launch.symbol})",
         "network": launch.network,
+        "coin": coin,
         "strategy": "finite scheduled buys" if body.side == "buy" else "finite staged sells",
         "wallets": [{"label": w.label or "Wallet", "address": w.address} for w in wallets],
         "number_of_orders": body.total_orders,
         "interval_minutes": body.interval_minutes,
         "first_order_in_minutes": body.start_in_minutes,
         "slippage_pct": body.slippage_pct,
-        "platform_fee": describe(plan, body.side, body.amount_sol if body.side == "buy" else None),
-        "network_fees": "Variable; not included in planned trade amount",
+        "platform_fee": describe(plan, body.side, body.amount_sol if body.side == "buy" else None) if net == "solana"
+        else (f"none on bonding-curve trades; {ex.dex.fee_note} if an order is routed through a DEX"
+              if ex.dex.fee_bps else "none"),
+        "network_fees": f"Paid in {coin}; variable and not included in the planned trade amount",
     }
     if body.side == "buy":
         summary["amount_sol_per_wallet_per_order"] = body.amount_sol
+        summary["amount_unit"] = f"{coin} per wallet per order"
         summary["planned_trade_sol"] = planned_trade_sol
     else:
         summary["side"] = body.side
@@ -146,27 +196,45 @@ async def schedule_automation(launch_id: str, body: AutomationBody, user: User =
 
     warnings: list[str] = []
     token_balances: dict[str, float] = {}
-    if body.side == "buy":
-        if planned_trade_sol > get_settings().automation_max_budget_sol:
-            warnings.append("This plan exceeds the server's scheduled-buy budget limit.")
-        reserve_per_wallet = body.total_orders * 0.01
-        per_wallet_required = (body.amount_sol or 0) * body.total_orders * (1 + (plan.bps / 10_000 if plan.active else 0)) + reserve_per_wallet
-        for wallet in wallets:
-            balance = await rpc.get_balance(wallet.address) / LAMPORTS_PER_SOL
-            if balance < per_wallet_required:
-                warnings.append(f"{wallet.label or wallet.address[:8]} needs about {per_wallet_required:.4f} SOL for the full plan; current balance is {balance:.4f} SOL.")
-    else:
-        _, decimals = await rpc.get_token_supply(launch.mint_address)
-        for wallet in wallets:
-            balance = await rpc.get_token_balance(wallet.address, launch.mint_address)
-            token_balances[wallet.id] = balance / (10 ** decimals)
-            if balance <= 0:
-                warnings.append(f"{wallet.label or wallet.address[:8]} has no tokens to sell.")
-            elif int(balance * (body.sell_percent or 0) / 100) <= 0:
-                warnings.append(f"{wallet.label or wallet.address[:8]} has too few tokens for the selected sell size.")
-            native_balance = await rpc.get_balance(wallet.address) / LAMPORTS_PER_SOL
-            if native_balance < body.total_orders * 0.01:
-                warnings.append(f"{wallet.label or wallet.address[:8]} needs about {body.total_orders * 0.01:.4f} SOL reserved for network fees.")
+    try:
+        if body.side == "buy":
+            cap = budget_cap(net)
+            already = await committed_buys(db, user, net)
+            if planned_trade_sol + already > cap + 1e-9:
+                if already:
+                    warnings.append(
+                        f"This plan ({planned_trade_sol:g} {coin}) plus your other active scheduled buys on "
+                        f"{chain_name(net)} ({already:g} {coin} still to spend) would go over the {cap:g} {coin} "
+                        "budget limit. Cancel or finish a plan, or make this one smaller.")
+                else:
+                    warnings.append(f"This plan ({planned_trade_sol:g} {coin}) exceeds the {cap:g} {coin} "
+                                    f"scheduled-buy budget limit on {chain_name(net)}.")
+            fee_mult = 1 + (plan.bps / 10_000 if plan.active and net == "solana" else 0)
+            per_wallet_required = (body.amount_sol or 0) * body.total_orders * fee_mult \
+                + await fee_reserve(ex, net, body.total_orders)
+            for wallet in wallets:
+                balance = await native_balance(ex, net, wallet.address)
+                if balance < per_wallet_required:
+                    warnings.append(f"{wallet.label or wallet.address[:8]} needs about {per_wallet_required:.4f} {coin} "
+                                    f"for the full plan; current balance is {balance:.4f} {coin}.")
+        else:
+            decimals = await token_decimals(ex, net, launch.mint_address)
+            # EVM sells can need an approve before the sell, so reserve gas for two transactions per order.
+            reserve = await fee_reserve(ex, net, body.total_orders * (1 if net == "solana" else 2))
+            for wallet in wallets:
+                balance = await token_balance_raw(ex, net, launch.mint_address, wallet.address)
+                token_balances[wallet.id] = balance / (10 ** decimals)
+                if balance <= 0:
+                    warnings.append(f"{wallet.label or wallet.address[:8]} has no tokens to sell.")
+                elif int(balance * (body.sell_percent or 0) / 100) <= 0:
+                    warnings.append(f"{wallet.label or wallet.address[:8]} has too few tokens for the selected sell size.")
+                if await native_balance(ex, net, wallet.address) < reserve:
+                    warnings.append(f"{wallet.label or wallet.address[:8]} needs about {reserve:.4f} {coin} "
+                                    "reserved for network fees.")
+    except HTTPException:
+        raise
+    except Exception as e:  # an RPC outage shouldn't look like a server bug
+        raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
     preview = build_preflight(kind, summary, warnings)
     if body.side == "sell":
         preview["preflight"]["wallets"] = [
@@ -204,7 +272,7 @@ async def schedule_automation(launch_id: str, body: AutomationBody, user: User =
     db.add(automation)
     await log_activity(db, user.id, "automation.scheduled", "automation", automation.id, {
         "launch_id": launch.id, "side": body.side, "orders": body.total_orders, "wallet_count": len(wallets),
-        "planned_trade_sol": planned_trade_sol, "sell_percent": body.sell_percent,
+        "planned_trade_sol": planned_trade_sol, "sell_percent": body.sell_percent, "network": net, "coin": coin,
     })
     try:
         await db.commit()

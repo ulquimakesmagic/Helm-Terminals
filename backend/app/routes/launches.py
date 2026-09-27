@@ -599,15 +599,16 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
     try:
         if evm:
             erpc = ex.evm(l.network).rpc
+            meta = await erpc.erc20_meta(l.mint_address) if l.mint_address else None
+            if meta:
+                decimals = meta["decimals"]
             for w, lk in zip(wallets, links):
                 native_bal = await erpc.get_balance(w.address)
                 tok = await erpc.erc20_balance(l.mint_address, w.address) if l.mint_address else 0
                 controlled[w.address] = tok
                 out["wallets"].append({"id": w.id, "address": w.address, "label": w.label, "role": lk.role,
-                                       "sol": native_bal / WEI, "token_raw": tok})
-            if l.mint_address:
-                meta = await erpc.erc20_meta(l.mint_address)
-                decimals = meta["decimals"]
+                                       "sol": native_bal / WEI, "token_raw": tok, "tokens": tok / 10 ** decimals})
+            if meta:
                 # EVM nodes can't list a token's largest holders, so only your own wallets' share is shown.
                 out["transparency"] = compute_transparency(meta["total_supply"], decimals, controlled, [],
                                                           get_settings().controlled_supply_warn_pct)
