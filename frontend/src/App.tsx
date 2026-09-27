@@ -4,6 +4,7 @@ import { hasToken, setToken } from "./api";
 import { Icon, IconName, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
+import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 import Automation from "./pages/Automation";
 import Wallets from "./pages/Wallets";
@@ -111,12 +112,22 @@ function Private({ children }: { children: React.ReactNode }) {
   return hasToken() ? <Shell>{children}</Shell> : <Navigate to="/login" replace />;
 }
 
+/** "/" is the dashboard when signed in and the public landing page otherwise. Decided on each render, not once. */
+function Home() {
+  return hasToken() ? <Shell><Dashboard /></Shell> : <Landing />;
+}
+
+/** The sign-in page is only for signed-out visitors. */
+function LoginRoute() {
+  return hasToken() ? <Navigate to="/" replace /> : <Auth />;
+}
+
 export default function App() {
   return (
     <SessionProvider>
       <Routes>
-        <Route path="/login" element={<Auth />} />
-        <Route path="/" element={<Private><Dashboard /></Private>} />
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/" element={<Home />} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
         <Route path="/automation" element={<Private><Automation /></Private>} />
