@@ -3,11 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
 import Distribute from "../components/Distribute";
 import RouteFunds from "../components/RouteFunds";
-import { ChainLabel } from "../components/marks";
+import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
 import {
-  Address, Callout, ChainDot, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
+  Address, Callout, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
 interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null }
@@ -168,7 +168,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder }: {
             return (
               <button key={c} type="button" disabled={off} className={`chip ${network === c ? "on" : ""}`} style={off ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
                 onClick={() => setNetwork(c)} title={off ? "Managed wallets on this chain are coming soon" : undefined}>
-                <ChainDot network={c} size={14} />{CHAINS[c].name}{off && <span className="muted"> · soon</span>}
+                <ChainMark network={c} size={16} />{CHAINS[c].name}{off && <span className="muted"> · soon</span>}
               </button>
             );
           })}
@@ -362,7 +362,7 @@ export default function Wallets() {
       {sel.length > 0 && (
         <div className="selbar" role="region" aria-label="Actions for selected wallets">
           <b className="num" aria-live="polite">{sel.length} selected</b>
-          {selNet && <span className="row nowrap small text-2" style={{ gap: 6 }}><ChainDot network={selNet} size={14} />{chainOf(selNet).name}</span>}
+          {selNet && <span className="row nowrap small text-2" style={{ gap: 6 }}><ChainMark network={selNet} size={16} />{chainOf(selNet).name}</span>}
           {selManaged.length !== sel.length && <span className="muted small">({sel.length - selManaged.length} watch-only ignored)</span>}
           <div className="grow" />
           {selNets.length > 1 && <span className="warn-t small">Money actions need wallets on one chain</span>}

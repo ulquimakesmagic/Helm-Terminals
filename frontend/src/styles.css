@@ -8,6 +8,7 @@
   --panel: #0c1114;
   --panel-2: #10171b;
   --panel-3: #151e23;
+  --mark-bg: #172127; /* neutral tile behind bare brand marks */
   --line: #19232a;
   --line-2: #233139;
   --line-3: #2e3f48;
@@ -774,9 +775,13 @@ main:focus, .modal:focus { outline: none; }
 .card-head > .row { max-width: 100%; min-width: 0; }
 
 /* ================================================================ brand marks */
-.mark { display: inline-grid; place-items: center; flex: none; border: 1px solid; font-family: var(--mono); font-weight: 600; line-height: 1; letter-spacing: -0.02em; position: relative; }
-.pad-mark { color: var(--text); background: var(--panel-3); border-color: var(--line-3); }
-.pad-mark i { position: absolute; right: -2px; bottom: -2px; border-radius: 50%; box-shadow: 0 0 0 2px var(--panel); }
+/* brand marks: official logo files in a fixed square tile; the logo itself is never recoloured or cropped */
+.brand { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; overflow: hidden; vertical-align: middle; border: 1px solid var(--line-2); background: var(--mark-bg); }
+.brand img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.brand-fill { border-color: transparent; background: transparent; }
+.brand-missing { border-style: dashed; background: transparent; }
+.brand-broken { outline: 2px solid var(--bad); outline-offset: 1px; }
+.pad-chain { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .pad-label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
 
 /* ================================================================ data-state treatment */
@@ -824,7 +829,6 @@ details.feed-more[open] .feed-toggle { transform: rotate(90deg); }
 .pad-chip.setup .st { color: var(--warn); }
 .pad-chip.soon .st { color: var(--muted); }
 .pad-tile:disabled { opacity: 1; color: var(--text-2); }
-.pad-tile:disabled .mark { opacity: 0.55; }
 
 /* responsive tables: rows become labelled cards on narrow screens */
 @media (max-width: 640px) {

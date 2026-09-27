@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, fmt, short } from "../api";
 import { chainOf, stableOf } from "../chains";
+import { ChainLabel } from "./marks";
 import { Callout, Field, Icon, Modal, UnitInput } from "./ui";
 
 interface Wal { id: string; network: string; address: string; kind: string; label: string; balance_sol?: number }
@@ -57,7 +58,7 @@ export default function Distribute({ mode: initial, network, wallets, selected, 
   }
 
   return (
-    <Modal title="Move between your wallets" sub={`${chain.name} · only wallets on your account · no platform fee`} onClose={onClose} wide
+    <Modal title="Move between your wallets" sub={<span className="row nowrap" style={{ gap: 6 }}><ChainLabel network={network} size={14} /><span>· only wallets on your account · no platform fee</span></span>} onClose={onClose} wide
       foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn" disabled={!ready} onClick={review}>Review<Icon name="arrowright" size={14} /></button></>}>
       <div className="seg full">

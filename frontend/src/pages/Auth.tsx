@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
 import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
 import { coverage } from "../components/Launchpads";
-import { Callout, ChainDot, Field, Icon, Logo, Seg, Spinner } from "../components/ui";
+import { ChainMark } from "../components/marks";
+import { Callout, Field, Icon, Logo, Seg, Spinner } from "../components/ui";
 import { useSession } from "../session";
 
 const FEATURES: [Parameters<typeof Icon>[0]["name"], string, string][] = [
@@ -61,7 +62,7 @@ export default function Auth() {
         <div className="stack" style={{ gap: 20 }}>
           <div className="row" style={{ gap: 8 }}>
             {CHAIN_ORDER.map((c) => (
-              <span key={c} className="pill"><ChainDot network={c} size={16} />{CHAINS[c].name}</span>
+              <span key={c} className="pill"><ChainMark network={c} size={16} />{CHAINS[c].name}</span>
             ))}
           </div>
           <h1>Launch on any chain. <span className="grad-text">Run it in the open.</span></h1>

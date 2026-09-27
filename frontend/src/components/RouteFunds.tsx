@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg, short } from "../api";
 import { CHAIN_ORDER, chainOf, stableOf } from "../chains";
+import { ChainLabel } from "./marks";
 import { Callout, Field, Icon, Modal, Spinner, UnitInput } from "./ui";
 import type { SpendRequest } from "./Distribute";
 
@@ -67,6 +68,11 @@ export default function RouteFunds({ wallets, toWalletId, toAsset: initialTo = "
               </select>
             </Field>
           </div>
+          {fromW && toW && (
+            <div className="row small" style={{ gap: 8 }}>
+              <ChainLabel network={fromW.network} size={16} /><Icon name="arrowright" size={13} /><ChainLabel network={toW.network} size={16} />
+            </div>
+          )}
           <div className="grid g-form">
             <Field label="Amount"><UnitInput unit={fromUnit || "—"} value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
             <Field label="Max slippage"><UnitInput unit="%" value={slip} onChange={(e) => setSlip(e.target.value)} /></Field>

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt } from "../api";
-import { chainOf, padName } from "../chains";
+import { chainOf } from "../chains";
+import { ChainMark, PadLabel } from "../components/marks";
 import ReferralCard from "../components/Referrals";
 import { AVATAR_HUES, avatarBg, Heatmap, PadBars, PadRow, ProfileAvatar } from "../components/profile";
 import {
-  Address, Callout, Card, ChainDot, CopyButton, Empty, Field, Icon, IconName, Loading, Modal, PageHeader, Skeleton,
+  Address, Callout, Card, CopyButton, Empty, Field, Icon, IconName, Loading, Modal, PageHeader, Skeleton,
   Spinner, Stat, StatusBadge, parseDate, relTime, useToast,
 } from "../components/ui";
 import { useSession } from "../session";
@@ -198,7 +199,7 @@ export default function Profile() {
                     <tr key={l.id}>
                       <td><Link to={`/launches/${l.id}`} style={{ color: "var(--text)", fontWeight: 600 }}>{l.name}</Link> <span className="muted">${l.symbol}</span>
                         {l.quote && <span className="badge violet" style={{ marginLeft: 6 }}>/{l.quote}</span>}</td>
-                      <td><span className="row nowrap" style={{ gap: 8 }}><ChainDot network={l.network} size={16} />{padName(l.launchpad)}</span></td>
+                      <td><PadLabel pad={l.launchpad} network={l.network} size={18} showChain /></td>
                       <td><StatusBadge status={l.status} /></td>
                       <td className="hide-sm">{l.mint_address ? <Address address={l.mint_address} type="token" network={l.network} /> : <span className="muted">–</span>}</td>
                     </tr>
@@ -244,7 +245,7 @@ export default function Profile() {
               <div className="feed">
                 {s.networks.map((n) => (
                   <div key={n.network} className="feed-item" style={{ alignItems: "center" }}>
-                    <ChainDot network={n.network} size={26} />
+                    <ChainMark network={n.network} size={26} />
                     <div className="grow"><div style={{ fontWeight: 550 }}>{chainOf(n.network).name}</div>
                       <div className="muted small">{n.launches} launch{n.launches === 1 ? "" : "es"} · {n.wallets} wallet{n.wallets === 1 ? "" : "s"}</div></div>
                   </div>

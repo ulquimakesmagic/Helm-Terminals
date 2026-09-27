@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, errMsg, hasToken } from "../api";
-import { chainOf, padName } from "../chains";
+import { chainOf } from "../chains";
+import { PadLabel } from "../components/marks";
 import { PadBars, PadRow, ProfileAvatar } from "../components/profile";
-import { Address, Callout, Card, ChainDot, Empty, Icon, Loading, Logo, Stat, StatusBadge, parseDate } from "../components/ui";
+import { Address, Callout, Card, Empty, Icon, Loading, Logo, Stat, StatusBadge, parseDate } from "../components/ui";
 import { ProfileLinks } from "./Profile";
 
 interface PublicData {
@@ -80,7 +81,7 @@ export default function PublicProfile() {
                       <tr key={l.mint_address}>
                         <td><b>{l.name}</b> <span className="muted">${l.symbol}</span>
                           {l.quote && <span className="badge violet" style={{ marginLeft: 6 }}>/{l.quote}</span>}</td>
-                        <td><span className="row nowrap" style={{ gap: 8 }}><ChainDot network={l.network} size={16} />{padName(l.launchpad)}</span></td>
+                        <td><PadLabel pad={l.launchpad} network={l.network} size={18} showChain /></td>
                         <td><StatusBadge status={l.status} /></td>
                         <td><Address address={l.mint_address} type="token" network={l.network} /></td>
                         <td className="hide-sm muted">{l.deployed_at ? parseDate(l.deployed_at).toLocaleDateString(undefined, { dateStyle: "medium" }) : "–"}</td>

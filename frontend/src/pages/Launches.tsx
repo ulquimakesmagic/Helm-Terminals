@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
 import { LaunchpadDirectory } from "../components/Launchpads";
-import { ChainLabel, PadLabel } from "../components/marks";
+import { ChainLabel, ChainMark, PadLabel } from "../components/marks";
 import {
-  Address, Callout, Card, ChainDot, Empty, Field, Icon, Loading, LoadError, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime,
+  Address, Callout, Card, Empty, Field, Icon, Loading, LoadError, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime,
 } from "../components/ui";
 
 interface QuoteAsset { mint: string; symbol: string; name: string; decimals: number; image: string | null; kind: string; pool: string }
@@ -284,7 +284,7 @@ export default function Launches() {
         <div className="chips">
           <button className={`chip ${chainF === "all" ? "on" : ""}`} aria-pressed={chainF === "all"} onClick={() => setChainF("all")}>All chains</button>
           {CHAIN_ORDER.map((c) => (
-            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c)}><ChainDot network={c} size={14} />{CHAINS[c].name}</button>
+            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c)}><ChainMark network={c} size={16} />{CHAINS[c].name}</button>
           ))}
         </div>
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { chainOf, padName } from "../chains";
-import { ChainDot } from "./ui";
+import { ChainMark, PadMark } from "./marks";
 
 export const AVATAR_HUES = [265, 200, 170, 140, 90, 45, 20, 330];
 
@@ -104,8 +104,8 @@ export function PadBars({ rows }: { rows: PadRow[] }) {
     <div className="padbars">
       {rows.map((r) => (
         <div key={r.network + r.launchpad} className="padbar" title={`${padName(r.launchpad)} on ${chainOf(r.network).name}: ${r.count} launch${r.count === 1 ? "" : "es"}, ${r.live} live`}>
-          <ChainDot network={r.network} size={18} />
-          <div className="pb-name truncate">{padName(r.launchpad)}<span className="muted small"> · {chainOf(r.network).name}</span></div>
+          <PadMark pad={r.launchpad} size={20} />
+          <div className="pb-name truncate">{padName(r.launchpad)}<span className="muted small pad-chain"> · <ChainMark network={r.network} size={13} />{chainOf(r.network).name}</span></div>
           <div className="pb-track"><div style={{ width: `${(r.count / max) * 100}%` }} /></div>
           <div className="pb-val num">{r.count}<span className="muted small"> · {r.live} live</span></div>
         </div>
