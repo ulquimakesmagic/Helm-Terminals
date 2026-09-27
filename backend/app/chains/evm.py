@@ -169,6 +169,10 @@ class EvmRPC:
     async def erc20_balance(self, token: str, owner: str) -> int:
         return int(await self.eth_call(token, "0x70a08231" + _pad_address(owner)) or "0x0", 16)
 
+    async def erc20_decimals(self, token: str) -> int:
+        """decimals() alone: one call instead of erc20_meta's four, for when that's all you need."""
+        return int(await self.eth_call(token, "0x313ce567") or "0x0", 16)
+
     async def erc20_meta(self, token: str) -> dict:
         """name, symbol, decimals and total supply of an ERC-20 token."""
         name = _decode_string(await self.eth_call(token, "0x06fdde03"))

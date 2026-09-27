@@ -23,7 +23,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import SpendConfirm, begin_spend, current_user, find_replay, get_executor, owned_wallet, run_job
 from ..models import Job, User, Wallet
-from ..services.chain_balances import chain_name, fee_reserve, native_coin, stable_for
+from ..services.chain_balances import chain_name, fee_reserve, native_coin, stable_for, token_decimals
 from ..services.evm_exec import EvmCall
 from ..services.executor import Executor, SubmitResult, _finish, _record
 from ..services.preflight import build_preflight
@@ -51,10 +51,7 @@ def _currency(network: str, asset: str) -> tuple[str, str]:
 async def _decimals(ex: Executor, network: str, asset: str) -> int:
     if asset == "native":
         return 9 if network == "solana" else 18
-    token = stable_for(network)[1]
-    if network == "solana":
-        return (await ex.rpc.get_token_supply(token))[1]
-    return int((await ex.evm(network).rpc.erc20_meta(token))["decimals"])
+    return await token_decimals(ex, network, stable_for(network)[1])
 
 
 async def _balance(ex: Executor, network: str, asset: str, address: str) -> int:

@@ -1,6 +1,8 @@
 """Chain-neutral balance helpers, so features like automations, disperse and the portfolio work the same on
 Solana and every EVM chain. Amounts come back in whole coins/tokens (floats) unless a name says `raw`."""
 
+import re
+
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.solana import LAMPORTS_PER_SOL
 
@@ -29,10 +31,13 @@ async def token_balance_raw(ex, network: str, token: str, address: str) -> int:
 
 
 async def token_decimals(ex, network: str, token: str) -> int:
+    known = KNOWN_DECIMALS.get((network, token.lower()))
+    if known is not None:
+        return known
     if network == "solana":
         _, decimals = await ex.rpc.get_token_supply(token)
         return decimals
-    return int((await ex.evm(network).rpc.erc20_meta(token))["decimals"])
+    return await ex.evm(network).rpc.erc20_decimals(token)
 
 
 async def fee_reserve(ex, network: str, transactions: int, gas_each: int = TRADE_GAS) -> float:
@@ -45,8 +50,8 @@ async def fee_reserve(ex, network: str, transactions: int, gas_each: int = TRADE
 
 
 # The dollar stablecoin Helm keeps balances in on each chain. Robinhood Chain has no native USDC; its
-# stablecoin is Paxos' USDG (docs.robinhood.com/chain/contracts). Decimals are read on-chain (USDC on BNB Chain
-# uses 18, the rest 6).
+# stablecoin is Paxos' USDG (docs.robinhood.com/chain/contracts). USDC on BNB Chain uses 18 decimals, the rest 6;
+# those are fixed in KNOWN_DECIMALS so balance reads don't depend on an extra RPC call.
 STABLES: dict[str, tuple[str, str]] = {
     "solana": ("USDC", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
     "base": ("USDC", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
@@ -54,6 +59,19 @@ STABLES: dict[str, tuple[str, str]] = {
     "bsc": ("USDC", "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"),
     "robinhood": ("USDG", "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"),
 }
+
+
+STABLE_DECIMALS = {"solana": 6, "base": 6, "ethereum": 6, "bsc": 18, "robinhood": 6}
+KNOWN_DECIMALS: dict[tuple[str, str], int] = {(n, STABLES[n][1].lower()): d for n, d in STABLE_DECIMALS.items()}
+
+
+def rpc_detail(e: Exception, limit: int = 140) -> str:
+    """A short, user-safe reason for an RPC failure: the node's message without URLs, or the error type."""
+    text = re.sub(r"https?://\S+", "[endpoint]", str(e)).strip()
+    text = re.sub(r"(?i)(api[-_]?key|key|token)=\S+", r"\1=[hidden]", text)
+    if not text:
+        return type(e).__name__
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def stable_for(network: str) -> tuple[str, str]:

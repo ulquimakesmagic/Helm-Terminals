@@ -49,11 +49,14 @@ async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, m
             raise RuntimeError("timeout")
         return await _orig(token, owner)
 
-    async def broken_meta(token):
-        raise RuntimeError("down")
+    async def reverted(token, owner):
+        raise RuntimeError("eth_call: execution reverted (see https://rpc.example/key=abc123)")
+
+    async def no_native(address):
+        raise RuntimeError("timeout")
 
     base.erc20_balance = flaky
-    eth.erc20_meta = broken_meta
+    eth.erc20_balance = reverted
     pf_mod._decimals.clear()
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base, "ethereum": eth})
     try:
@@ -64,9 +67,19 @@ async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, m
         p = (await client.get("/portfolio?fresh=true", headers=h)).json()
         chains = {c["network"]: c for c in p["chains"]}
         assert chains["base"]["status"] == "partial" and chains["base"]["wallets_read"] == 1
-        assert chains["ethereum"]["status"] == "unavailable" and "Couldn't read" in chains["ethereum"]["error"]
+        assert chains["base"]["native_read"] == 2 and chains["base"]["stable_read"] == 1
+        # The stablecoin failing doesn't hide the coin: ETH is still read and counted, and the reason is shown
+        # without the endpoint URL.
+        e = chains["ethereum"]
+        assert e["status"] == "partial" and e["native_read"] == 1 and e["stable_read"] == 0
+        assert "USDC unread for 1 of 1 wallet" in e["error"] and "execution reverted" in e["error"]
+        assert "rpc.example" not in e["error"] and "abc123" not in e["error"]
         assert chains["solana"]["status"] == "no_wallets"
         assert p["complete"] is False and set(p["incomplete_chains"]) == {"base", "ethereum"} and p["checked_at"]
+        # Nothing readable at all is "unavailable".
+        eth.get_balance = no_native
+        e = {c["network"]: c for c in (await client.get("/portfolio?fresh=true", headers=h)).json()["chains"]}["ethereum"]
+        assert e["status"] == "unavailable" and e["wallets_read"] == 0 and "ETH unread" in e["error"]
     finally:
         app.dependency_overrides.pop(get_executor, None)
         pf_mod._decimals.clear()

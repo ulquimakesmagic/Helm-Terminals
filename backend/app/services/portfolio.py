@@ -11,10 +11,8 @@ from datetime import datetime, timezone
 
 import httpx
 
-from ..chains.evm import WEI
-from ..chains.solana import LAMPORTS_PER_SOL
 from ..models import Wallet
-from .chain_balances import STABLES, chain_name, native_coin
+from .chain_balances import STABLES, chain_name, native_balance, native_coin, rpc_detail, token_balance_raw, token_decimals
 
 CHAINS = ["solana", "base", "bsc", "robinhood", "ethereum"]
 PRICE_IDS = {"SOL": "coingecko:solana", "ETH": "coingecko:ethereum", "BNB": "coingecko:binancecoin"}
@@ -49,51 +47,64 @@ async def coin_prices(client: httpx.AsyncClient | None = None) -> dict[str, floa
 async def _stable_decimals(ex, network: str, token: str) -> int:
     key = (network, token)
     if key not in _decimals:
-        if network == "solana":
-            _decimals[key] = (await ex.rpc.get_token_supply(token))[1]
-        else:
-            _decimals[key] = int((await ex.evm(network).rpc.erc20_meta(token))["decimals"])
+        _decimals[key] = await token_decimals(ex, network, token)
     return _decimals[key]
 
 
 async def _chain(ex, network: str, wallets: list[Wallet], sem: asyncio.Semaphore) -> dict:
     stable_symbol, token = STABLES[network]
-    # status: "ok" (every wallet read), "partial" (some read), "unavailable" (none read) or "no_wallets".
-    # Amounts only count wallets that were read, so a zero under "unavailable" means "unknown", not "empty".
-    out = {"network": network, "name": chain_name(network), "coin": native_coin(network), "wallets": len(wallets),
+    name = chain_name(network)
+    coin = native_coin(network)
+    # status: "ok" (every balance read), "partial" (some read), "unavailable" (nothing read) or "no_wallets".
+    # The coin and the stablecoin are read separately, so one failing doesn't hide the other. Amounts only count
+    # what was read, so a zero under "unavailable" means "unknown", not "empty".
+    out = {"network": network, "name": name, "coin": coin, "wallets": len(wallets),
            "native": 0.0, "stable_symbol": stable_symbol, "stable": 0.0, "error": None,
-           "status": "no_wallets" if not wallets else "ok", "wallets_read": 0, "top": []}
+           "status": "no_wallets" if not wallets else "ok", "wallets_read": 0,
+           "native_read": 0, "stable_read": 0, "top": []}
     if not wallets:
         return out
     try:
-        dec = await _stable_decimals(ex, network, token)
+        dec: int | None = await _stable_decimals(ex, network, token)
+        dec_err: Exception | None = None
     except Exception as e:
-        out["error"] = f"Couldn't read {stable_symbol} on {chain_name(network)} ({type(e).__name__})"
-        out["status"] = "unavailable"
-        return out
+        dec, dec_err = None, e
     rows = []
+    errors: dict[str, Exception] = {}
 
     async def one(w: Wallet):
+        nat = st = None
         async with sem:
-            if network == "solana":
-                nat = await ex.rpc.get_balance(w.address) / LAMPORTS_PER_SOL
-                st = await ex.rpc.get_token_balance(w.address, token) / 10**dec
-            else:
-                rpc = ex.evm(network).rpc
-                nat = await rpc.get_balance(w.address) / WEI
-                st = await rpc.erc20_balance(token, w.address) / 10**dec
-            rows.append((w, nat, st))
+            try:
+                nat = await native_balance(ex, network, w.address)
+            except Exception as e:
+                errors.setdefault("native", e)
+            if dec is not None:
+                try:
+                    st = await token_balance_raw(ex, network, token, w.address) / 10**dec
+                except Exception as e:
+                    errors.setdefault("stable", e)
+        rows.append((w, nat, st))
 
-    results = await asyncio.gather(*(one(w) for w in wallets), return_exceptions=True)
-    failed = sum(1 for r in results if isinstance(r, Exception))
-    out["wallets_read"] = len(wallets) - failed
-    if failed:
-        out["error"] = f"{failed} of {len(wallets)} wallet balances couldn't be read"
-        out["status"] = "unavailable" if failed == len(wallets) else "partial"
-    out["native"] = sum(n for _, n, _ in rows)
-    out["stable"] = sum(s for _, _, s in rows)
-    rows.sort(key=lambda r: -(r[2] + r[1]))
-    out["top"] = [{"id": w.id, "label": w.label, "address": w.address, "native": n, "stable": s}
+    await asyncio.gather(*(one(w) for w in wallets))
+    if dec_err is not None:
+        errors.setdefault("stable", dec_err)
+    n_ok = sum(1 for _, n, _ in rows if n is not None)
+    s_ok = sum(1 for _, _, s in rows if s is not None)
+    total = len(wallets)
+    out["native_read"], out["stable_read"] = n_ok, s_ok
+    out["wallets_read"] = sum(1 for _, n, s in rows if n is not None and s is not None)
+    plural = "s" if total != 1 else ""
+    problems = [f"{label} unread for {total - ok} of {total} wallet{plural} ({rpc_detail(errors[part])})"
+                for label, part, ok in ((stable_symbol, "stable", s_ok), (coin, "native", n_ok))
+                if ok < total and part in errors]
+    if problems:
+        out["error"] = f"{name}: " + "; ".join(problems)
+        out["status"] = "unavailable" if n_ok == 0 and s_ok == 0 else "partial"
+    out["native"] = sum(n or 0.0 for _, n, _ in rows)
+    out["stable"] = sum(s or 0.0 for _, _, s in rows)
+    rows.sort(key=lambda r: -((r[2] or 0) + (r[1] or 0)))
+    out["top"] = [{"id": w.id, "label": w.label, "address": w.address, "native": n or 0.0, "stable": s or 0.0}
                   for w, n, s in rows[:3] if n or s]
     return out
 

@@ -22,6 +22,9 @@ class TokenNode(FakeEvm):
         super().__init__(network)
         self.tokens: dict[str, int] = {}
 
+    async def erc20_decimals(self, token):
+        return (await self.erc20_meta(token))["decimals"]
+
     async def erc20_meta(self, token):
         return {"name": "USD Coin", "symbol": "USDC", "decimals": 6, "total_supply": 10**15}
 

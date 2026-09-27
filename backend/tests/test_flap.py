@@ -70,6 +70,9 @@ class FlapNode(FakeEvm):
     async def erc20_balance(self, token, owner):
         return self.tokens.get(owner.lower(), 0)
 
+    async def erc20_decimals(self, token):
+        return (await self.erc20_meta(token))["decimals"]
+
     async def erc20_meta(self, token):
         return {"name": "T", "symbol": "T", "decimals": 18, "total_supply": 10**9 * 10**18}
 

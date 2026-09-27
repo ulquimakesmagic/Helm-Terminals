@@ -328,6 +328,13 @@ function NextRow({ a }: { a: NextAction }) {
   );
 }
 
+/** What wasn't read on a chain, and why. Newer responses name the coin or stablecoin that failed and the RPC's reason. */
+function noteText(c: any, st: ChainStatus): string {
+  const err = typeof c.error === "string" ? c.error.replace(`${c.name}: `, "") : "";
+  if (c.native_read != null) return st === "partial" ? `${err}. Figures cover what was read.` : err;
+  return st === "partial" && c.wallets_read != null ? `${c.wallets_read} of ${c.wallets} wallets read; figures cover those only.` : err;
+}
+
 /** One chain's balances. Unread data is never shown as a number: unavailable chains say so and offer a retry. */
 function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: number; priced: boolean; onRetry: () => void; busy: boolean }) {
   const st = statusOf(c);
@@ -354,15 +361,15 @@ function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: nu
         </>
       ) : (
         <>
-          <div className="amt c-native" role="cell">{fmt(c.native, 4)}<small>{c.coin}</small></div>
-          <div className="amt c-stable" role="cell">{fmt(c.stable, 2)}<small>{c.stable_symbol}</small></div>
+          <div className="amt c-native" role="cell">{c.native_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.native, 4)}<small>{c.coin}</small></>}</div>
+          <div className="amt c-stable" role="cell">{c.stable_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.stable, 2)}<small>{c.stable_symbol}</small></>}</div>
           <div className="usd" role="cell">{priced || c.stable ? usd(c.usd) : "—"}{st === "partial" && <div className="muted small" style={{ fontFamily: "var(--font)" }}>at least</div>}</div>
         </>
       )}
       {(st === "unavailable" || st === "partial") && (
         <div className="note" role="cell">
           <span className={`state ${st}`}><Icon name={st === "unavailable" ? "xcircle" : "alert"} size={12} />{st === "unavailable" ? "Couldn't read balances" : "Partly read"}</span>
-          <span className="muted">{st === "partial" && c.wallets_read != null ? `${c.wallets_read} of ${c.wallets} wallets read; figures cover those only.` : c.error}</span>
+          <span className="muted">{noteText(c, st)}</span>
           <button className="btn sm ghost" onClick={onRetry} disabled={busy} style={{ height: 26 }}>{busy ? <Spinner /> : <Icon name="refresh" size={12} />}Retry</button>
         </div>
       )}
