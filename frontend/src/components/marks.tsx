@@ -10,10 +10,10 @@ import { chainOf, padName } from "../chains";
  * code change. When no verified file exists, the slot stays an empty, neutral tile: no initials, no stand-in.
  */
 
-const files = import.meta.glob("../assets/brands/*/*.{svg,png,jpg,webp}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const files = import.meta.glob("../assets/brands/*/*.{svg,png,jpg,jpeg,webp}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
 function asset(kind: "chains" | "launchpads", key: string): string | undefined {
-  for (const ext of ["svg", "png", "webp", "jpg"]) {
+  for (const ext of ["svg", "png", "webp", "jpg", "jpeg"]) {
     const url = files[`../assets/brands/${kind}/${key}.${ext}`];
     if (url) return url;
   }
@@ -32,12 +32,14 @@ const PAD_BRAND: Record<string, string> = {
  * inset. `bg` is a brand-approved backdrop: Robinhood Chain's black feather is shown on Robin Neon (#ccff00), one
  * of the three pairings in its brand guidelines.
  */
-const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string }> = {
+const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: boolean }> = {
   "chains/solana": { fit: "pad" }, "chains/base": { fit: "fill" }, "chains/bsc": { fit: "pad" },
   "chains/ethereum": { fit: "pad" }, "chains/robinhood": { fit: "pad", bg: "#ccff00" },
   "launchpads/pumpfun": { fit: "pad" }, "launchpads/four-meme": { fit: "pad" }, "launchpads/meteora": { fit: "pad" },
   "launchpads/flap": { fit: "pad" }, "launchpads/uniswap": { fit: "fill" }, "launchpads/bankr": { fit: "fill" },
   "launchpads/printr": { fit: "fill" }, "launchpads/pons": { fit: "fill" }, "launchpads/surge": { fit: "fill" },
+  "launchpads/anoncoin": { fit: "fill" }, "launchpads/bags": { fit: "fill" }, "launchpads/stonkfun": { fit: "fill" },
+  "launchpads/clanker": { fit: "fill" }, "launchpads/letsbonk": { fit: "fill", round: true },
 };
 
 const reported = new Set<string>();
@@ -54,7 +56,7 @@ function BrandTile({ kind, brand, name, size, label, className }: {
   const src = asset(kind, brand);
   const [failed, setFailed] = useState(false);
   const t = TREATMENT[`${kind}/${brand}`] ?? { fit: "pad" };
-  const radius = Math.max(4, Math.round(size * 0.28));
+  const radius = t.round ? "50%" : Math.max(4, Math.round(size * 0.28));
   const a11y = label ? { role: "img", "aria-label": name } : { "aria-hidden": true as const };
   if (!src || failed) {
     if (!src) reportProblem(`${kind}/${brand}`, "no verified logo file; showing an empty tile beside the name");

@@ -8,7 +8,9 @@ the two marked "resized", which were scaled down to 256 px for bundle size (same
 added here later appears automatically. Launchpad aliases (for example `flap-sh-robinhood` uses `flap`) are listed
 in `PAD_BRAND` in that file.
 
-Collected 2026-09-27. SHA-256 is of the stored file.
+Collected 2026-09-27. SHA-256 is of the file as received from the source. Copies written to a Windows checkout by
+Claude's file transfer may carry an added C2PA provenance block (an SVG `<metadata>` element, or a PNG/JPEG metadata
+segment), so their bytes differ; the artwork itself is unchanged.
 
 ## Chains
 
@@ -34,16 +36,22 @@ Collected 2026-09-27. SHA-256 is of the stored file.
 | `launchpads/pons.jpg` | pons | github.com/ponsdotdev/ponsfamily @ 74de0196 `media/logo.png` (a JPEG despite its name) | "Official repository for the ponsfamily.com smart contracts"; shown as "Pons Family" in its README | 26e844ee… |
 | `launchpads/surge.png` | surge | surge.xyz/branding/apple-touch-icon.png | Surge's own site (currently a "coming soon" page); its only published mark | 1825e0f2… |
 
-## Missing (name shown, no logo)
+## Supplied by the project owner (2026-09-27)
 
-| Launchpad | What was checked |
-|---|---|
-| LetsBonk (`letsbonk`) | Official mark is bonk.fun/logos/bonk_fun.png (2000 px PNG); it couldn't be brought into this environment. No official GitHub or npm copy. |
-| Clanker (`clanker`, `clanker-robinhood`) | Official square mark is clanker.world/logo_circle.png; it couldn't be brought in. The brand kit linked from clanker-devco/DOCS is on Google Drive/Figma. The header SVG is the wide wordmark, not a square mark. |
-| Bags (`bags`) | bagsfm repos and the @bagsfm/bags-sdk npm package contain no logo; bags.fm couldn't be opened from here. |
-| Stonk.fun (`stonkfun`) | The official mark is stonkfun.xyz/stonk-mark.svg (listed on stonkfun.xyz/developers), but the site couldn't be opened from here. |
-| Anoncoin (`anoncoin`) | docs.anoncoin.it lists no brand assets; anoncoin.it couldn't be opened from here. github.com/Anoncoin is an unrelated 2013 project. |
+These five were provided directly by Helm's owner (the projects' profile images, 400 px JPEG; LetsBonk 304 px) after
+the official sites couldn't be read from the build environment. They're shown unaltered and fill their tile
+(LetsBonk's round badge sits in a round tile).
 
-To add one, save the official file as `launchpads/<brand>.svg` (or `.png`/`.webp`/`.jpg`, 128 px or larger) and
+| File | Used for | Mark | SHA-256 |
+|---|---|---|---|
+| `launchpads/anoncoin.jpg` | anoncoin | White "anon coin" lettering on black | 47ac4d2d… |
+| `launchpads/bags.jpg` | bags | White bag on black | e68e70dd… |
+| `launchpads/stonkfun.jpg` | stonkfun | Pale-blue "S" of two linked shapes on near-black | bd1c5736… |
+| `launchpads/clanker.jpg` | clanker, clanker-robinhood | Three rising purple bars on white (as in Clanker's header) | ba0a7eb8… |
+| `launchpads/letsbonk.jpg` | letsbonk | Orange dog with a bat on an orange circle | 1dd633b8… |
+
+Every supported launchpad now has a logo.
+
+To add one, save the official file as `launchpads/<brand>.svg` (or `.png`/`.webp`/`.jpg`/`.jpeg`, 128 px or larger) and
 add its row above. If the logo carries its own background shape, set `fit: "fill"` for it in `TREATMENT` in
 `components/marks.tsx`.
