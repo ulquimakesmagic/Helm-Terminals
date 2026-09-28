@@ -308,6 +308,50 @@ class DeployBody(SpendConfirm):
     auto_fund: bool = True
 
 
+def _creator_share_terms(launchpad: str, params: dict, dev_address: str = "") -> dict:
+    """Helm's share of this new launch's creator rewards, as shown in the deploy preview (and so part of the
+    confirmation hash). Only new launches get it, and only where the launchpad lets Helm set a reward split."""
+    from ..services import platform_config as pc
+
+    sh = pc.creator_share(launchpad)
+    quote = (params or {}).get("quote") or {}
+    if launchpad == "bags" and quote.get("mint") and quote["mint"] != "So11111111111111111111111111111111111111112":
+        sh = {"bps": 0, "recipient": "", "supported": False,
+              "note": "Helm takes no share of creator rewards on pair-token launches (Bags has no fee-share step for them)"}
+    if sh["bps"] and dev_address and sh["recipient"].lower() == dev_address.lower():
+        sh = {**sh, "bps": 0, "note": "Helm takes no share of your creator rewards"}  # nothing to split
+    return {"bps": sh["bps"], "recipient": sh["recipient"] if sh["bps"] else "", "note": sh["note"]}
+
+
+def _helm_fees(share: dict, funding: dict | None) -> str:
+    """Every Helm fee this deploy involves, in one line, so overlapping fees are never hidden: the deploy itself is
+    free, a USDC funding route pays only the route fee, and a creator-reward share applies to future rewards only."""
+    parts = ["no Helm fee on the deploy itself"]
+    if funding:
+        parts.append(f"route fee on the USDC funding: {funding.get('route_fee', 'none')}")
+    if share.get("bps"):
+        parts.append(f"{share['bps'] / 100:g}% of this token's future creator rewards")
+    return "; ".join(parts)
+
+
+async def _note_creator_share(session, launch: Launch, job: Job, share: dict) -> None:
+    """Ledger marker for a launch that gives Helm a share of its creator rewards. The amount isn't known here: the
+    rewards accrue on the launchpad and are claimed there, so the entry is claimable with no amount until reconciled."""
+    if not share.get("bps"):
+        return
+    from ..models import RevenueEvent
+    from ..services.platform_config import CREATOR_SHARE_LAUNCHPADS
+
+    session.add(RevenueEvent(
+        source="creator_share", network=CREATOR_SHARE_LAUNCHPADS.get(launch.launchpad, launch.network),
+        asset="various", amount_raw=None, decimals=0, estimated=True, status="claimable",
+        destination=share["recipient"], launch_id=launch.id, job_id=job.id, payer_user_id=launch.user_id,
+        reference=launch.mint_address,
+        note=(f"{share['bps'] / 100:g}% of this launch's creator rewards on {launch.launchpad}; accrues and is claimed "
+              "on the launchpad, so the amount isn't directly verifiable from Helm")))
+    launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share}
+
+
 @router.post("/launches/{launch_id}/deploy")
 async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_user),
                  db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc),
@@ -339,12 +383,14 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         warnings.append(reason)
     if hasattr(adapter, "deploy_warnings"):
         warnings += adapter.deploy_warnings(l.dev_buy_sol, dict(l.launchpad_params or {}))
+    share = _creator_share_terms(l.launchpad, dict(l.launchpad_params or {}), dev.address)
     summary = {
         "launch_id": l.id, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "platform_fee": "none on deploy",
+        "helm_creator_share": share,
     }
     if hasattr(adapter, "deploy_notes"):
-        summary.update(adapter.deploy_notes(dict(l.launchpad_params or {})))
+        summary.update(adapter.deploy_notes({**(l.launchpad_params or {}), "helm_creator_share": share}))
     quote = (l.launchpad_params or {}).get("quote")
     if l.launchpad == "bags" and quote:
         s = get_settings()
@@ -356,12 +402,15 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         summary["steps"] = "up to 4 transactions: lookup table, token, launch, then lookup-table clean-up"
     elif l.launchpad == "bags":
         s = get_settings()
-        summary["creator_fees"] = "100% of this token's creator fees go to your dev wallet"
+        summary["creator_fees"] = (f"{100 - share['bps'] / 100:g}% of this token's creator fees go to your dev wallet, "
+                                   f"{share['bps'] / 100:g}% to Helm's treasury" if share["bps"]
+                                   else "100% of this token's creator fees go to your dev wallet")
         if s.bags_partner_wallet and s.bags_partner_config:
             summary["partner_share"] = "Bags pays Helm a partner share of this token's trading fees (from Bags' side, not yours)"
         summary["steps"] = "2 transactions: fee-share setup, then the launch"
     if funding:
         summary["funding"] = funding
+    summary["helm_fees"] = _helm_fees(share, funding)
     pf = build_preflight("deploy", summary, warnings)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
@@ -383,7 +432,8 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                 return
             req = CreateRequest(name=l.name, symbol=l.symbol, description=l.description, image_bytes=l.image_blob,
                                 socials=l.socials or {}, dev_pubkey=dev.address, dev_buy_sol=l.dev_buy_sol,
-                                slippage_pct=slippage, options=dict(l.launchpad_params or {}))
+                                slippage_pct=slippage,
+                                options={**(l.launchpad_params or {}), "helm_creator_share": share})
             try:
                 built = await adapter.build_create_tx(req)
             except AdapterError as e:
@@ -394,6 +444,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
             res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", built.mint, utcnow()
+                await _note_creator_share(session, launch, j, share)
             elif res.status == "timeout" and built.mint:
                 # Sent but not confirmed in time: it may still land. Keep the mint so Helm can check for it, and
                 # don't offer a redeploy, which would create a second token.
@@ -794,19 +845,21 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             warnings.append(short + (f" {why}" if why else ""))
     if adapter.options_schema().get("requires_image") and not l.image_blob:
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
+    share = _creator_share_terms(l.launchpad, params, dev.address)
     summary = {
         "launch_id": l.id, "network": l.network, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "max_gas": gas / WEI,
-        "platform_fee": "none on deploy",
+        "platform_fee": "none on deploy", "helm_creator_share": share,
     }
     if hasattr(adapter, "deploy_notes"):
-        summary.update(adapter.deploy_notes(params))
+        summary.update(adapter.deploy_notes({**params, "helm_creator_share": share}))
     if hasattr(adapter, "deploy_warnings"):
         warnings += adapter.deploy_warnings(l.dev_buy_sol, params)
     if launch_fee:
         summary["launch_fee"] = f"{launch_fee / WEI:g} {coin}, paid to {l.launchpad}"
     if funding:
         summary["funding"] = funding
+    summary["helm_fees"] = _helm_fees(share, funding)
     pf = build_preflight("deploy", summary, warnings)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
@@ -825,7 +878,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             launch = await session.get(Launch, l.id)
             if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
                 return
-            opts = dict(params)
+            opts = {**params, "helm_creator_share": share}
             if l.image_blob:
                 opts["logo_url"] = f"{get_settings().public_api_url.rstrip('/')}/public/launch-images/{l.id}"
             from ..services.evm_exec import sign_text
@@ -851,6 +904,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 j.params = {**j.params, "error": "launched, but the token address couldn't be read; check the explorer"}
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
+                await _note_creator_share(session, launch, j, share)
             else:
                 launch.status = "failed"
             await session.commit()

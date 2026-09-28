@@ -34,16 +34,15 @@ def _bags() -> LaunchpadAdapter:
 def _flap(launchpad_id: str, network: str):
     def make():
         s = get_settings()
-        return FlapAdapter(launchpad_id, network, shared_evm(network), upload_url=s.flap_upload_url,
-                           commission_receiver=s.platform_fee_wallet_evm)
+        # The commission receiver comes from the live treasury settings (see platform_config).
+        return FlapAdapter(launchpad_id, network, shared_evm(network), upload_url=s.flap_upload_url)
     return make
 
 
 def _clanker(launchpad_id: str, network: str):
     def make():
-        s = get_settings()
-        return ClankerAdapter(launchpad_id, network, shared_evm(network), platform_wallet=s.platform_fee_wallet_evm,
-                              platform_reward_bps=s.clanker_platform_reward_bps)
+        # Helm's reward share and its recipient come from the live platform settings (see platform_config).
+        return ClankerAdapter(launchpad_id, network, shared_evm(network))
     return make
 
 

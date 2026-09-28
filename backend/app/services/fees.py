@@ -40,8 +40,11 @@ class FeePlan:
 
 
 async def fee_plan_for(db: AsyncSession, user: User, network: str = "solana") -> FeePlan:
+    from . import platform_config as pc
+
     s = get_settings()
-    plan = FeePlan(bps=s.platform_fee_bps, platform_wallet=s.platform_fee_wallet)
+    await pc.refresh(db)
+    plan = FeePlan(bps=pc.bps("trade_fee_bps_solana"), platform_wallet=pc.treasury_for("solana"))
     if not plan.active:
         return plan
     link = (await db.execute(select(ReferralLink).where(ReferralLink.referred_user_id == user.id))).scalar_one_or_none()

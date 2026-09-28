@@ -4,6 +4,8 @@ import { api, hasToken } from "./api";
 export interface Me {
   id: string; email: string; totp_enabled: boolean; created_at: string;
   display_name?: string; handle?: string | null; avatar_hue?: number;
+  /** Only decides whether the Admin link shows; the server checks the role on every admin request. */
+  admin_role?: "superadmin" | "viewer" | null;
 }
 export interface Health { ok: boolean; env: string; signer: string }
 export interface TgStatus { linked: boolean; linked_at: string | null; bot_username: string; enabled: boolean }

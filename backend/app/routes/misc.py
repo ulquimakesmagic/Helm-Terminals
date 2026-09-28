@@ -96,7 +96,11 @@ async def create_referral(user: User = Depends(current_user), db: AsyncSession =
 
 
 async def referral_summary(db: AsyncSession, user: User) -> dict:
+    from ..services import platform_config as pc
+
     s = get_settings()
+    await pc.refresh(db)
+    fee_bps = pc.bps("trade_fee_bps_solana")
     codes = (await db.execute(select(Referral).where(Referral.owner_user_id == user.id))).scalars().all()
     referred = (await db.execute(select(func.count(ReferralLink.id)).where(
         ReferralLink.referrer_user_id == user.id))).scalar_one()
@@ -112,8 +116,8 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
         "earned_sol": by_status.get("paid", 0) / LAMPORTS_PER_SOL,
         "owed_sol": by_status.get("owed", 0) / LAMPORTS_PER_SOL,
         "payout_address": payout.address if payout else None,
-        "share_pct": s.referral_share_bps / 100 if s.platform_fee_bps else 0,
-        "fee_pct": s.platform_fee_bps / 100,
+        "share_pct": s.referral_share_bps / 100 if fee_bps else 0,
+        "fee_pct": fee_bps / 100,
     }
 
 

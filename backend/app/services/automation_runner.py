@@ -67,6 +67,19 @@ async def _heartbeat(automation_id: str) -> None:
             await db.commit()
 
 
+async def _fee_raised(db, automation, net: str) -> bool:
+    """Whether the Helm trading fee on this chain is now higher than when the plan was confirmed."""
+    from ..models import AutomationTerms
+    from . import platform_config as pc
+
+    terms = (await db.execute(select(AutomationTerms).where(
+        AutomationTerms.automation_id == automation.id))).scalar_one_or_none()
+    key = "trade_fee_bps_solana" if net == "solana" else "trade_fee_bps_evm_dex"
+    agreed = getattr(terms, key) if terms else pc._env_defaults()[key]  # older plans: the env rate of the time
+    await pc.refresh(db)
+    return pc.bps(key) > agreed
+
+
 async def run_due_automation_once(ex: Executor | None = None) -> bool:
     """Claim and execute at most one due tranche. Returns whether work was found."""
     await _mark_interrupted()
@@ -96,7 +109,11 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
             if not launch or launch.status != "live" or not launch.mint_address:
                 await _stop_in_session(db, automation, "Launch is no longer live; scheduled trades stopped.")
                 return True
-            if not user:
+            from ..models import AccountStatus
+
+            suspended = user and (await db.execute(select(AccountStatus.status).where(
+                AccountStatus.user_id == user.id))).scalar_one_or_none() == "suspended"
+            if not user or suspended:
                 await _stop_in_session(db, automation, "Account is unavailable; scheduled trades stopped.")
                 return True
 
@@ -115,6 +132,11 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
             net = launch.network
             coin = native_coin(net)
             fee_plan = await fee_plan_for(db, user, net)
+            if await _fee_raised(db, automation, net):
+                await _stop_in_session(db, automation, "Helm's trading fee went up after this plan was scheduled, so it "
+                                                       "stopped instead of charging more. Schedule a new plan to accept "
+                                                       "the current rate.")
+                return True
             remaining = automation.total_orders - automation.runs_completed
             if automation.side == "buy":
                 fee_mult = 1 + (fee_plan.bps / 10_000 if fee_plan.active and net == "solana" else 0)
@@ -229,6 +251,11 @@ async def automation_worker() -> None:
     settings = get_settings()
     while True:
         try:
+            from ..db import get_sessionmaker
+            from . import platform_config as pc
+
+            async with get_sessionmaker()() as db:
+                await pc.refresh(db)  # fee rates and treasury as set by the admin
             await run_due_automation_once()
         except asyncio.CancelledError:
             raise

@@ -15,6 +15,7 @@ import Activity from "./pages/Activity";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import PublicProfile from "./pages/PublicProfile";
+import Admin from "./pages/Admin";
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
@@ -24,7 +25,7 @@ const NAV: { group: string; items: [string, string, IconName][] }[] = [
 ];
 
 const TITLES: Record<string, string> = {
-  "": "Dashboard", launches: "Launches", wallets: "Wallets", automation: "Automation", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings",
+  "": "Dashboard", launches: "Launches", wallets: "Wallets", automation: "Automation", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings", admin: "Admin",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -47,7 +48,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div className="logo-name">Helm Terminals<small>On-chain ops</small></div>
         </Link>
         <nav className="nav" aria-label="Sections">
-          {NAV.map((g) => (
+          {(me?.admin_role ? [...NAV, { group: "Helm", items: [["/admin", "Admin", "shield"] as [string, string, IconName]] }] : NAV).map((g) => (
             <div key={g.group}>
               <div className="nav-group">{g.group}</div>
               {g.items.map(([to, label, icon]) => (
@@ -136,6 +137,7 @@ export default function App() {
         <Route path="/activity" element={<Private><Activity /></Private>} />
         <Route path="/profile" element={<Private><Profile /></Private>} />
         <Route path="/settings" element={<Private><Settings /></Private>} />
+        <Route path="/admin" element={<Private><Admin /></Private>} />
         <Route path="/u/:handle" element={<PublicProfile />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

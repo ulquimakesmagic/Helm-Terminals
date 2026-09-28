@@ -112,6 +112,8 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
         await session.commit()
         return res, "not_sent"
     info = ex.relay.summarize(q)
+    # Helm's fee terms as quoted (a settings change while the route fills doesn't alter what this route paid).
+    fee_terms = (ex.relay.fee_bps, ex.relay.fee_recipient)
     note(request_id=info["request_id"], quote=info, route_status="sending")
     await session.commit()
     last = None
@@ -135,4 +137,14 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
         return SubmitResult(None, "failed", "nothing to send"), status
     if status in FAILED:
         return SubmitResult(last.signature, "failed", f"Relay reported {status}; a refund goes back to the source wallet"), status
+    if status in DONE and last.status == "confirmed":
+        # Helm's Relay app fee, if the quote carried one: Relay holds it for the treasury until claimed, so it goes in
+        # the ledger as claimable. A route that failed, was refunded or hasn't filled records nothing.
+        from .revenue import route_fee_event
+
+        ev = route_fee_event(q, fee_terms[1], job.id, job.launch_id, job.user_id,
+                             info["request_id"] or last.signature)
+        if ev is not None and fee_terms[0]:
+            session.add(ev)
+            await session.commit()
     return last, status

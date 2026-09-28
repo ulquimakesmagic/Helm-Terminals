@@ -270,6 +270,13 @@ async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncS
         preflight_hash=preview["preflight_hash"],
     )
     db.add(automation)
+    from ..models import AutomationTerms
+    from ..services import platform_config as pc
+
+    await db.flush()
+    # The trading-fee rates this plan is confirmed at (see AutomationTerms): a later increase stops the plan.
+    db.add(AutomationTerms(automation_id=automation.id, trade_fee_bps_solana=pc.bps("trade_fee_bps_solana"),
+                           trade_fee_bps_evm_dex=pc.bps("trade_fee_bps_evm_dex")))
     await log_activity(db, user.id, "automation.scheduled", "automation", automation.id, {
         "launch_id": launch.id, "side": body.side, "orders": body.total_orders, "wallet_count": len(wallets),
         "planned_trade_sol": planned_trade_sol, "sell_percent": body.sell_percent, "network": net, "coin": coin,

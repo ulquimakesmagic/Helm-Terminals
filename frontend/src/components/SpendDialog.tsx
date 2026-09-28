@@ -28,7 +28,8 @@ const LABELS: Record<string, string> = {
   send: "Send", send_asset: "Pay with", receive_asset: "Receive", from_chain: "From chain", to_chain: "To chain",
   provider: "Route provider", quote: "Live quote", funding: "Funding from USDC", funding_detail: "Funding covers",
   dev_buy_usd: "Dev buy (USD, est.)", from_address: "From address", route_fee: "Route fee", receive: "Receive", leftover: "Leftover",
-  covers: "Covers",
+  covers: "Covers", helm_creator_share: "Helm's share of your creator rewards", helm_fees: "All Helm fees",
+  creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -60,6 +61,11 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
         <span className="muted small">{v.length} item{v.length === 1 ? "" : "s"}</span>
       </div>
     );
+  }
+  if (k === "helm_creator_share" && v && typeof v === "object") {
+    // The creator confirms this split with the rest of the preview; it only applies to this new launch.
+    const c = v as { bps: number; note: string };
+    return <span style={{ fontWeight: c.bps ? 600 : 400 }}>{c.note}</span>;
   }
   if ((k === "funding" || k === "funding_detail") && v && typeof v === "object") {
     const o = v as Record<string, unknown>;

@@ -35,6 +35,11 @@ async def current_user(authorization: str | None = Header(default=None), db: Asy
     user = await db.get(User, sess.user_id)
     if not user:
         raise HTTPException(401, "invalid session")
+    from .models import AccountStatus
+
+    st = (await db.execute(select(AccountStatus.status).where(AccountStatus.user_id == user.id))).scalar_one_or_none()
+    if st == "suspended":
+        raise HTTPException(403, "this account is suspended; contact support")
     user.channel = sess.channel  # type: ignore[attr-defined]  # transient: which client this request came from
     return user
 

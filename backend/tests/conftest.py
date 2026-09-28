@@ -177,6 +177,17 @@ async def enable_2fa(client, headers, password="correct-horse-battery"):
 
 
 @pytest.fixture(autouse=True)
+def fresh_platform_config(monkeypatch):
+    """Tests change fee settings mid-test: read them fresh every time instead of from the 30 s cache."""
+    from app.services import platform_config as pc
+
+    pc.reset_cache()
+    monkeypatch.setattr(pc, "CACHE_S", 0.0)
+    yield
+    pc.reset_cache()
+
+
+@pytest.fixture(autouse=True)
 def offline_evm(monkeypatch):
     """No test reaches a real EVM RPC. Chains a test doesn't fake itself behave like an unreachable node (reads come
     back "unavailable"), instead of quietly calling the public endpoints (which made results depend on the network)."""

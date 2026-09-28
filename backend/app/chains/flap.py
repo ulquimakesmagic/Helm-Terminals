@@ -113,7 +113,7 @@ class FlapAdapter:
     quote_assets = ["native"]
 
     def __init__(self, launchpad_id: str, network: str, rpc: EvmRPC, upload_url: str = "https://funcs.flap.sh/api/upload",
-                 commission_receiver: str = "", client: httpx.AsyncClient | None = None) -> None:
+                 commission_receiver: str | None = None, client: httpx.AsyncClient | None = None) -> None:
         if network not in FLAP_CHAINS:
             raise ValueError(f"Flap isn't configured for {network}")
         self.id = launchpad_id
@@ -122,8 +122,18 @@ class FlapAdapter:
         self.cfg = FLAP_CHAINS[network]
         self.portal = self.cfg["portal"]
         self.upload_url = upload_url
-        self.commission_receiver = commission_receiver
+        self._commission = commission_receiver
         self._client = client or httpx.AsyncClient(timeout=60)
+
+    @property
+    def commission_receiver(self) -> str:
+        """Flap's launchpad commission on tax tokens goes to this address: Helm's treasury for this chain (from the
+        platform settings) unless one was given explicitly. The commission is paid by Flap, not from the creator's tax."""
+        if self._commission is not None:
+            return self._commission
+        from ..services import platform_config as pc
+
+        return pc.treasury_for(self.network)
 
     def options_schema(self) -> dict:
         return {

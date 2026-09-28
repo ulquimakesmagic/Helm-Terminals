@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     # Share of a Clanker token's LP rewards paid to PLATFORM_FEE_WALLET_EVM, in bps (1000 = 10%, max 2000).
     # 0 = all rewards to the creator. Always shown in the deploy preview.
     clanker_platform_reward_bps: int = 0
+    # Optional pin for the admin dashboard's superadmin: the user ID of the account registered with the superadmin
+    # email. When set, only that account can ever be bound as superadmin (Helm doesn't verify email addresses).
+    superadmin_user_id: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
     referral_share_bps: int = 2500
     referral_code_max_uses: int = 1000

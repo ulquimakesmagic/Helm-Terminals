@@ -65,17 +65,45 @@ class ClankerAdapter:
     kind = "evm"
     quote_assets = ["native"]
 
-    def __init__(self, launchpad_id: str, network: str, rpc: EvmRPC, platform_wallet: str = "",
-                 platform_reward_bps: int = 0) -> None:
+    def __init__(self, launchpad_id: str, network: str, rpc: EvmRPC, platform_wallet: str | None = None,
+                 platform_reward_bps: int | None = None) -> None:
         if network not in CLANKER_CHAINS:
             raise ValueError(f"Clanker isn't configured for {network}")
         self.id = launchpad_id
         self.network = network
         self.rpc = rpc
         self.cfg = CLANKER_CHAINS[network]
-        # Helm's share of LP rewards (bps of the creator side), only when a platform wallet is set. Max 20%.
-        self.platform_wallet = platform_wallet
-        self.platform_reward_bps = min(max(platform_reward_bps, 0), 2000) if platform_wallet else 0
+        # Helm's share of LP rewards (bps of the creator side), only when a treasury address is set. Left as None,
+        # both come from the live platform settings (admin dashboard, else env).
+        self._wallet = platform_wallet
+        self._reward_bps = platform_reward_bps
+
+    @property
+    def platform_wallet(self) -> str:
+        if self._wallet is not None:
+            return self._wallet
+        from ..services import platform_config as pc
+
+        return pc.treasury_for(self.network)
+
+    @property
+    def platform_reward_bps(self) -> int:
+        if not self.platform_wallet:
+            return 0
+        if self._reward_bps is not None:
+            return min(max(self._reward_bps, 0), 2000)
+        from ..services import platform_config as pc
+
+        return min(max(pc.bps("creator_share_bps"), 0), 2000)
+
+    def _share(self, options: dict | None) -> tuple[str, int]:
+        """(recipient, bps) of Helm's reward share for this launch. The deploy passes the share the creator confirmed
+        in options["helm_creator_share"], so a settings change after the preview can't alter a confirmed launch."""
+        confirmed = (options or {}).get("helm_creator_share")
+        if confirmed is not None:
+            recipient = confirmed.get("recipient") or ""
+            return recipient, min(max(int(confirmed.get("bps") or 0), 0), 2000) if recipient else 0
+        return self.platform_wallet, self.platform_reward_bps
 
     def options_schema(self) -> dict:
         return {
@@ -88,15 +116,16 @@ class ClankerAdapter:
         }
 
     def deploy_notes(self, params: dict) -> dict:
-        creator = 100 - self.platform_reward_bps / 100
+        _, share = self._share(params)
+        creator = 100 - share / 100
         notes = {
             "pool": "Uniswap V4 pool paired with WETH, liquidity locked in Clanker's locker for good; no bonding curve",
             "pool_fee": "1% per trade; Clanker takes 20% on top of the LP fees",
             "sniper_fees": "about 67% for the first seconds, falling to about 4% over 15 seconds",
             "rewards": f"{creator:g}% of LP rewards to your dev wallet, claimable in WETH and the token",
         }
-        if self.platform_reward_bps:
-            notes["platform_share"] = f"{self.platform_reward_bps / 100:g}% of LP rewards to Helm"
+        if share:
+            notes["platform_share"] = f"{share / 100:g}% of LP rewards to Helm's treasury"
         return notes
 
     def _config(self, req: CreateRequest, salt: bytes, dev_buy: int) -> tuple:
@@ -110,9 +139,10 @@ class ClankerAdapter:
         fee_data = abi_encode(["uint24", "uint24"], [POOL_FEE_UNI_BPS, POOL_FEE_UNI_BPS])
         pool = (self.cfg["hook"], self.cfg["weth"], TICK_START, TICK_SPACING,
                 abi_encode(["(address,bytes,bytes)"], [(ZERO, b"", fee_data)]))
-        recipients = [(req.dev_pubkey, req.dev_pubkey, 10_000 - self.platform_reward_bps)]
-        if self.platform_reward_bps:
-            recipients.append((self.platform_wallet, self.platform_wallet, self.platform_reward_bps))
+        helm, share = self._share(req.options)
+        recipients = [(req.dev_pubkey, req.dev_pubkey, 10_000 - share)]
+        if share:
+            recipients.append((helm, helm, share))
         locker = (self.cfg["locker"], [r[0] for r in recipients], [r[1] for r in recipients],
                   [r[2] for r in recipients], [TICK_START], [TICK_UPPER], [10_000],
                   abi_encode(["(uint8[])"], [([FEE_PREF_BOTH] * len(recipients),)]))

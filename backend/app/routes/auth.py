@@ -19,6 +19,8 @@ from ..security import (
     encrypt_secret, hash_password, new_token, new_totp_secret, token_hash, totp_uri, verify_password,
 )
 
+from ..services.admin import role_of
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
 
@@ -100,6 +102,8 @@ async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db
     db.add(sess)
     await log_activity(db, user.id, "session.created", "session", sess.id)
     await db.commit()
+    # The first successful sign-in of the designated superadmin account binds the role to its user ID.
+    await role_of(db, user)
     return {"token": token, "expires_at": sess.expires_at.isoformat()}
 
 
@@ -135,7 +139,9 @@ async def me(user: User = Depends(current_user), db: AsyncSession = Depends(get_
     return {"id": user.id, "email": user.email, "totp_enabled": user.totp_enabled,
             "created_at": user.created_at.isoformat(),
             "display_name": p.display_name if p else user.email.split("@")[0][:40],
-            "handle": p.handle if p else None, "avatar_hue": p.avatar_hue if p else 265}
+            "handle": p.handle if p else None, "avatar_hue": p.avatar_hue if p else 265,
+            # Only decides whether the web app shows the admin link; every admin API checks the role itself.
+            "admin_role": await role_of(db, user) if user.channel == "web" else None}
 
 
 @router.get("/sessions")

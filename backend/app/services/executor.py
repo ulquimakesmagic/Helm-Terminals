@@ -39,29 +39,41 @@ class Executor:
         self.evm_rpcs = evm_rpcs or {}  # tests inject fake EVM nodes here
         self._dex = dex
         self._relay = relay
+        self._dex_key = self._relay_key = None  # None with an injected router: keep it
 
     @property
     def relay(self):
-        """Cross-chain router (Relay) for moving USDC or coins between chains."""
-        if self._relay is None:
+        """Cross-chain router (Relay) for moving USDC or coins between chains. Its fee rate and recipient follow the
+        current platform settings (rebuilt when they change); an injected router (tests) is kept as is."""
+        from . import platform_config as pc
+
+        if self._relay is not None and getattr(self, "_relay_key", None) is None:
+            return self._relay
+        key = (pc.bps("route_fee_bps"), pc.treasury_for("evm"))
+        if self._relay is None or self._relay_key != key:
             from ..chains.relay import Relay
             from ..config import get_settings
 
             s = get_settings()
-            self._relay = Relay(s.relay_api_url, s.relay_api_key, fee_bps=s.route_fee_bps,
-                                fee_recipient=s.platform_fee_wallet_evm)
+            self._relay = Relay(s.relay_api_url, s.relay_api_key, fee_bps=key[0], fee_recipient=key[1])
+            self._relay_key = key
         return self._relay
 
     @property
     def dex(self):
         """DEX aggregator for EVM tokens that trade on a DEX (graduated launchpad tokens, Uniswap V2 launches)."""
-        if self._dex is None:
+        from . import platform_config as pc
+
+        if self._dex is not None and getattr(self, "_dex_key", None) is None:
+            return self._dex
+        key = (pc.bps("trade_fee_bps_evm_dex"), pc.treasury_for("evm"))
+        if self._dex is None or self._dex_key != key:
             from ..chains.kyber import KyberSwap
             from ..config import get_settings
 
             s = get_settings()
-            self._dex = KyberSwap(s.kyber_api_url, s.kyber_client_id, fee_bps=s.platform_fee_bps,
-                                  fee_receiver=s.platform_fee_wallet_evm)
+            self._dex = KyberSwap(s.kyber_api_url, s.kyber_client_id, fee_bps=key[0], fee_receiver=key[1])
+            self._dex_key = key
         return self._dex
 
     def evm(self, network: str):
@@ -253,13 +265,20 @@ async def run_trade(
         results.append(trade_res)  # the trade itself decides the job outcome, not the fee transfer
         if fee and trade_res.status == "confirmed":  # a failed trade never costs a fee
             paid_by = fee.result if fee.mode == "follow_up" else trade_res
-            db.add(FeeRecord(
+            fee_rec = FeeRecord(
                 job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side, basis_lamports=fee.basis,
                 platform_lamports=fee.platform, referrer_user_id=plan.referrer_user_id if fee.referral else None,
                 referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
                 status="confirmed" if paid_by is not None and paid_by.status == "confirmed" else "failed",
                 signature=paid_by.signature if paid_by else None,
-            ))
+            )
+            db.add(fee_rec)
+            if fee_rec.status == "confirmed" and fee.platform > 0:
+                # Helm's revenue ledger gets only the platform part; the referral share is never Helm's.
+                from .revenue import trade_fee_event
+
+                await db.flush()
+                db.add(trade_fee_event(fee_rec, plan.platform_wallet, job.launch_id))
         await db.commit()
 
     # Many wallets confirming at once poll less often each, so a batch stays near one status call per second per
@@ -421,7 +440,20 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
             await _record(db, job, w, side, res, None)
             await db.commit()
             return res
-        return await _run_evm_steps(db, ex, job, w, side, plan)
+        res = await _run_evm_steps(db, ex, job, w, side, plan)
+        await _note_dex_fee(w, plan, res)
+        return res
+
+    async def _note_dex_fee(w: Wallet, plan, res: SubmitResult) -> None:
+        """Ledger entry for Helm's DEX router fee, only when the swap itself confirmed (a failed swap pays none)."""
+        info = (getattr(plan, "notes", None) or {}).get("helm_fee")
+        if not info or res.status != "confirmed" or info.get("wei", 0) <= 0:
+            return
+        from .revenue import dex_fee_event
+
+        db.add(dex_fee_event(w.network, int(info["wei"]), bool(info["estimated"]), info["receiver"], job.id,
+                             job.launch_id, job.user_id, res.signature, side))
+        await db.commit()
 
     results = []
     if mode == "parallel" and execution_guard and not await execution_guard():
@@ -458,6 +490,8 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
                 continue
             for i, (step, r) in enumerate(run):
                 await _record(db, job, w, side if i == len(plan.steps) - 1 else f"{side}_{step.label}", r, None)
+            if len(run) == len(plan.steps):  # the swap itself was sent (not stopped at an earlier step)
+                await _note_dex_fee(w, plan, run[-1][1])
             results.append(run[-1][1])
         await db.commit()
     else:

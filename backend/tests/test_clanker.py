@@ -58,7 +58,7 @@ async def test_deploy_config_matches_sdk_defaults_with_dev_buy_and_helm_share():
     assert abi_decode(["(uint24,uint24,uint256)"], mev[1])[0] == SNIPER
     assert len(ext) == 1 and ext[0][0].lower() == CLANKER_CHAINS["base"]["devbuy"].lower() and ext[0][1] == ETH // 100
     notes = a.deploy_notes({})
-    assert notes["platform_share"] == "10% of LP rewards to Helm" and notes["rewards"].startswith("90%")
+    assert notes["platform_share"] == "10% of LP rewards to Helm's treasury" and notes["rewards"].startswith("90%")
     log = {"address": CLANKER_CHAINS["base"]["factory"], "topics": [TOKEN_CREATED_TOPIC, "0x" + "00" * 12 + "d2" * 20]}
     assert (await plan.resolve_token([log])).lower() == "0x" + "d2" * 20
 

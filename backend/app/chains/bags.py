@@ -2,7 +2,8 @@
 
 A Bags launch is three calls:
   1. create-token-info  -> Bags stores the metadata and returns the token mint (its own mint key signs later)
-  2. fee-share/config   -> a config transaction the creator signs first; 100% of creator fees go to the creator.
+  2. fee-share/config   -> a config transaction the creator signs first; creator fees go to the creator, less
+                           Helm's creator-reward share when one is set and disclosed in the deploy preview.
                            If Helm has a Bags partner key, Bags pays Helm its partner share (25% by default) of
                            the token's fees on top, out of Bags' side — this is disclosed in the deploy preview.
   3. create-launch-transaction -> the launch itself, with the dev buy
@@ -151,6 +152,13 @@ class BagsAdapter:
             "claimersArray": [req.dev_pubkey],
             "basisPointsArray": [10_000],
         }
+        # Helm's share of creator fees, only as confirmed by the creator in the deploy preview. Everything else stays
+        # with the creator; Helm never takes more than the confirmed share.
+        share = (req.options or {}).get("helm_creator_share") or {}
+        bps, recipient = int(share.get("bps") or 0), share.get("recipient") or ""
+        if 0 < bps < 10_000 and recipient and recipient != req.dev_pubkey:
+            config_body["claimersArray"] = [req.dev_pubkey, recipient]
+            config_body["basisPointsArray"] = [10_000 - bps, bps]
         if self.partner_wallet and self.partner_config:
             config_body["partner"] = self.partner_wallet
             config_body["partnerConfig"] = self.partner_config

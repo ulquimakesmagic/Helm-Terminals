@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 
 import httpx
@@ -14,7 +15,7 @@ from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import auth, automations, bridge, distribute, launches, market, misc, profile, telegram, wallets
+from .routes import admin, auth, automations, bridge, distribute, launches, market, misc, profile, telegram, wallets
 from .signing import get_signer
 
 
@@ -23,6 +24,14 @@ async def lifespan(app: FastAPI):
     check_production_config(get_settings())
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
     await create_all()
+    try:  # ledger rows for trading fees recorded before the revenue ledger existed (idempotent)
+        from .db import get_sessionmaker
+        from .services.revenue import backfill_trade_fees
+
+        async with get_sessionmaker()() as db:
+            await backfill_trade_fees(db)
+    except Exception:
+        logging.getLogger("helm").warning("revenue backfill skipped", exc_info=True)
     worker = None
     if get_settings().automation_worker_enabled:
         from .services.automation_runner import automation_worker
@@ -61,6 +70,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     @app.middleware("http")
+    async def platform_settings(request: Request, call_next):
+        # Fee rates and treasury addresses can be changed by the admin; keep this process's copy fresh (cheap: it
+        # only reads the database when the cached copy is older than a few seconds).
+        from .db import get_sessionmaker
+        from .services import platform_config as pc
+
+        if pc.stale():
+            try:
+                async with get_sessionmaker()() as db:
+                    await pc.refresh(db)
+            except Exception:  # never block a request on this; the last snapshot (or env defaults) applies
+                pass
+        return await call_next(request)
+
+    @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         # An API that only returns JSON and images: never sniff types, never render in a frame, no referrer leakage.
@@ -76,7 +100,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
-    for r in (auth.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+    for r in (admin.router, auth.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
 

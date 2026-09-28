@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, event
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -310,3 +310,110 @@ class TotpUse(Base):
     step: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     __table_args__ = (UniqueConstraint("user_id", "step"),)
+
+
+# --- Admin, treasury and revenue ---------------------------------------------------------------------
+
+
+class AdminRole(Base):
+    """A privileged role bound to a user ID. The superadmin row is created only for the account registered with the
+    designated superadmin email (see services/admin.py), and once bound it never moves to another user ID."""
+    __tablename__ = "admin_roles"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16))  # superadmin | viewer
+    granted_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdminAudit(Base):
+    """Append-only record of admin access and privileged actions. The API has no way to change or delete rows; on
+    Postgres a trigger refuses UPDATE and DELETE too."""
+    __tablename__ = "admin_audit"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    actor_user_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    action: Mapped[str] = mapped_column(String(48), index=True)
+    target: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    changes: Mapped[dict] = mapped_column(JSON, default=dict)  # {field: [old, new]}; never secrets
+    context: Mapped[dict] = mapped_column(JSON, default=dict)  # ip, user agent, session ref
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class PlatformSetting(Base):
+    """An admin-set value that overrides the environment default (fee rates). Absent = the env value applies."""
+    __tablename__ = "platform_settings"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class TreasuryAddress(Base):
+    """Where Helm's own revenue share is sent, per network. Receive-only: Helm never holds its keys."""
+    __tablename__ = "treasury_addresses"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    network: Mapped[str] = mapped_column(String(16), unique=True)  # solana | evm (default for EVM chains) | base | ...
+    address: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(80), default="")
+    updated_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class RevenueEvent(Base):
+    """One piece of Helm revenue, in its original asset and network. `status`:
+    received  - moved on-chain to a treasury address in a confirmed transaction Helm sent
+    pending   - in a transaction that hasn't confirmed
+    claimable - held by a provider (Relay, a launchpad fee locker) until someone claims it
+    `reconciled_at` is set when an admin has matched it against the treasury's on-chain inflows."""
+    __tablename__ = "revenue_events"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    source: Mapped[str] = mapped_column(String(24), index=True)  # trade_fee | dex_trade_fee | route_fee | creator_share | partner
+    network: Mapped[str] = mapped_column(String(16), index=True)
+    asset: Mapped[str] = mapped_column(String(16))  # SOL, ETH, BNB, USDC ...
+    # Integer base units (up to 78 digits: 18-decimal amounts overflow BIGINT). None when the provider doesn't say.
+    amount_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)
+    decimals: Mapped[int] = mapped_column(Integer, default=9)
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False)  # computed from a quote, not read on-chain
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    destination: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    launch_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    payer_user_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)  # tx signature / hash / claim id
+    fee_record_id: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class AccountStatus(Base):
+    """Suspension state for a user. No row = active."""
+    __tablename__ = "account_status"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active | suspended
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    changed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# Two statements, run separately: asyncpg refuses several commands in one prepared statement.
+_IMMUTABLE_FN = """CREATE OR REPLACE FUNCTION helm_admin_audit_immutable() RETURNS trigger AS $$
+BEGIN RAISE EXCEPTION 'admin_audit is append-only'; END; $$ LANGUAGE plpgsql"""
+_IMMUTABLE_TRIGGER = """CREATE TRIGGER helm_admin_audit_no_change BEFORE UPDATE OR DELETE ON admin_audit
+FOR EACH ROW EXECUTE FUNCTION helm_admin_audit_immutable()"""
+for _ddl in (_IMMUTABLE_FN, _IMMUTABLE_TRIGGER):
+    event.listen(AdminAudit.__table__, "after_create",
+                 __import__("sqlalchemy").DDL(_ddl).execute_if(dialect="postgresql"))
+
+
+class AutomationTerms(Base):
+    """The Helm trading-fee rates a scheduled plan was confirmed at. If an admin later raises a rate, the plan stops
+    instead of silently paying more; a lower rate simply applies. Plans created before this table use the env rates."""
+    __tablename__ = "automation_terms"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    automation_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    trade_fee_bps_solana: Mapped[int] = mapped_column(Integer, default=0)
+    trade_fee_bps_evm_dex: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

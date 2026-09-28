@@ -93,4 +93,14 @@ class KyberSwap:
             steps.append(EvmStep("approve", token, keccak(text="approve(address,uint256)")[:4]
                                  + abi_encode(["address", "uint256"], [router, amount])))
         steps.append(EvmStep(side, router, b"", value=amount if side == "buy" else 0, build=build))
-        return EvmPlan(steps, token=token, notes={"route": "KyberSwap", "expected_out": first["routeSummary"].get("amountOut")})
+        notes = {"route": "KyberSwap", "expected_out": first["routeSummary"].get("amountOut")}
+        if self.fee_bps:
+            # Helm's cut, in native wei: exact on buys (a share of the amount going in); on sells an estimate from the
+            # quoted output, which the router returns after its fee.
+            if side == "buy":
+                wei, estimated = amount * self.fee_bps // 10_000, False
+            else:
+                out = int(first["routeSummary"].get("amountOut") or 0)
+                wei, estimated = out * self.fee_bps // (10_000 - self.fee_bps), True
+            notes["helm_fee"] = {"bps": self.fee_bps, "receiver": self.fee_receiver, "wei": wei, "estimated": estimated}
+        return EvmPlan(steps, token=token, notes=notes)
