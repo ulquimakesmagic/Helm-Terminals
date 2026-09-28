@@ -222,6 +222,52 @@ async def reconcile(body: Reconcile, request: Request, user: User = Depends(supe
     return {"reconciled": len(rows)}
 
 
+# --- Relay app fees ------------------------------------------------------------------------------------
+
+
+@router.get("/relay-fees")
+async def relay_fees(user: User = Depends(any_admin), db: AsyncSession = Depends(get_db),
+                     ex: Executor = Depends(get_executor)):
+    """What Relay actually holds for the EVM treasury (read from Relay, not estimated). Claimed at relay.link."""
+    await pc.refresh(db)
+    wallet = pc.treasury_for("evm")
+    out = {"wallet": wallet or None, "claim_url": "https://relay.link/claim-app-fees", "as_of": iso(utcnow()),
+           "source": "Relay API /app-fees/{wallet}/balances"}
+    if not wallet:
+        return {**out, "unavailable": "No EVM treasury is set, so Relay route fees are off."}
+    try:
+        data = await asyncio.wait_for(ex.relay.app_fee_balances(wallet), 12)
+    except Exception as e:
+        return {**out, "unavailable": f"Relay's balance couldn't be read right now ({type(e).__name__})"}
+    return {**out, "total_usd": data.get("totalBalanceUsd"), "available_usd": data.get("availableBalanceUsd"),
+            "balances": [{"asset": (b.get("currency") or {}).get("symbol"),
+                          "chain_id": (b.get("currency") or {}).get("chainId"),
+                          "amount": b.get("amountFormatted"), "amount_usd": b.get("amountUsd"),
+                          "minimum": b.get("minimumAmount")} for b in data.get("balances") or []]}
+
+
+@router.post("/revenue/verify-relay")
+async def verify_relay(request: Request, user: User = Depends(superadmin), db: AsyncSession = Depends(get_db),
+                       ex: Executor = Depends(get_executor)):
+    """Check unreconciled Relay route-fee entries against what Relay reports it collected (up to 50 per run)."""
+    from ..services.revenue import verify_route_fee
+
+    rows = (await db.execute(select(RevenueEvent).where(
+        RevenueEvent.source == "route_fee", RevenueEvent.reconciled_at.is_(None))
+        .order_by(RevenueEvent.created_at).limit(50))).scalars().all()
+    counts: dict[str, int] = {}
+    for ev in rows:
+        try:
+            r = await asyncio.wait_for(verify_route_fee(ex.relay, ev), 12)
+        except Exception:
+            r = "error"
+        counts[r] = counts.get(r, 0) + 1
+    await audit(db, user, "revenue.verify_relay", None, {"checked": [None, len(rows)], **{k: [None, v] for k, v in counts.items()}},
+                request)
+    await db.commit()
+    return {"checked": len(rows), **counts}
+
+
 # --- treasury ------------------------------------------------------------------------------------------
 
 

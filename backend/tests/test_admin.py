@@ -554,3 +554,73 @@ async def test_large_evm_amounts_fit_the_ledger(client):
         await db.commit()
     items = (await client.get("/admin/revenue/ledger", headers=hb)).json()["items"]
     assert items[0]["amount_raw"] == str(25 * 10**18)
+
+
+# --- Relay app-fee verification --------------------------------------------------------------------------
+
+
+class FakeRelay:
+    def __init__(self, reqs):
+        self.reqs = reqs
+
+    async def request(self, rid):
+        return self.reqs.get(rid)
+
+
+def _route_ev(ref):
+    return RevenueEvent(source="route_fee", network="base", asset="USDC", amount_raw=3000, decimals=6, estimated=True,
+                        status="claimable", destination=EVM_TREASURY, reference=ref)
+
+
+async def test_relay_verification_confirms_or_zeroes_route_fees():
+    from app.services.revenue import verify_route_fee
+
+    relay = FakeRelay({
+        "paid": {"status": "success", "data": {"paidAppFees": [{"recipient": EVM_TREASURY.lower(), "amount": "3000",
+                                                                "amountUsd": "0.003"}]}},
+        "zero": {"status": "success", "data": {"appFees": [{"recipient": EVM_TREASURY}], "paidAppFees": []}},
+        "other": {"status": "success", "data": {"paidAppFees": [{"recipient": "0x" + "9" * 40, "amount": "5"}]}},
+        "refund": {"status": "refund", "data": {}},
+        "wait": {"status": "pending", "data": {}},
+    })
+    evs = {k: _route_ev(k) for k in ("paid", "zero", "other", "refund", "wait", "missing")}
+    got = {k: await verify_route_fee(relay, e) for k, e in evs.items()}
+    assert got == {"paid": "confirmed", "zero": "not_collected", "other": "not_collected",
+                   "refund": "not_collected", "wait": "pending", "missing": "unknown"}
+    assert evs["paid"].reconciled_at and evs["paid"].amount_raw == 3000 and evs["paid"].status == "claimable"
+    assert evs["zero"].amount_raw == 0 and evs["refund"].amount_raw == 0  # never counted as revenue
+    assert evs["wait"].reconciled_at is None and evs["missing"].reconciled_at is None
+
+
+async def test_relay_balance_is_read_from_relay(client, monkeypatch):
+    from app.chains.relay import Relay
+
+    hb, sb = await boss(client)
+    assert (await client.get("/admin/relay-fees", headers=hb)).json()["unavailable"].startswith("No EVM treasury")
+    await client.put("/admin/treasury/evm", json={"address": EVM_TREASURY, "confirm": await proof(sb)}, headers=hb)
+    seen = {}
+
+    async def fake(self, wallet):
+        seen["wallet"] = wallet
+        return {"totalBalanceUsd": 1.25, "availableBalanceUsd": 1.25, "balances": [
+            {"currency": {"symbol": "USDC", "chainId": 8453}, "amountFormatted": "1.25", "amountUsd": "1.25",
+             "minimumAmount": "1000"}]}
+
+    monkeypatch.setattr(Relay, "app_fee_balances", fake)
+    r = (await client.get("/admin/relay-fees", headers=hb)).json()
+    assert seen["wallet"] == EVM_TREASURY and r["available_usd"] == 1.25 and r["balances"][0]["asset"] == "USDC"
+
+    async def fake_req(self, rid):
+        return {"status": "success", "data": {"paidAppFees": [{"recipient": EVM_TREASURY, "amount": "3000",
+                                                               "amountUsd": "0.003"}]}}
+
+    monkeypatch.setattr(Relay, "request", fake_req)
+    async with get_sessionmaker()() as db:
+        db.add(_route_ev("req-1"))
+        await db.commit()
+    hv = await signup(client, "viewer2@example.com", main=False)
+    assert (await client.post("/admin/revenue/verify-relay", json={}, headers=hv)).status_code == 403
+    r = (await client.post("/admin/revenue/verify-relay", json={}, headers=hb)).json()
+    assert r == {"checked": 1, "confirmed": 1}
+    led = (await client.get("/admin/revenue/ledger?source=route_fee", headers=hb)).json()["items"][0]
+    assert led["reconciled_at"] and "Relay confirmed" in led["note"]

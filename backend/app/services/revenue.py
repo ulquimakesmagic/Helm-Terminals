@@ -69,3 +69,32 @@ def route_fee_event(quote: dict, destination: str, job_id: str, launch_id: str |
                         decimals=int(cur.get("decimals") or 6), estimated=True, status="claimable",
                         destination=destination, launch_id=launch_id, job_id=job_id, payer_user_id=payer_user_id,
                         reference=reference, note="Relay app fee from the executed quote; claim at relay.link")
+
+
+async def verify_route_fee(relay, ev: RevenueEvent) -> str:
+    """Check one Relay route-fee entry against what Relay says it actually collected, and update it:
+    "confirmed" - Relay collected a fee for Helm's treasury: marked reconciled, still claimable (held by Relay)
+    "not_collected" - the route finished but Relay took no fee (e.g. below its minimum): amount set to 0
+    "pending" - Relay hasn't settled the request yet; left as is
+    "unknown" - Relay doesn't know the reference; left as is"""
+    req = await relay.request(ev.reference) if ev.reference else None
+    if not req:
+        return "unknown"
+    status = req.get("status")
+    if status in ("pending", "waiting", "depositing"):
+        return "pending"
+    from ..models import utcnow
+
+    dest = (ev.destination or "").lower()
+    paid = [p for p in ((req.get("data") or {}).get("paidAppFees") or [])
+            if (p.get("recipient") or "").lower() == dest and str(p.get("amount") or "0") not in ("0", "")]
+    if status == "success" and paid:
+        usd = sum(float(p.get("amountUsd") or 0) for p in paid)
+        ev.reconciled_at = utcnow()
+        ev.note = f"Relay confirmed ${usd:.4f} collected for the treasury; claim at relay.link/claim-app-fees"[:200]
+        return "confirmed"
+    ev.amount_raw = 0
+    ev.reconciled_at = utcnow()
+    ev.note = (f"Relay collected no app fee (route {status})" if status != "success"
+               else "Relay collected no app fee on this route (likely under its minimum)")[:200]
+    return "not_collected"

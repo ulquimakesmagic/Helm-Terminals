@@ -82,6 +82,16 @@ class Relay:
     async def status(self, request_id: str) -> dict:
         return await self._req("GET", "/intents/status/v3", params={"requestId": request_id})
 
+    async def app_fee_balances(self, wallet: str) -> dict:
+        """App fees Relay holds for `wallet`, claimable at relay.link/claim-app-fees (read-only)."""
+        return await self._req("GET", f"/app-fees/{wallet}/balances")
+
+    async def request(self, request_id: str) -> dict | None:
+        """One request from GET /requests/v2 (status, quoted appFees, and paidAppFees actually collected)."""
+        data = await self._req("GET", "/requests/v2", params={"id": request_id})
+        reqs = data.get("requests") or []
+        return reqs[0] if reqs else None
+
     @staticmethod
     def summarize(q: dict) -> dict:
         """The parts of a quote a person needs: what arrives, the minimum, fees, and time."""

@@ -71,6 +71,41 @@ interface Bucket { network: string; asset: string; decimals: number; received: n
 interface Summary { totals: Bucket[]; by_source: { source: string; entries: number; by_asset: { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number }[] }[]; valuation: { method: string; as_of: string }; notes: Record<string, string>; warnings: string[] }
 interface LedgerItem { id: string; source: string; network: string; asset: string; amount_raw: string | null; decimals: number; estimated: boolean; status: string; reconciled_at: string | null; destination: string | null; reference: string | null; created_at: string; launch: { id: string; name: string; symbol: string; token: string | null } | null; note: string }
 
+interface RelayFees { wallet: string | null; claim_url: string; as_of: string; source: string; unavailable?: string; total_usd?: number; available_usd?: number;
+  balances?: { asset: string; chain_id: number; amount: string; amount_usd: string; minimum: string }[] }
+
+/** What Relay actually holds for the treasury, read from Relay, plus a check of ledger entries against it. */
+function RelayCard({ me, onVerified }: { me: AdminMe; onVerified: () => void }) {
+  const toast = useToast();
+  const [d, setD] = useState<RelayFees | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { api<RelayFees>("/admin/relay-fees").then(setD).catch((e) => setD({ wallet: null, claim_url: "", as_of: "", source: "", unavailable: errMsg(e) })); }, []);
+  useEffect(load, [load]);
+  const verify = () => {
+    setBusy(true);
+    api<Record<string, number>>("/admin/revenue/verify-relay", { body: {} })
+      .then((r) => {
+        const parts = [r.confirmed && `${r.confirmed} confirmed`, r.not_collected && `${r.not_collected} not collected`, r.pending && `${r.pending} still pending`, r.unknown && `${r.unknown} unknown to Relay`, r.error && `${r.error} couldn't be checked`].filter(Boolean);
+        toast("good", r.checked ? `Checked ${r.checked}: ${parts.join(", ")}` : "No unchecked route fees");
+        onVerified(); load();
+      }).catch((e) => toast("bad", errMsg(e))).finally(() => setBusy(false));
+  };
+  return (
+    <Card title="Relay app fees" icon="coins" sub={d?.as_of ? `Read from Relay · ${utc(d.as_of)}` : undefined}
+      actions={<>{me.can_change && <button className="btn sm secondary" onClick={verify} disabled={busy}>{busy ? <Spinner /> : <Icon name="check" size={14} />}Verify with Relay</button>}
+        <a className="btn sm ghost" href="https://relay.link/claim-app-fees" target="_blank" rel="noreferrer noopener">Claim <Icon name="ext" size={13} /></a></>}>
+      {!d ? <Loading rows={1} /> : d.unavailable ? <span className="muted small">{d.unavailable}</span> : (
+        <div className="stack tight">
+          <div className="row between"><span className="muted small">Available to claim</span><b className="mono">${(d.available_usd ?? 0).toFixed(2)}</b></div>
+          {(d.balances ?? []).map((b) => (
+            <div key={`${b.asset}-${b.chain_id}`} className="row between small"><span className="muted">{b.asset} · chain {b.chain_id}</span><span className="mono">{b.amount} (${Number(b.amount_usd || 0).toFixed(2)})</span></div>))}
+          <span className="muted small">Relay holds these fees until you claim them with the treasury wallet (free to Base). "Verify with Relay" marks each route-fee entry confirmed, or sets it to 0 when Relay took no fee.</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Revenue({ me }: { me: AdminMe }) {
   const toast = useToast();
   const [f, setF] = useState({ start: "", end: "", network: "", asset: "", source: "", status: "" });
@@ -155,6 +190,8 @@ function Revenue({ me }: { me: AdminMe }) {
                 </div>))}
             </div>
           </Card>
+
+          <RelayCard me={me} onVerified={load} />
 
           {sum.warnings.length > 0 && (
             <Callout tone="warn" icon="alert"><div className="stack tight"><b>Gaps and provider-held revenue</b>
