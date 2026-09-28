@@ -399,8 +399,11 @@ async def run_evm_plan(db: AsyncSession, ex: Executor, job: Job, wallet: Wallet,
 
 async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token: str, wallets: list[Wallet],
                         side: str, amount: float, mode: str, stagger_ms: int, slippage_pct: float,
-                        execution_guard: Callable[[], Awaitable[bool]] | None = None) -> None:
+                        execution_guard: Callable[[], Awaitable[bool]] | None = None,
+                        max_price_impact_pct: float | None = None, sell_raw: int | None = None) -> None:
     """Buys spend `amount` native coin per wallet; sells sell `amount` percent of each wallet's tokens.
+    `max_price_impact_pct`, when given, refuses an order whose DEX quote shows a larger price impact (only DEX
+    routes report one; bonding-curve orders are bounded by slippage).
     `execution_guard`, when given, is checked before each wallet's trade; if it returns False nothing more is sent."""
     from ..chains.base import EvmTradeRequest
 
@@ -412,7 +415,9 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
         if side == "buy":
             amt = int(round(amount * 10**18))
         else:
-            amt = await sender_rpc.erc20_balance(token, w.address) * int(round(amount * 100)) // 10_000
+            balance = await sender_rpc.erc20_balance(token, w.address)
+            # An exact token amount when given (scheduled exits), else a share of the balance.
+            amt = min(sell_raw, balance) if sell_raw is not None else balance * int(round(amount * 100)) // 10_000
         from ..chains.kyber import Graduated
 
         try:
@@ -435,6 +440,10 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
             await db.commit()
             return res
         plan, err = await plan_for(w)
+        impact = (getattr(plan, "notes", None) or {}).get("price_impact_pct") if plan is not None else None
+        if plan is not None and max_price_impact_pct is not None and impact is not None and impact > max_price_impact_pct:
+            plan, err = None, (f"Not sent: the DEX quote shows {impact:.2f}% price impact, above the plan's "
+                               f"{max_price_impact_pct:g}% limit.")
         if plan is None:
             res = SubmitResult(None, "failed", err)
             await _record(db, job, w, side, res, None)

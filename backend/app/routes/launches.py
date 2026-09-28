@@ -45,7 +45,16 @@ def _launch_out(l: Launch) -> dict:
         "quote": (l.launchpad_params or {}).get("quote"),
         "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
+        "settings": _settings(l),
     }
+
+
+def _settings(l: Launch) -> dict:
+    """The launchpad settings chosen for this launch (select options such as anti-sniping), for display."""
+    from ..services.protections import SPECIFIC
+
+    keys = {o for p in SPECIFIC.get(l.launchpad, []) for o in p.get("options", [])}
+    return {k: v for k, v in (l.launchpad_params or {}).items() if k in keys}
 
 
 def _cloned_from(l: Launch) -> dict | None:
@@ -103,6 +112,16 @@ async def launchpad_options(launchpad_id: str):
     return get_adapter(launchpad_id).options_schema()
 
 
+@router.get("/launchpads/{launchpad_id}/protections")
+async def launchpad_protections(launchpad_id: str):
+    """Anti-sniping and fair-launch settings this launchpad really offers through Helm (and the ones it doesn't)."""
+    if launchpad_id not in IMPLEMENTED:
+        raise HTTPException(404, "launchpad not available yet (see /launchpads for the roadmap)")
+    from ..services.protections import protections_for
+
+    return protections_for(launchpad_id)
+
+
 class CreateLaunch(BaseModel):
     launchpad: str = "pumpfun"
     name: str = Field(min_length=1, max_length=32)
@@ -140,8 +159,10 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
     allowed = {f["key"]: f for f in adapter.options_schema().get("fields", [])}
     for k, v in (body.options or {}).items():
         f = allowed.get(k)
-        if not f or k in ("dev_buy_sol", "slippage_pct"):
+        if k in ("dev_buy_sol", "slippage_pct"):
             continue
+        if not f:
+            raise HTTPException(400, f"'{k}' isn't a setting {body.launchpad} offers")
         if f.get("type") == "select" and v not in f.get("options", []):
             raise HTTPException(400, f"{f.get('label', k)} must be one of {f.get('options')}")
         params[k] = v
@@ -411,6 +432,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     if funding:
         summary["funding"] = funding
     summary["helm_fees"] = _helm_fees(share, funding)
+    from ..services.protections import protections_for
+
+    summary["launch_protections"] = protections_for(l.launchpad)["summary"]
     pf = build_preflight("deploy", summary, warnings)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
@@ -520,6 +544,10 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
         for w, bal in zip(wallets, await _balances(rpc, [w.address for w in wallets])):
             if bal < need:
                 warnings.append(f"{w.address} has too little SOL for a {body.amount} SOL buy plus fees.")
+    if body.side == "sell":
+        warnings += await _sell_lock_warnings(db, l, wallets, body.amount,
+                                              lambda w: rpc.get_token_balance(w.address, l.mint_address),
+                                              lambda: rpc.get_token_supply(l.mint_address))
     if body.side == "buy" and getattr(user, "channel", "web") == "bot":
         # Cap how much a hijacked or mistaken chat session can spend on buys. Larger orders go through the web app.
         since = utcnow() - timedelta(hours=24)
@@ -554,6 +582,29 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+async def _sell_lock_warnings(db: AsyncSession, l: Launch, wallets: list[Wallet], percent: float, balance_of,
+                              supply_of) -> list[str]:
+    """Refusals for sells that would dip into tokens locked by the launch's allocation plan."""
+    from ..models import LaunchAllocation
+    from ..services.allocations import lock_warning
+
+    locks = (await db.execute(select(LaunchAllocation.recipient).where(
+        LaunchAllocation.launch_id == l.id, LaunchAllocation.lock.is_(True)))).scalars().all()
+    targets = {r.lower() for r in locks}
+    out = []
+    decimals = None
+    for w in wallets:
+        if w.address.lower() not in targets:
+            continue
+        if decimals is None:
+            s = await supply_of()
+            decimals = s[1] if isinstance(s, tuple) else s["decimals"]
+        bal = int(await balance_of(w))
+        if (msg := await lock_warning(db, l, w, bal, bal * int(round(percent * 100)) // 10_000, decimals)):
+            out.append(msg)
+    return out
 
 
 async def _balances(rpc: SolanaRPC, addresses: list[str]) -> list[int]:
@@ -657,6 +708,10 @@ async def burn(launch_id: str, body: BurnBody, user: User = Depends(current_user
     _, decimals = await rpc.get_token_supply(l.mint_address)
     amount = int(raw_bal * body.percent / 100)
     warnings = [] if amount > 0 else ["Nothing to burn: token balance is zero."]
+    from ..services.allocations import lock_warning
+
+    if (msg := await lock_warning(db, l, w, int(raw_bal), amount, decimals)):
+        warnings.append(msg)
     pf = build_preflight("burn", {"launch_id": l.id, "wallet": w.address, "mint": l.mint_address,
                                   "tokens": amount / 10**decimals, "percent": body.percent,
                                   "irreversible": True, "platform_fee": "none"}, warnings)
@@ -702,6 +757,10 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
     _, decimals = await rpc.get_token_supply(l.mint_address)
     amount = int(raw_bal * body.percent / 100)
     warnings = [] if amount > 0 else ["Nothing to send: token balance is zero."]
+    from ..services.allocations import lock_warning
+
+    if (msg := await lock_warning(db, l, w, int(raw_bal), amount, decimals)):
+        warnings.append(msg)
     warnings += two_fa_warnings(user, "send_tokens")
     pf = build_preflight("send_tokens", {"launch_id": l.id, "from": w.address, "to": body.recipient,
                                          "mint": l.mint_address, "tokens": amount / 10**decimals,
@@ -860,6 +919,9 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     if funding:
         summary["funding"] = funding
     summary["helm_fees"] = _helm_fees(share, funding)
+    from ..services.protections import protections_for
+
+    summary["launch_protections"] = protections_for(l.launchpad)["summary"]
     pf = build_preflight("deploy", summary, warnings)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
@@ -924,6 +986,10 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
         for w in wallets:
             if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI)) + gas:
                 warnings.append(f"{w.address} has too little {coin} for a {body.amount} {coin} buy plus gas.")
+    else:
+        warnings += await _sell_lock_warnings(db, l, wallets, body.amount,
+                                              lambda w: sender.rpc.erc20_balance(l.mint_address, w.address),
+                                              lambda: sender.rpc.erc20_meta(l.mint_address))
     pf = build_preflight("trade", {
         "launch_id": l.id, "network": l.network, "mint": l.mint_address, "side": body.side, "amount": body.amount,
         "amount_unit": f"{coin} per wallet" if body.side == "buy" else "% of each wallet's tokens",
@@ -960,6 +1026,10 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
     meta = await erpc.erc20_meta(l.mint_address)
     amount = raw_bal * int(round(body.percent * 100)) // 10_000
     warnings = [] if amount > 0 else [f"Nothing to {'burn' if kind == 'burn' else 'send'}: token balance is zero."]
+    from ..services.allocations import lock_warning
+
+    if (msg := await lock_warning(db, l, w, raw_bal, amount, meta["decimals"])):
+        warnings.append(msg)
     if kind == "send_tokens":
         warnings += two_fa_warnings(user, "send_tokens")
         summary = {"launch_id": l.id, "network": l.network, "from": w.address, "to": to, "mint": l.mint_address,

@@ -21,6 +21,9 @@ function optLabel(key: string, o: string | number): string {
   if (key === "lp_share_pct") return o === 100 ? "100% of supply into the pool" : `${o}% into the pool, ${100 - +o}% kept`;
   if (key === "dbc_quote") return o === "SOL" ? "SOL (100 → 400 SOL market cap)" : "USDC ($16k → $69k market cap)";
   if (key === "lp_tokens") return o === "burn" ? "Burn LP tokens (lock liquidity for good)" : "Keep LP tokens (can remove liquidity)";
+  if (key === "sniper_start_pct") return `${o}% fee on the first swaps${o === 66.6777 ? " (Clanker default)" : ""}`;
+  if (key === "sniper_decay_s") return `falls to ~4% over ${o} seconds${o === 15 ? " (default)" : ""}`;
+  if (key === "anti_sniping") return o === "on" ? "On (recommended)" : "Off";
   return String(o);
 }
 
@@ -162,6 +165,8 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
           </select>
         </Field>
       ))}
+      <p className="muted small">After creating the draft, plan the token's allocation and vesting in its Launchdesk. Any
+        anti-sniping settings above are explained again, with their effect and fees, in the deploy preview.</p>
       {quotes.length > 1 && (
         <>
           <div className="divider" />

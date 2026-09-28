@@ -202,8 +202,12 @@ class BagsAdapter:
         if isinstance(req.amount, str) and req.amount.endswith("%"):
             balance = await self.rpc.get_token_balance(req.wallet_pubkey, req.mint)
             raw = balance * float(req.amount[:-1]) // 100
-        else:
-            raise AdapterError("Bags sells are sized as a percentage of the wallet's tokens")
+        else:  # token units (scheduled exits): converted with the mint's decimals, never above the balance
+            from decimal import Decimal
+
+            _, decimals = await self.rpc.get_token_supply(req.mint)
+            raw = min(int(Decimal(str(req.amount)) * (Decimal(10) ** decimals)),
+                      await self.rpc.get_token_balance(req.wallet_pubkey, req.mint))
         built = await self._swap(req.wallet_pubkey, req.mint, WSOL, int(raw), req.slippage_pct)
         built.mint = req.mint
         return built

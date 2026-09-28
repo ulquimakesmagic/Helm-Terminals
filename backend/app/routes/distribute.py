@@ -230,6 +230,18 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
         warnings.append(f"{_label(src)} needs about {_human(gas, 9 if net == 'solana' else 18):.6f} {coin} for "
                         f"network fees{' and new token accounts' if net == 'solana' else ''}.")
     launch = a.get("launch")
+    if launch is not None:
+        from ..models import LaunchAllocation
+        from ..services.allocations import lock_warning
+
+        if (msg := await lock_warning(db, launch, src, bal, total, d)):
+            warnings.append(msg)
+        locked_to = {r.lower() for r in (await db.execute(select(LaunchAllocation.recipient).where(
+            LaunchAllocation.launch_id == launch.id, LaunchAllocation.lock.is_(True)))).scalars()}
+        for t in targets:
+            if t.address.lower() in locked_to:
+                warnings.append(f"{_label(t)} has a locked allocation line; tokens sent to it would be locked too. "
+                                "Pick another wallet or change the plan first.")
     pf = build_preflight("disperse", {
         "network": net, "chain": chain_name(net), "asset": a["symbol"], "token": a["token"],
         "from": {"label": src.label or "Wallet", "address": src.address},
@@ -268,6 +280,18 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 else:
                     res = await _send_evm(ex, src, a, chunk[0][0], chunk[0][1])
                 await _record(session, j, src, "disperse", res, None)
+                if res.status == "confirmed" and launch is not None:
+                    # The supply moved to these wallets: record it in the launch's allocation plan and trail.
+                    from decimal import Decimal
+
+                    from ..deps import log_activity
+                    from .allocations import record_dispersal
+
+                    moved = [(t.address, Decimal(r) / (Decimal(10) ** d)) for t, r in chunk]
+                    await record_dispersal(session, launch, user.id, src.address, moved, j.id)
+                    await log_activity(session, user.id, "supply.dispersed", "launch", launch.id, {
+                        "job_id": j.id, "from": src.address, "signature": res.signature,
+                        "to": [{"address": a, "amount": str(x)} for a, x in moved]})
                 await session.commit()
                 results.append(res)
                 if res.status != "confirmed":
@@ -319,6 +343,11 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
                 raw = spendable if body.percent >= 100 else min(bal * int(round(body.percent * 100)) // 10_000, spendable)
             else:
                 raw = bal * int(round(body.percent * 100)) // 10_000
+                if a.get("launch") is not None:
+                    from ..services.allocations import lock_warning
+
+                    if (msg := await lock_warning(db, a["launch"], s, bal, raw, d)):
+                        warnings.append(msg)
                 if raw > 0 and await _native_raw(ex, net, s.address) < gas_each:
                     warnings.append(f"{_label(s)} needs about {_human(gas_each, nd):.6f} {coin} for the network fee.")
             if raw <= 0:

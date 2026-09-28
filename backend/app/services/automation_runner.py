@@ -117,6 +117,28 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                 await _stop_in_session(db, automation, "Account is unavailable; scheduled trades stopped.")
                 return True
 
+            from ..models import AutomationLimits
+
+            lim = (await db.execute(select(AutomationLimits).where(
+                AutomationLimits.automation_id == automation.id))).scalar_one_or_none()
+            if lim and lim.expires_at <= utcnow():
+                automation.status = "expired"
+                automation.error = (f"Expired after {automation.runs_completed} of {automation.total_orders} orders; "
+                                    "nothing more will run.")
+                await log_activity(db, user.id, "automation.expired", "automation", automation.id,
+                                   {"orders_done": automation.runs_completed, "launch_id": launch.id})
+                await db.commit()
+                return True
+            if len(automation.wallet_ids or []) > 1:
+                # Plans from before one-wallet plans: never trade several wallets in step. Pause for the owner.
+                automation.status = "paused"
+                automation.error = ("This older plan trades from several wallets at once, which Helm no longer does. "
+                                    "Cancel it and create a plan for one wallet in the launch's Launchdesk.")
+                await log_activity(db, user.id, "automation.paused", "automation", automation.id,
+                                   {"reason": "multi-wallet plan", "launch_id": launch.id})
+                await db.commit()
+                return True
+
             wallets: list[Wallet] = []
             for wallet_id in automation.wallet_ids:
                 wallet = await db.get(Wallet, wallet_id)
@@ -146,8 +168,41 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                         await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough {coin} for the remaining plan.")
                         return True
                 amount = automation.order_sol
+                sell_raw = None
+            elif lim and lim.sell_order_raw is not None:
+                # Staged exit with an explicit total: a fixed token amount per order (the last one takes the
+                # remainder), never more than the wallet holds outside any allocation lock.
+                from .allocations import locked_raw
+
+                wallet = wallets[0]
+                balance = await token_balance_raw(ex, net, launch.mint_address, wallet.address)
+                free = max(balance - await locked_raw(db, wallet, launch, lim.token_decimals, ex), 0)
+                order_raw = int(lim.sell_order_raw)
+                if remaining == 1:  # the last order also takes the rounding remainder, never more
+                    order_raw += max(0, int(lim.sell_total_raw) - int(lim.sell_order_raw) * automation.total_orders)
+                order_raw = min(order_raw, free)
+                if order_raw <= 0:
+                    automation.status = "completed"
+                    automation.error = "Stopped early: the wallet has no unlocked tokens left to sell."
+                    await log_activity(db, user.id, "automation.sell_plan_exhausted", "automation", automation.id, {
+                        "order_number": automation.runs_completed + 1, "side": "sell"})
+                    await db.commit()
+                    return True
+                if await native_balance(ex, net, wallet.address) < await fee_reserve(
+                        ex, net, remaining * (1 if net == "solana" else 2)):
+                    await _stop_in_session(db, automation, f"{wallet.label or wallet.address[:8]} no longer has enough {coin} for network fees.")
+                    return True
+                amount = order_raw / 10 ** int(lim.token_decimals or 0)  # token units
+                sell_raw = order_raw
             else:
                 sell_percent = automation.sell_percent
+                sell_raw = None
+                from .allocations import locked_tokens
+
+                if any([await locked_tokens(db, w.address, launch.id) > 0 for w in wallets]):
+                    await _stop_in_session(db, automation, "Part of this wallet's tokens are locked by the allocation "
+                                                           "plan; this older sell plan stopped. Create a new staged exit.")
+                    return True
                 sellable: list[Wallet] = []
                 for wallet in wallets:
                     token_balance = await token_balance_raw(ex, net, launch.mint_address, wallet.address)
@@ -210,6 +265,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                     db, ex, get_adapter(launch.launchpad), job, launch.mint_address, wallets,
                     automation.side, amount, "stagger", 500, automation.slippage_pct,
                     execution_guard=still_executing,
+                    max_price_impact_pct=lim.max_price_impact_pct if lim else None, sell_raw=sell_raw,
                 )
             await db.refresh(job)
             await db.refresh(automation)
@@ -228,13 +284,13 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                     automation.status = "scheduled"
                     automation.next_run_at = utcnow() + timedelta(seconds=automation.interval_seconds)
                 await log_activity(db, user.id, "automation.order_confirmed", "automation", automation.id, {
-                    "job_id": job.id, "order_number": order_number, "side": automation.side,
+                    "job_id": job.id, "order_number": order_number, "side": automation.side, "launch_id": launch.id,
                 })
             else:
                 automation.status = "failed"
                 automation.error = f"Order {order_number} ended as {job.status}; the remaining schedule was stopped."
                 await log_activity(db, user.id, "automation.order_failed", "automation", automation.id, {
-                    "job_id": job.id, "order_number": order_number, "status": job.status, "side": automation.side,
+                    "job_id": job.id, "order_number": order_number, "status": job.status, "side": automation.side, "launch_id": launch.id,
                 })
             await db.commit()
     except Exception as exc:

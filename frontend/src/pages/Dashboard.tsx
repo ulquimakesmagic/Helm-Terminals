@@ -74,7 +74,6 @@ export default function Dashboard() {
 
   const managed = wallets.data?.filter((w) => w.kind === "managed") ?? [];
   const live = launches.data?.filter((l) => l.status === "live") ?? [];
-  const activePlans = plans.data?.filter((a) => ["scheduled", "executing", "paused"].includes(a.status)) ?? [];
 
   // One list of next actions: things that need a decision first, then remaining setup. Each appears once.
   const setup: NextAction[] = [
@@ -88,10 +87,10 @@ export default function Dashboard() {
       key: `f${l.id}`, icon: "alert", tone: "bad", title: `${l.name} failed to deploy`, text: "Review what happened and retry from its workspace.", to: `/launches/${l.id}`, cta: "Open",
     })),
     ...(plans.data ?? []).filter((a) => a.status === "failed" && a.error).slice(0, 3).map((a): NextAction => ({
-      key: `a${a.id}`, icon: "calendar", tone: "bad", title: `Plan on $${a.launch_symbol ?? "token"} stopped`, text: a.error, to: "/automation", cta: "View",
+      key: `a${a.id}`, icon: "calendar", tone: "bad", title: `Plan on $${a.launch_symbol ?? "token"} stopped`, text: a.error, to: `/launches/${a.launch_id}?tab=automation`, cta: "View",
     })),
     ...(plans.data ?? []).filter((a) => a.status === "paused").slice(0, 3).map((a): NextAction => ({
-      key: `p${a.id}`, icon: "calendar", tone: "warn", title: `Plan on $${a.launch_symbol ?? "token"} is paused`, text: `${a.runs_completed} of ${a.total_orders} orders done. Resume or cancel the rest.`, to: "/automation", cta: "Review",
+      key: `p${a.id}`, icon: "calendar", tone: "warn", title: `Plan on $${a.launch_symbol ?? "token"} is paused`, text: `${a.runs_completed} of ${a.total_orders} orders done. Resume or cancel the rest.`, to: `/launches/${a.launch_id}?tab=automation`, cta: "Review",
     })),
     ...(launches.data ?? []).filter((l) => l.status === "draft").slice(0, 3).map((l): NextAction => ({
       key: `d${l.id}`, icon: "rocket", tone: "info", title: `${l.name} is ready to deploy`, text: `Draft on ${padName(l.launchpad)}. The preview shows every cost first.`, to: `/launches/${l.id}`, cta: "Review",
@@ -143,7 +142,6 @@ export default function Dashboard() {
           {noWallets ? (
             <Link to="/wallets" className="btn"><Icon name="wallet" size={15} />Create wallets</Link>
           ) : <Link to="/launches" className="btn"><Icon name="plus" size={15} />New launch</Link>}
-          <Link to="/automation" className="btn secondary"><Icon name="calendar" size={15} />Automation</Link>
         </div>
       </section>
       {error && <Callout tone="err">Dashboard figures couldn't be loaded: {error}</Callout>}
@@ -152,7 +150,6 @@ export default function Dashboard() {
         { label: "Stablecoins", value: folio?.wallets > 0 ? usd(folio.totals.stable_usd) : folioErr ? "Unavailable" : "—", hint: folio?.wallets === 0 ? "no wallets yet" : "USDC, USDG on Robinhood" },
         { label: "Network coins", value: folio?.wallets > 0 ? (folio.priced ? usd(folio.totals.native_usd) : "Unpriced") : folioErr ? "Unavailable" : "—", hint: folio?.wallets === 0 ? "no wallets yet" : "SOL, ETH, BNB at market" },
         { label: "Launches", value: launches.data ? String(launches.data.length) : launches.error ? "Unavailable" : "—", hint: launches.data ? `${live.length} live` : " " },
-        { label: "Active plans", value: plans.data ? String(activePlans.length) : plans.error ? "Unavailable" : "—", hint: plans.data ? `${plans.data.filter((a) => a.status === "completed").length} completed` : " " },
         { label: "Wallets", value: wallets.data ? String(managed.length) : wallets.error ? "Unavailable" : "—", hint: wallets.data ? `${wallets.data.length - managed.length} watch-only` : " " },
       ]} />
 
@@ -247,25 +244,6 @@ export default function Dashboard() {
         </div>
 
         <div className="col">
-          <Card title="Scheduled plans" icon="calendar" sub="Finite buys and staged sells" actions={<Link to="/automation" className="btn sm ghost">Open<Icon name="arrowright" size={13} /></Link>}>
-            {plans.error && !plans.data ? <LoadError what="Plans" error={plans.error} onRetry={plans.load} busy={plans.busy} />
-              : !plans.data ? <Loading rows={2} /> : activePlans.length === 0 ? (
-                <p className="muted small">No active plans. {live.length ? "You can schedule a capped set of buys or staged sells on a live launch." : "Plans run on a live launch."}</p>
-              ) : activePlans.slice(0, 3).map((a, i) => {
-                const pct = a.total_orders ? Math.min(100, (a.runs_completed / a.total_orders) * 100) : 0;
-                return (
-                  <div className="stack tight" key={a.id} style={{ padding: "10px 0", borderTop: i ? "1px solid var(--line)" : 0 }}>
-                    <div className="row between nowrap">
-                      <strong className="truncate">{a.launch_name || "Launch"} <span className="muted mono">${a.launch_symbol}</span></strong>
-                      <StatusBadge status={a.status} />
-                    </div>
-                    <div className="bar thin" aria-hidden="true"><div style={{ width: `${pct}%` }} /></div>
-                    <div className="muted small">{planLine(a)}</div>
-                  </div>
-                );
-              })}
-          </Card>
-
           <Card title="Recent activity" icon="activity" sub="Sign-ins are left out here" flush actions={<Link to="/activity" className="btn sm ghost">All<Icon name="arrowright" size={13} /></Link>}>
             {feed.error && !feed.data ? <LoadError what="Activity" error={feed.error} onRetry={feed.load} busy={feed.busy} />
               : !feed.data ? <Loading /> : recent.length === 0 ? <Empty icon="activity" title="Nothing yet" text="Launches, trades and transfers are logged here." /> : (
@@ -372,12 +350,3 @@ function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: nu
   );
 }
 
-function planLine(a: any): string {
-  const done = `${a.runs_completed ?? 0} of ${a.total_orders ?? 0}`;
-  if (a.side === "sell") {
-    const exit = typeof a.planned_position_exit_pct === "number" ? ` · up to ${fmt(a.planned_position_exit_pct, 1)}% of holdings` : "";
-    return `${done} sells · ${a.sell_percent ?? "?"}% each${exit}`;
-  }
-  const planned = typeof a.planned_trade_sol === "number" ? ` · ${fmt(a.planned_trade_sol, 3)} ${a.coin ?? "SOL"} planned` : "";
-  return `${done} buys${planned}`;
-}

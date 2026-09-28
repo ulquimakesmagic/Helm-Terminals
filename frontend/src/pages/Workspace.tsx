@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import MarketTerminal from "../components/Market";
+import LaunchAutomation from "../components/LaunchAutomation";
+import Allocations from "../components/Allocations";
 import { DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
 import { ChainLabel, PadLabel } from "../components/marks";
@@ -107,8 +109,7 @@ const BUY_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
 const SELL_PRESETS = ["10", "25", "50", "75", "100"];
 
 /** Bottom panel of the terminal: one section at a time, like a trading terminal's tables. */
-function WsTabs({ tabs }: { tabs: [string, string, React.ReactNode][] }) {
-  const [on, setOn] = useState(tabs[0][0]);
+function WsTabs({ tabs, on, setOn }: { tabs: [string, string, React.ReactNode][]; on: string; setOn: (k: string) => void }) {
   const cur = tabs.find((t) => t[0] === on) ?? tabs[0];
   return (
     <section className="ws-tabs">
@@ -126,6 +127,9 @@ function WsTabs({ tabs }: { tabs: [string, string, React.ReactNode][] }) {
 export default function Workspace() {
   const { id } = useParams();
   const nav = useNavigate();
+  const [search, setSearch] = useSearchParams();
+  const tab = search.get("tab") ?? "wallets";
+  const setTab = (k: string) => setSearch((p) => { const n = new URLSearchParams(p); n.set("tab", k); return n; }, { replace: true });
   const toast = useToast();
   const [ws, setWs] = useState<any>(null);
   const [allWallets, setAllWallets] = useState<any[]>([]);
@@ -365,6 +369,8 @@ export default function Workspace() {
         { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
       ]} />
   );
+  const automationCard = <LaunchAutomation launchId={l.id} network={l.network} symbol={l.symbol} wallets={ws.wallets} live={live} />;
+  const allocationsCard = <Allocations launch={l} wallets={ws.wallets} onChanged={load} />;
   const terminal = !!l.mint_address;
   // A copied draft shows the market of the token it was copied from, above the usual draft layout.
   const sourceMarket = !l.mint_address && l.status === "draft" && !!l.cloned_from;
@@ -397,7 +403,7 @@ export default function Workspace() {
               Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
-          {live && <Link to={`/automation?launch=${id}`} className="btn secondary"><Icon name="calendar" size={14} />Schedule</Link>}
+          {live && <button className="btn secondary" onClick={() => { setTab("automation"); document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" }); }}><Icon name="calendar" size={14} />Automation</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
@@ -437,10 +443,12 @@ export default function Workspace() {
             <h2 id="pos-h" className="sec-kicker"><Icon name="wallet" size={12} />Your position · from your Helm wallets</h2>
             {position}
           </section>
-          <WsTabs tabs={[
+          <WsTabs on={tab} setOn={setTab} tabs={[
             ["wallets", `Wallets${ws.wallets.length ? ` · ${ws.wallets.length}` : ""}`, walletsCard],
+            ["automation", "Automation", automationCard],
+            ["allocations", "Allocation & vesting", allocationsCard],
             ["tx", `Transactions${ws.transactions.length ? ` · ${ws.transactions.length}` : ""}`, txCard],
-            ["supply", "Supply", transparencyCard],
+            ["supply", "Holders", transparencyCard],
             ...(opsCard ? [["ops", "Token operations", opsCard] as [string, string, React.ReactNode]] : []),
             ["perf", "Performance", perfCard],
           ]} />
@@ -453,6 +461,10 @@ export default function Workspace() {
             <div className="col">{walletsCard}</div>
             <div className="col">{ticketCard}{transparencyCard}{opsCard}{perfCard}</div>
           </div>
+          <section aria-labelledby="alloc-h" className="stack">
+            <h2 id="alloc-h" className="sec-kicker"><Icon name="pie" size={12} />Allocation, vesting and launch protections</h2>
+            {allocationsCard}
+          </section>
           {txCard}
         </>
       )}

@@ -74,6 +74,8 @@ class MeteoraDbcAdapter:
                  "hint": "Studio launches have no dev buy; buy right after launch from the workspace."},
                 {"key": "dbc_quote", "type": "select", "options": list(QUOTES), "default": "SOL", "label": "Curve currency",
                  "hint": "SOL: opens at 100 SOL market cap, graduates at 400 SOL. USDC: $16k to $69k."},
+                {"key": "anti_sniping", "type": "select", "options": ["on", "off"], "default": "on",
+                 "label": "Anti-sniping", "hint": "Jupiter Studio's anti-sniping setting for the new pool."},
                 {"key": "slippage_pct", "type": "number", "min": 0, "max": 50, "default": 10},
             ],
             "socials": ["twitter", "telegram", "website"],
@@ -89,7 +91,9 @@ class MeteoraDbcAdapter:
         unit = "SOL" if q["mint"] == WSOL else "USD"
         return {"curve": f"Meteora bonding curve from {q['initial']:,} to {q['migration']:,} {unit} market cap, "
                          "then a locked Meteora pool",
-                "pool_fee": "1% per trade, with Jupiter's anti-sniping fee in the first moments",
+                "pool_fee": ("1% per trade, plus Jupiter Studio's anti-sniping protection in the first moments (it "
+                             "raises the fee early buyers pay; set by Jupiter, paid to the pool)"
+                             if params.get("anti_sniping", "on") != "off" else "1% per trade; anti-sniping is off"),
                 "steps": "Jupiter Studio creates the transaction; Helm signs it with your dev wallet"}
 
     # --- HTTP -----------------------------------------------------------------------------------
@@ -143,7 +147,8 @@ class MeteoraDbcAdapter:
                 "lockedVestingParam": {"totalLockedVestingAmount": 0, "cliffUnlockAmount": 0, "numberOfVestingPeriod": 0,
                                        "totalVestingDuration": 0, "cliffDurationFromMigrationTime": 0},
             },
-            "antiSniping": True, "fee": {"feeBps": 100}, "isLpLocked": True,
+            "antiSniping": (req.options or {}).get("anti_sniping", "on") != "off", "fee": {"feeBps": 100},
+            "isLpLocked": True,
             "tokenName": req.name, "tokenSymbol": req.symbol, "tokenImageContentType": ctype, "creator": req.dev_pubkey,
         })
         for need in ("transaction", "mint", "imagePresignedUrl", "metadataPresignedUrl"):
@@ -191,11 +196,15 @@ class MeteoraDbcAdapter:
     async def build_sell_tx(self, req: TradeRequest) -> BuiltTx:
         if self.rpc is None:
             raise AdapterError("sells need an RPC connection to read your token balance")
-        if not (isinstance(req.amount, str) and req.amount.endswith("%")):
-            raise AdapterError("sells are sized as a percentage of the wallet's tokens")
         balance = await self.rpc.get_token_balance(req.wallet_pubkey, req.mint)
-        built = await self._swap(req.wallet_pubkey, req.mint, WSOL, int(balance * float(req.amount[:-1]) // 100),
-                                 req.slippage_pct)
+        if isinstance(req.amount, str) and req.amount.endswith("%"):
+            raw = int(balance * float(req.amount[:-1]) // 100)
+        else:  # token units (scheduled exits), never above the balance
+            from decimal import Decimal
+
+            _, decimals = await self.rpc.get_token_supply(req.mint)
+            raw = min(int(Decimal(str(req.amount)) * (Decimal(10) ** decimals)), balance)
+        built = await self._swap(req.wallet_pubkey, req.mint, WSOL, raw, req.slippage_pct)
         built.mint = req.mint
         return built
 

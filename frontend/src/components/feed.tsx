@@ -39,6 +39,13 @@ const KINDS: Record<string, Meta> = {
   "automation.order_confirmed": { icon: "checkcircle", tone: "good", label: "Scheduled order confirmed", group: "transactions" },
   "automation.order_failed": { icon: "alert", tone: "bad", label: "Scheduled plan stopped", group: "transactions" },
   "automation.sell_plan_exhausted": { icon: "checkcircle", tone: "", label: "Scheduled sells finished: nothing left to sell", group: "transactions" },
+  "automation.paused": { icon: "calendar", tone: "warn", label: "Plan paused", group: "transactions" },
+  "automation.resumed": { icon: "calendar", tone: "info", label: "Plan resumed", group: "transactions" },
+  "automation.cancelled": { icon: "calendar", tone: "", label: "Plan cancelled", group: "transactions" },
+  "automation.edited": { icon: "edit", tone: "", label: "Plan tightened", group: "transactions" },
+  "automation.expired": { icon: "calendar", tone: "", label: "Plan expired", group: "transactions" },
+  "allocation.updated": { icon: "pie", tone: "info", label: "Allocation plan updated", group: "launches" },
+  "supply.dispersed": { icon: "send", tone: "info", label: "Supply dispersed to your wallets", group: "transactions" },
   "disperse.confirmed": { icon: "send", tone: "info", label: "Disperse sent", group: "transactions" },
   "consolidate.confirmed": { icon: "download", tone: "info", label: "Consolidate sent", group: "transactions" },
   "bridge.confirmed": { icon: "globe", tone: "info", label: "Cross-chain route sent", group: "transactions" },
@@ -125,7 +132,7 @@ export function FeedItem({ a, items, timeStyle = "relative" }: { a: ActivityRow;
         <div className="feed-sub">
           {d && <span>{d}</span>}
           {a.ref_type === "launch" && a.ref_id && <Link to={`/launches/${a.ref_id}`}>Open launch</Link>}
-          {a.ref_type === "automation" && <Link to="/automation">Open plans</Link>}
+          {a.ref_type === "automation" && (a.payload as any)?.launch_id && <Link to={`/launches/${(a.payload as any).launch_id}?tab=automation`}>Open in Launchdesk</Link>}
         </div>
       )}
     </div>

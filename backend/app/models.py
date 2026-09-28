@@ -417,3 +417,52 @@ class AutomationTerms(Base):
     trade_fee_bps_solana: Mapped[int] = mapped_column(Integer, default=0)
     trade_fee_bps_evm_dex: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AutomationLimits(Base):
+    """The explicit limits a position plan was confirmed with (plans from before this table have none: they keep
+    their original per-order size and run until done). One wallet per plan."""
+    __tablename__ = "automation_limits"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    automation_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    wallet_id: Mapped[str] = mapped_column(String(32))
+    budget: Mapped[float | None] = mapped_column(nullable=True)  # buys: total native coin the plan may spend
+    sell_total_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)  # sells: total tokens to sell
+    sell_order_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)  # sells: tokens per order
+    token_decimals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_price_impact_pct: Mapped[float] = mapped_column(default=5.0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LaunchAllocation(Base):
+    """One line of a launch's declared supply allocation. Amounts are whole-token decimal strings so they reconcile
+    exactly to the supply. `lock` = Helm refuses to move the locked part out of the recipient wallet, which only
+    works for the owner's own Helm-managed wallets; any other schedule is a public declaration, not enforced."""
+    __tablename__ = "launch_allocations"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    launch_id: Mapped[str] = mapped_column(ForeignKey("launches.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    category: Mapped[str] = mapped_column(String(24))
+    label: Mapped[str] = mapped_column(String(80), default="")
+    recipient: Mapped[str] = mapped_column(String(64), default="")  # empty for "public sale / curve"
+    amount: Mapped[str] = mapped_column(String(80))  # whole tokens, exact decimal string
+    unlock: Mapped[str] = mapped_column(String(16), default="immediate")  # immediate | date | linear
+    unlock_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # date: unlock time; linear: cliff
+    unlock_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # linear: fully unlocked
+    conditions: Mapped[str] = mapped_column(String(280), default="")
+    lock: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(String(16), default="manual")  # manual | dispersal
+    reference: Mapped[str | None] = mapped_column(String(120), nullable=True)  # job id for dispersals
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AutomationLaunchSlot(Base):
+    """At most one active position plan per launch, enforced by the database (unique launch_id) so two servers
+    can't both accept a plan. The slot points at the plan holding it; a finished plan's slot can be taken over."""
+    __tablename__ = "automation_launch_slots"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    launch_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    automation_id: Mapped[str] = mapped_column(String(32))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

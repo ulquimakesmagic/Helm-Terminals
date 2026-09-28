@@ -43,6 +43,17 @@ CLANKER_CHAINS = {
 TICK_START, TICK_UPPER, TICK_SPACING = -230400, -120000, 200
 POOL_FEE_UNI_BPS = 10_000  # 1% (Uniswap fee units: 1_000_000 = 100%)
 SNIPER = (666777, 41673, 15)  # starting fee, ending fee (uni bps), seconds to decay
+# Launch protection: Clanker's descending sniper fee (MEV module). Clanker documents a starting fee of up to 80% and
+# a decay of at most 2 minutes. The fee is an LP fee on the first swaps, so it goes to the reward recipients.
+SNIPER_START_PCT = [66.6777, 80, 50, 25, 10]
+SNIPER_DECAY_S = [15, 30, 60, 120, 5]
+
+
+def sniper_params(params: dict) -> tuple[int, int, int]:
+    start = float(params.get("sniper_start_pct") or SNIPER_START_PCT[0])
+    decay = int(params.get("sniper_decay_s") or SNIPER_DECAY_S[0])
+    start_bps = int(round(start * 10_000))
+    return (start_bps, min(SNIPER[1], start_bps), decay)
 FEE_PREF_BOTH = 0
 
 TOKEN_CONFIG_T = "(address,string,string,bytes32,string,string,string,uint256)"
@@ -109,6 +120,11 @@ class ClankerAdapter:
         return {
             "fields": [
                 {"key": "dev_buy_sol", "type": "number", "min": 0, "label": "Dev buy (ETH)", "default": 0},
+                {"key": "sniper_start_pct", "type": "select", "options": SNIPER_START_PCT, "default": SNIPER_START_PCT[0],
+                 "label": "Sniper fee at launch (%)",
+                 "hint": "Clanker's anti-sniping fee on the first swaps, falling to about 4% over the decay time."},
+                {"key": "sniper_decay_s", "type": "select", "options": SNIPER_DECAY_S, "default": SNIPER_DECAY_S[0],
+                 "label": "Sniper fee decay (seconds)"},
                 {"key": "slippage_pct", "type": "number", "min": 0, "max": 50, "default": 10},
             ],
             "socials": ["twitter", "telegram", "website"],
@@ -121,7 +137,9 @@ class ClankerAdapter:
         notes = {
             "pool": "Uniswap V4 pool paired with WETH, liquidity locked in Clanker's locker for good; no bonding curve",
             "pool_fee": "1% per trade; Clanker takes 20% on top of the LP fees",
-            "sniper_fees": "about 67% for the first seconds, falling to about 4% over 15 seconds",
+            "sniper_fees": "{:g}% on the first swaps, falling to about 4.17% over {} seconds (Clanker's anti-sniping "
+                           "fee; it is paid as LP fees, which go to the reward recipients: you, plus Helm's reward share if one is shown)".format(
+                               sniper_params(params)[0] / 10_000, sniper_params(params)[2]),
             "rewards": f"{creator:g}% of LP rewards to your dev wallet, claimable in WETH and the token",
         }
         if share:
@@ -146,7 +164,7 @@ class ClankerAdapter:
         locker = (self.cfg["locker"], [r[0] for r in recipients], [r[1] for r in recipients],
                   [r[2] for r in recipients], [TICK_START], [TICK_UPPER], [10_000],
                   abi_encode(["(uint8[])"], [([FEE_PREF_BOTH] * len(recipients),)]))
-        mev = (self.cfg["mev"], abi_encode(["(uint24,uint24,uint256)"], [SNIPER]))
+        mev = (self.cfg["mev"], abi_encode(["(uint24,uint24,uint256)"], [sniper_params(req.options or {})]))
         extensions = []
         if dev_buy:
             data = abi_encode(["(address,address,uint24,int24,address)", "uint128", "address"],

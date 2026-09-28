@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     automation_max_budget_sol: float = Field(default=10.0, gt=0, le=100)
     # Per-chain caps for EVM scheduled buys, in each chain's native coin ("network=amount,...").
     automation_max_budgets: str = "base=2,ethereum=2,robinhood=2,bsc=10"
+    # Smallest order a position plan may place, per chain (native coin). Stops plans made of many tiny trades.
+    automation_min_orders: str = "solana=0.01,base=0.0005,ethereum=0.001,robinhood=0.0005,bsc=0.001"
+    automation_max_days: int = Field(default=30, ge=1, le=365)  # longest a plan may run before it expires
 
     run_jobs_inline: bool = False  # tests: await jobs in the request instead of a background task
     cors_origins: str = "http://localhost:5173"

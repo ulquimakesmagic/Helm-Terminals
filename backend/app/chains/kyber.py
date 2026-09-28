@@ -94,6 +94,12 @@ class KyberSwap:
                                  + abi_encode(["address", "uint256"], [router, amount])))
         steps.append(EvmStep(side, router, b"", value=amount if side == "buy" else 0, build=build))
         notes = {"route": "KyberSwap", "expected_out": first["routeSummary"].get("amountOut")}
+        try:  # price impact from the quote's own USD values (includes pool fees)
+            usd_in, usd_out = float(first["routeSummary"]["amountInUsd"]), float(first["routeSummary"]["amountOutUsd"])
+            if usd_in > 0:
+                notes["price_impact_pct"] = max(0.0, (usd_in - usd_out) / usd_in * 100)
+        except (KeyError, TypeError, ValueError):
+            pass
         if self.fee_bps:
             # Helm's cut, in native wei: exact on buys (a share of the amount going in); on sells an estimate from the
             # quoted output, which the router returns after its fee.
