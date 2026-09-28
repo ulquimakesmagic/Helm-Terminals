@@ -79,9 +79,14 @@ class TurnkeySigner:
         return activity.get("result") or {}
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef:
-        evm = network in EVM_NETWORKS
-        if network != "solana" and not evm:
-            raise SigningError(f"Turnkey signer doesn't support {network}")
+        from .base import family
+
+        fam = family(network)
+        evm = fam in ("evm", "tron")  # secp256k1
+        # TRON has its own Turnkey address format. NEAR has none, so its ed25519 key is created with the Solana
+        # format (base58 of the public key) and shown as the NEAR implicit account (hex of the same public key).
+        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "tron": "ADDRESS_FORMAT_TRON",
+                          "solana": "ADDRESS_FORMAT_SOLANA", "near": "ADDRESS_FORMAT_SOLANA"}[fam]
         result = await self._submit(
             "/public/v1/submit/create_private_keys",
             "ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2",
@@ -93,7 +98,7 @@ class TurnkeySigner:
                         "privateKeyName": f"helm:{user_id}:{network}:{label}:{secrets.token_hex(3)}"[:100],
                         "curve": "CURVE_SECP256K1" if evm else "CURVE_ED25519",
                         "privateKeyTags": [],
-                        "addressFormats": ["ADDRESS_FORMAT_ETHEREUM" if evm else "ADDRESS_FORMAT_SOLANA"],
+                        "addressFormats": [address_format],
                     }
                 ]
             },
@@ -102,7 +107,12 @@ class TurnkeySigner:
         if not found or not found.get("privateKeys"):
             raise SigningError("Turnkey created no key (unexpected response shape)")
         pk = found["privateKeys"][0]
-        return WalletRef(signer_ref=pk["privateKeyId"], address=pk["addresses"][0]["address"])
+        address = pk["addresses"][0]["address"]
+        if fam == "near":
+            from ..chains.near import implicit_from_solana_style
+
+            address = implicit_from_solana_style(address)
+        return WalletRef(signer_ref=pk["privateKeyId"], address=address)
 
     async def _whoami(self) -> str:
         """The Turnkey user ID behind this API key (import activities are bound to a user)."""

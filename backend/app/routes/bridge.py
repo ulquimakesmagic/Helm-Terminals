@@ -47,6 +47,10 @@ async def route(body: RouteBody, user: User = Depends(current_user), db: AsyncSe
         return prior
     src = await owned_wallet(db, user, body.from_wallet_id)
     dst = await owned_wallet(db, user, body.to_wallet_id)
+    from .wallets import _core_only
+
+    _core_only(src.network)
+    _core_only(dst.network)
     if src.network == dst.network and body.from_asset == body.to_asset:
         raise HTTPException(400, "that's a plain transfer; use disperse or consolidate for same-chain moves")
     from_sym = _currency(src.network, body.from_asset)[0]

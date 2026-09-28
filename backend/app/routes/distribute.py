@@ -175,6 +175,9 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
     if (prior := await find_replay(db, user, body)):
         return prior
     src = await owned_wallet(db, user, body.from_wallet_id)
+    from .wallets import _core_only
+
+    _core_only(src.network)
     if len(set(body.to_wallet_ids)) != len(body.to_wallet_ids):
         raise HTTPException(400, "each destination wallet can only be listed once")
     if src.id in body.to_wallet_ids:
@@ -316,6 +319,9 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
     if body.to_wallet_id in body.from_wallet_ids:
         raise HTTPException(400, "the destination wallet can't also be a source")
     dest = await owned_wallet(db, user, body.to_wallet_id)
+    from .wallets import _core_only
+
+    _core_only(dest.network)
     sources = [await owned_wallet(db, user, wid) for wid in body.from_wallet_ids]
     net = dest.network
     if any(s.network != net for s in sources):

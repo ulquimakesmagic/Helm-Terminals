@@ -33,6 +33,20 @@ class Signer(Protocol):
 EVM_NETWORKS = frozenset({"base", "bsc", "ethereum", "robinhood"})
 
 
+def family(network: str) -> str:
+    """solana | evm | tron | near. Arc networks are EVM; TRON and NEAR have their own key and address formats."""
+    if network == "solana":
+        return "solana"
+    if network in EVM_NETWORKS:
+        return "evm"
+    from ..chains.networks import EXTRA_NETWORKS
+
+    n = EXTRA_NETWORKS.get(network)
+    if n is None:
+        raise SigningError(f"unknown network {network}")
+    return n.family
+
+
 def parse_private_key(network: str, secret: str) -> tuple[bytes, str]:
     """(32-byte private key, address) from a key as wallets export it. Errors describe the format, never the input.
 

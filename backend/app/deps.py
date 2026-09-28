@@ -77,7 +77,25 @@ def valid_address_for(network: str, addr: str) -> bool:
         return valid_address(addr)
     if network in EVM_NETWORKS:
         return len(addr) == 42 and addr[:2].lower() == "0x" and all(c in "0123456789abcdefABCDEF" for c in addr[2:])
-    return False
+    from .chains.networks import EXTRA_NETWORKS
+
+    net = EXTRA_NETWORKS.get(network)
+    if net is None:
+        return False
+    if net.family == "tron":
+        from .chains import tron
+
+        return tron.valid_address(addr)
+    if net.family == "near":
+        from .chains import near
+
+        return near.valid_account(addr)
+    from eth_utils import is_checksum_address  # Arc: EVM addresses, checksum enforced when mixed-case
+
+    body = addr[2:] if addr[:2] == "0x" else ""
+    if len(body) != 40 or any(c not in "0123456789abcdefABCDEF" for c in body):
+        return False
+    return body in (body.lower(), body.upper()) or is_checksum_address(addr)
 
 
 def valid_address(addr: str) -> bool:

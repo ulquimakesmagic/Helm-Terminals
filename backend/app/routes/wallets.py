@@ -68,6 +68,14 @@ class WatchWallet(BaseModel):
     folder_id: str | None = None
 
 
+def _core_only(network: str) -> None:
+    """TRON, NEAR and Arc wallets move funds through /chains/{network}/transfer, which knows their fee models."""
+    from ..chains.networks import is_extra
+
+    if is_extra(network):
+        raise HTTPException(400, "use the network's own transfer for TRON, NEAR and Arc wallets")
+
+
 @router.get("/wallets")
 async def list_wallets(with_balances: bool = False, user: User = Depends(current_user),
                        db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc),
@@ -83,6 +91,20 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
 
     async def read(w: Wallet):
         bal = stable = None
+        from ..chains.networks import EXTRA_NETWORKS, extra_enabled
+
+        if w.network in EXTRA_NETWORKS:  # TRON, NEAR, Arc: native balance in its own units
+            out = _wallet_out(w, mains=mains)
+            if w.network in extra_enabled():
+                from ..services import extra_chains as xc
+
+                async with sem:
+                    try:
+                        raw = await xc.native_balance(ex, w.network, w.address)
+                        out["balance_native"] = xc.human(raw, EXTRA_NETWORKS[w.network].decimals)
+                    except Exception:
+                        out["balance_native"] = None
+            return out
         if w.kind != "managed" and w.network not in ("solana", *EVM_CHAINS):
             return _wallet_out(w, mains=mains)
         async with sem:
@@ -108,7 +130,12 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
 async def create_wallets(body: CreateWallets, user: User = Depends(current_user),
                          db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
     if body.network != "solana" and body.network not in EVM_CHAINS:
-        raise HTTPException(400, f"unsupported network {body.network}")
+        from ..chains.networks import require_enabled
+
+        try:
+            require_enabled(body.network)
+        except HTTPException:
+            raise HTTPException(400, f"unsupported network {body.network}")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     await _check_room(db, user, body.count)
@@ -127,6 +154,10 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
 
 @router.post("/wallets/watch", status_code=201)
 async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    from ..chains.networks import is_extra, require_enabled
+
+    if is_extra(body.network):
+        require_enabled(body.network)
     if not valid_address_for(body.network, body.address):
         raise HTTPException(400, f"invalid {body.network} address")
     if body.folder_id:
@@ -406,6 +437,7 @@ async def fund(body: FundBody, user: User = Depends(current_user), db: AsyncSess
     if (prior := await find_replay(db, user, body)):
         return prior
     src = await owned_wallet(db, user, body.funder_wallet_id)
+    _core_only(src.network)
     targets = [(await owned_wallet(db, user, a.wallet_id, managed=False), a.sol) for a in body.allocations]
     # A watch-only target is an address someone typed in, not a wallet Helm holds the key to: sending there is money
     # leaving the account, so it needs 2FA exactly like a withdrawal.
@@ -449,6 +481,7 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
         raise HTTPException(400, "set all=true or amount_sol")
     wallets = [await owned_wallet(db, user, wid) for wid in body.wallet_ids]
     network = wallets[0].network
+    _core_only(network)
     if any(w.network != network for w in wallets):
         raise HTTPException(400, "withdraw from one network at a time")
     if not valid_address_for(network, body.destination):

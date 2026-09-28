@@ -24,15 +24,21 @@ class LocalDevSigner:
         self._f = Fernet(fernet_key)
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef:
-        if network in EVM_NETWORKS:
+        from .base import family
+
+        fam = family(network)
+        if fam in ("evm", "tron"):  # a new secp256k1 key; TRON shows it in its own address format
             pk = eth_keys.PrivateKey(os.urandom(32))
             token = self._f.encrypt(pk.to_bytes()).decode()
-            return WalletRef(signer_ref=EVM_PREFIX + token, address=pk.public_key.to_checksum_address())
-        if network != "solana":
-            raise SigningError(f"LocalDevSigner doesn't support {network}")
-        kp = Keypair()
+            address = pk.public_key.to_checksum_address()
+            if fam == "tron":
+                from ..chains.tron import address_from_evm
+
+                address = address_from_evm(address)
+            return WalletRef(signer_ref=EVM_PREFIX + token, address=address)
+        kp = Keypair()  # a new ed25519 key: Solana address, or a NEAR implicit account (hex public key)
         token = self._f.encrypt(bytes(kp)).decode()
-        return WalletRef(signer_ref=PREFIX + token, address=str(kp.pubkey()))
+        return WalletRef(signer_ref=PREFIX + token, address=bytes(kp.pubkey()).hex() if fam == "near" else str(kp.pubkey()))
 
     async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
         """Take custody of an existing key the user pasted. The key is only ever held encrypted, like created ones."""

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { fmt, short } from "../api";
-import { chainOf, padName } from "../chains";
+import { chainOf, isExtraChain, padName } from "../chains";
 
 /**
  * Turns a server preflight into the few facts a person must check before confirming: the headline amount, the
@@ -28,6 +28,8 @@ export function summarize(pre: any, network: string): ReviewSummary | null {
   const coin = typeof pre.coin === "string" ? pre.coin : chain.native;
   const gas = num(pre.max_gas_each) ?? num(pre.max_gas) ?? num(pre.network_fees_max);
   const gasCell: [string, ReactNode][] = gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`]] : [];
+
+  if (isExtraChain(pre.network) && (pre.kind === "withdraw" || pre.kind === "send_tokens")) return extraTransfer(pre);
 
   switch (pre.kind) {
     case "deploy": {
@@ -164,4 +166,25 @@ export function ReviewHero({ s }: { s: ReviewSummary }) {
       )}
     </div>
   );
+}
+
+/** TRON / NEAR / Arc transfers: one wallet, one recipient, an exact decimal amount and chain-specific fee estimates. */
+function extraTransfer(pre: any): ReviewSummary {
+  const cells: [string, ReactNode][] = [["From", short(pre.from)]];
+  const est: [string, string, string][] = [
+    ["activation_fee_trx", "Account activation", "TRX"], ["bandwidth_fee_trx", "Bandwidth burn", "TRX"],
+    ["energy_fee_trx", "Energy burn", "TRX"], ["fee_limit_trx", "Fee limit (max)", "TRX"],
+    ["network_fee_trx_about", "Network fee (about)", "TRX"], ["storage_deposit_near", "Storage deposit", "NEAR"],
+    ["gas_fee_near_max", "Gas (max)", "NEAR"], ["gas_fee_usdc_max", "Gas (max)", "USDC"],
+  ];
+  for (const [k, label, unit] of est) if (typeof pre[k] === "string" && (pre[k] !== "0" || k === "network_fee_trx_about")) cells.push([label, `${pre[k]} ${unit}`]);
+  cells.push(["Platform fee", fee(pre.platform_fee)]);
+  const next = ["Funds leave this wallet for the recipient. Transfers can't be reversed."];
+  if (pre.recipient_note) next.push(String(pre.recipient_note));
+  if (pre.finality) next.push(String(pre.finality));
+  return {
+    label: `Send on ${pre.chain ?? chainOf(pre.network).name}`, value: String(pre.amount), unit: pre.asset,
+    sub: <>To <span className="mono">{short(pre.to)}</span>{pre.token ? <> · token <span className="mono">{short(pre.token)}</span></> : null}</>,
+    cells, next, tone: "danger",
+  };
 }

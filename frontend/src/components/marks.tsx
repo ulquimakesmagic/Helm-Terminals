@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { chainOf, padName } from "../chains";
+import { chainOf, isExtraChain, padName } from "../chains";
 
 /*
  * Brand marks for chains and launchpads: the projects' own logo files, stored locally under
@@ -50,14 +50,19 @@ function reportProblem(what: string, detail: string) {
 }
 
 /** One logo in a fixed square tile. Decorative by default; `label` makes it an image with that accessible name. */
-function BrandTile({ kind, brand, name, size, label, className }: {
-  kind: "chains" | "launchpads"; brand: string; name: string; size: number; label?: boolean; className: string;
+function BrandTile({ kind, brand, name, size, label, className, text }: {
+  kind: "chains" | "launchpads"; brand: string; name: string; size: number; label?: boolean; className: string; text?: string;
 }) {
   const src = asset(kind, brand);
   const [failed, setFailed] = useState(false);
   const t = TREATMENT[`${kind}/${brand}`] ?? { fit: "pad" };
   const radius = t.round ? "50%" : Math.max(4, Math.round(size * 0.28));
   const a11y = label ? { role: "img", "aria-label": name } : { "aria-hidden": true as const };
+  if ((!src || failed) && text) {
+    // No verified logo file (TRON, NEAR, Arc): a text mark instead of a guessed logo.
+    return <span className={`brand ${className} brand-text`} title={name} {...a11y}
+      style={{ width: size, height: size, borderRadius: radius, fontSize: Math.max(6, Math.min(size * 0.34, (size - 3) / (text.length * 0.62))) }}>{text}</span>;
+  }
   if (!src || failed) {
     if (!src) reportProblem(`${kind}/${brand}`, "no verified logo file; showing an empty tile beside the name");
     // Neutral, empty tile keeps alignment; in development a missing or broken file is outlined so it's noticed.
@@ -77,7 +82,8 @@ function BrandTile({ kind, brand, name, size, label, className }: {
 /** A chain's logo. Decorative unless `label` is set (use it when no chain name is printed next to it). */
 export function ChainMark({ network, size = 18, label }: { network?: string | null; size?: number; label?: boolean }) {
   const c = chainOf(network);
-  return <BrandTile kind="chains" brand={c.id} name={c.name} size={size} label={label} className="chain-mark" />;
+  return <BrandTile kind="chains" brand={c.id} name={c.name} size={size} label={label} className="chain-mark"
+    text={isExtraChain(c.id) ? c.short : undefined} />;
 }
 
 /** A launchpad's own logo. The chain is shown separately (ChainMark / PadLabel `showChain`), never baked in. */

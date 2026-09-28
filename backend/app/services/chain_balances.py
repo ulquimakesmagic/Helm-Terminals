@@ -11,11 +11,23 @@ SOL_FEE_RESERVE = 0.01  # SOL kept aside per Solana transaction (priority fees, 
 
 
 def native_coin(network: str) -> str:
-    return "SOL" if network == "solana" else EVM_CHAINS[network]["native"]
+    if network == "solana":
+        return "SOL"
+    if network in EVM_CHAINS:
+        return EVM_CHAINS[network]["native"]
+    from ..chains.networks import EXTRA_NETWORKS
+
+    return EXTRA_NETWORKS[network].native
 
 
 def chain_name(network: str) -> str:
-    return "Solana" if network == "solana" else EVM_CHAINS[network]["name"]
+    if network == "solana":
+        return "Solana"
+    if network in EVM_CHAINS:
+        return EVM_CHAINS[network]["name"]
+    from ..chains.networks import EXTRA_NETWORKS
+
+    return EXTRA_NETWORKS[network].name
 
 
 async def native_balance(ex, network: str, address: str) -> float:

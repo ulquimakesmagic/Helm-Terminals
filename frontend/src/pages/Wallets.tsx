@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
 import { useSession } from "../session";
 import Distribute from "../components/Distribute";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
-import { CHAIN_ORDER, CHAINS, ChainId, chainOf, MANAGED_NETWORKS } from "../chains";
+import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain, MANAGED_NETWORKS } from "../chains";
 import {
   Address, Callout, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
 } from "../components/ui";
 
-interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null; is_main?: boolean }
+interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; balance_native?: string | null; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null; is_main?: boolean }
 interface Folder { id: string; name: string; color: string; wallet_count?: number }
 const NEW_FOLDER = "__new__";
 const FOLDER_COLORS = ["#6366f1", "#38bdf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#f472b6", "#94a3b8"];
@@ -383,7 +384,13 @@ export default function Wallets() {
                     <td data-label="Address"><Address address={w.address} network={w.network} /></td>
                     <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : "watch-only"} /></td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
-                    <td className="r num" data-label="Balance">{typeof w.balance_sol === "number" ? (
+                    <td className="r num" data-label="Balance">{isExtraChain(w.network) ? (
+                      <span className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>
+                        {w.balance_native != null ? <span style={{ fontWeight: 600 }}>{w.balance_native} <span className="muted">{chainOf(w.network).native}</span></span>
+                          : balances ? <span className="state unavailable"><Icon name="xcircle" size={12} />Unavailable</span> : <span className="muted">—</span>}
+                        <Link to={`/networks?network=${w.network}`} className="small" onClick={(e) => e.stopPropagation()}>Tokens, send, history</Link>
+                      </span>
+                    ) : typeof w.balance_sol === "number" ? (
                       <div className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>
                         <span style={{ fontWeight: 600 }}>{typeof w.usd === "number" ? usd(w.usd) : <>{fmt(w.balance_sol, 4)} <span className="muted">{chainOf(w.network).native}</span></>}</span>
                         {typeof w.usd === "number" && <span className="muted small">{fmt(w.balance_sol, 4)} {chainOf(w.network).native} · {fmt(w.stable ?? 0, 2)} {w.stable_symbol}</span>}

@@ -26,6 +26,18 @@ EVM_CHAINS: dict[str, dict] = {
 WEI = 10**18
 
 
+def evm_config(network: str) -> dict:
+    """Chain settings for Helm's EVM chains and for EVM networks from the extra-network registry (Arc)."""
+    if network in EVM_CHAINS:
+        return EVM_CHAINS[network]
+    from .networks import EXTRA_NETWORKS
+
+    n = EXTRA_NETWORKS.get(network)
+    if n is None or n.family != "evm":
+        raise ValueError(f"unknown EVM network {network}")
+    return {"chain_id": n.chain_id, "native": n.native, "name": n.name, "public_rpc": n.default_rpc}
+
+
 class EvmRPCError(Exception):
     """The node answered with a JSON-RPC error (e.g. execution reverted). `data` holds any revert data (hex)."""
 
@@ -91,20 +103,19 @@ def split_header_key(url: str) -> tuple[str, dict[str, str]]:
 
 class EvmRPC:
     def __init__(self, network: str, urls: str | list[str], client: httpx.AsyncClient | None = None) -> None:
-        if network not in EVM_CHAINS:
-            raise ValueError(f"unknown EVM network {network}")
+        cfg = evm_config(network)
         self.network = network
-        self.chain_id = EVM_CHAINS[network]["chain_id"]
-        items = parse_list(urls) or [EVM_CHAINS[network]["public_rpc"]]
+        self.chain_id = cfg["chain_id"]
+        items = parse_list(urls) or [cfg["public_rpc"]]
         self.ring = KeyRing(items, cooldown_s=30)
-        self.ring.kind = f"{EVM_CHAINS[network]['name']} RPC endpoint"
+        self.ring.kind = f"{cfg['name']} RPC endpoint"
         self._client = client or httpx.AsyncClient(timeout=30)
         self._verified: set[str] = set()
         self.using_public_fallback = not parse_list(urls)
         self._unsupported: dict[str, set[str]] = {}  # endpoint -> methods its plan refuses
         # When none of your endpoints can run a method (e.g. eth_call on a free tier), the chain's public RPC is
         # tried last so reads still work.
-        public = EVM_CHAINS[network]["public_rpc"]
+        public = cfg["public_rpc"]
         self._last_resort = [] if public in items else [public]
 
     async def _post(self, url: str, method: str, params: list) -> httpx.Response:
@@ -178,7 +189,7 @@ class EvmRPC:
             if err:
                 raise EvmRPCError(f"{method}: {err.get('message', err)}", err.get("data"))
             return data.get("result")
-        raise EvmRPCUnavailable(f"{method} failed on every {EVM_CHAINS[self.network]['name']} RPC endpoint "
+        raise EvmRPCUnavailable(f"{method} failed on every {evm_config(self.network)['name']} RPC endpoint "
                                 f"({'; '.join(problems)})")
 
     # --- reads ------------------------------------------------------------------------------
@@ -255,6 +266,8 @@ _shared: dict[tuple[str, tuple[str, ...]], EvmRPC] = {}
 def evm_rpc_urls(network: str) -> str:
     from ..config import get_settings
 
+    if network not in EVM_CHAINS:  # Arc and other registry networks: {NETWORK}_RPC_URL
+        return getattr(get_settings(), f"{network.replace('-', '_')}_rpc_url", "") or ""
     return getattr(get_settings(), f"evm_rpc_{network}", "") or ""
 
 

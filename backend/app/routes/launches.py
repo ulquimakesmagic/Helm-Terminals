@@ -36,6 +36,12 @@ MIN_DEPLOY_BUFFER_SOL = 0.03  # rent for mint/metadata/ATA accounts plus fees
 MAX_IMAGE_BYTES = 2_000_000
 
 
+def _core_only(network: str) -> None:
+    from .wallets import _core_only as check
+
+    check(network)
+
+
 def _launch_out(l: Launch) -> dict:
     return {
         "id": l.id, "network": l.network, "launchpad": l.launchpad, "status": l.status, "name": l.name,
@@ -514,6 +520,7 @@ async def _attached_wallets(db: AsyncSession, user: User, launch: Launch, ids: l
     out = []
     for wid in ids:
         w = await owned_wallet(db, user, wid)
+        _core_only(w.network)
         if await db.get(LaunchWallet, (launch.id, wid)) is None:
             raise HTTPException(400, f"wallet {wid} is not attached to this launch")
         out.append(w)
@@ -652,6 +659,7 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
         return prior
     l = await _owned_launch(db, user, launch_id)
     w = await owned_wallet(db, user, body.wallet_id)
+    _core_only(w.network)
     adapter = get_adapter(l.launchpad)
     pf = build_preflight("claim_fees", {"launch_id": l.id, "wallet": w.address, "platform_fee": "none"})
     if not body.confirm:
@@ -702,6 +710,7 @@ async def burn(launch_id: str, body: BurnBody, user: User = Depends(current_user
     if not l.mint_address:
         raise HTTPException(409, "launch has no mint yet")
     w = await owned_wallet(db, user, body.wallet_id)
+    _core_only(w.network)
     if l.network in EVM_CHAINS:
         return await _token_out_evm(l, body, user, db, ex, w, BURN_ADDRESS, "burn")
     raw_bal = await rpc.get_token_balance(w.address, l.mint_address)
@@ -747,6 +756,7 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
     if not l.mint_address:
         raise HTTPException(409, "launch has no mint yet")
     w = await owned_wallet(db, user, body.wallet_id)
+    _core_only(w.network)
     if l.network in EVM_CHAINS:
         if not valid_address_for(l.network, body.recipient):
             raise HTTPException(400, f"invalid {l.network} recipient address")

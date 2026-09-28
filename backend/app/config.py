@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     evm_rpc_bsc: str = ""
     evm_rpc_ethereum: str = ""
     evm_rpc_robinhood: str = ""
+    # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
+    extra_networks: str = ""  # e.g. "tron-nile,near-testnet,arc-testnet"
+    allow_mainnet_extra_networks: bool = False
+    tron_rpc_url: str = ""  # TronGrid full-node HTTP API (default https://api.trongrid.io)
+    tron_nile_rpc_url: str = ""  # default https://nile.trongrid.io
+    trongrid_api_key: str = ""  # sent as TRON-PRO-API-KEY; TronGrid expects one for production
+    near_rpc_url: str = ""  # comma-separated JSON-RPC endpoints; default FastNEAR's free endpoint
+    near_testnet_rpc_url: str = ""
+    arc_rpc_url: str = ""  # default https://rpc.mainnet.arc.io
+    arc_testnet_rpc_url: str = ""  # default https://rpc.testnet.arc.io
+    extra_rpc_timeout_s: float = Field(default=15.0, gt=0, le=60)
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"
     # Jupiter API key(s) (free at https://developers.jup.ag/portal), comma-separated to rotate. Enables Meteora DBC

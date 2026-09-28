@@ -8,6 +8,7 @@ import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 import AutomationMoved from "./pages/AutomationMoved";
 import Wallets from "./pages/Wallets";
+import Networks from "./pages/Networks";
 import Launches from "./pages/Launches";
 import Workspace from "./pages/Workspace";
 import Tracker from "./pages/Tracker";
@@ -19,13 +20,13 @@ import Admin from "./pages/Admin";
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
-  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"]] },
+  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/networks", "Networks", "layers"]] },
   { group: "Monitor", items: [["/tracker", "Tracker", "radar"], ["/activity", "Activity", "activity"]] },
   { group: "Account", items: [["/profile", "Profile", "user"], ["/settings", "Settings", "settings"]] },
 ];
 
 const TITLES: Record<string, string> = {
-  "": "Dashboard", launches: "Launches", wallets: "Wallets", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings", admin: "Admin",
+  "": "Dashboard", launches: "Launches", wallets: "Wallets", networks: "Networks", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings", admin: "Admin",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -134,6 +135,7 @@ export default function App() {
         <Route path="/automation" element={<Private><AutomationMoved /></Private>} />
         <Route path="/automation/*" element={<Private><AutomationMoved /></Private>} />
         <Route path="/wallets" element={<Private><Wallets /></Private>} />
+        <Route path="/networks" element={<Private><Networks /></Private>} />
         <Route path="/tracker" element={<Private><Tracker /></Private>} />
         <Route path="/activity" element={<Private><Activity /></Private>} />
         <Route path="/profile" element={<Private><Profile /></Private>} />

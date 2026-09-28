@@ -15,7 +15,7 @@ from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import admin, allocations, auth, automations, bridge, distribute, launches, market, misc, profile, telegram, wallets
+from .routes import admin, allocations, auth, automations, chains, bridge, distribute, launches, market, misc, profile, telegram, wallets
 from .signing import get_signer
 
 
@@ -47,6 +47,16 @@ async def lifespan(app: FastAPI):
 
 
 DEFAULT_SECRET = "dev-secret-change-me"
+
+
+def _extra_health(s) -> dict:
+    """Which of TRON, NEAR and Arc are enabled, and whether each uses its own endpoint (never the URL itself)."""
+    from .chains.networks import EXTRA_NETWORKS, extra_enabled
+
+    on = set(extra_enabled())
+    return {n: {"enabled": n in on, "testnet": net.testnet,
+                "custom_rpc": bool(getattr(s, f"{n.replace('-', '_')}_rpc_url", ""))}
+            for n, net in EXTRA_NETWORKS.items()}
 
 
 def check_production_config(s) -> None:
@@ -100,7 +110,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
-    for r in (admin.router, allocations.router, auth.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+    for r in (admin.router, allocations.router, auth.router, chains.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
 
@@ -143,7 +153,8 @@ def create_app() -> FastAPI:
                 "rpc_endpoints": rpc["count"], "rpc_resting": rpc["resting"],
                 "bags_keys": len(parse_list(s.bags_api_key)),
                 "evm_rpc": {n: {"endpoints": len(parse_list(getattr(s, f"evm_rpc_{n}", ""))) or 0,
-                                "public_fallback": not parse_list(getattr(s, f"evm_rpc_{n}", ""))} for n in EVM_CHAINS}}
+                                "public_fallback": not parse_list(getattr(s, f"evm_rpc_{n}", ""))} for n in EVM_CHAINS},
+                "extra_networks": _extra_health(s)}
 
     return app
 

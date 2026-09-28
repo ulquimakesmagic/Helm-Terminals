@@ -3,7 +3,8 @@
 export type ChainId = "solana" | "base" | "bsc" | "robinhood" | "ethereum";
 
 export interface Chain {
-  id: ChainId;
+  id: ChainId | ExtraChainId;
+  testnet?: boolean;
   name: string;
   short: string;
   native: string;
@@ -40,7 +41,27 @@ export const CHAINS: Record<ChainId, Chain> = {
 
 export const CHAIN_ORDER: ChainId[] = ["solana", "base", "bsc", "robinhood", "ethereum"];
 
-export const chainOf = (id: string | null | undefined): Chain => CHAINS[(id as ChainId) ?? "solana"] ?? CHAINS.solana;
+/** TRON, NEAR and Arc: wallets, balances and transfers only, when the server enables them (GET /chains).
+ * Explorer paths for NEAR (nearblocks) and Arc are the explorers' standard ones. */
+export type ExtraChainId = "tron" | "tron-nile" | "near" | "near-testnet" | "arc" | "arc-testnet";
+export const EXTRA_CHAINS: Record<ExtraChainId, Chain> = {
+  tron: { id: "tron", name: "TRON", short: "TRX", native: "TRX", color: "#ff060a",
+    explorer: { account: "https://tronscan.org/address/", token: "https://tronscan.org/token20/", tx: "https://tronscan.org/transaction/" } },
+  "tron-nile": { id: "tron-nile", name: "TRON Nile testnet", short: "TRX", native: "TRX", color: "#ff060a", testnet: true,
+    explorer: { account: "https://nile.tronscan.org/address/", token: "https://nile.tronscan.org/token20/", tx: "https://nile.tronscan.org/transaction/" } },
+  near: { id: "near", name: "NEAR", short: "NEAR", native: "NEAR", color: "#00ec97",
+    explorer: { account: "https://nearblocks.io/address/", token: "https://nearblocks.io/token/", tx: "https://nearblocks.io/txns/" } },
+  "near-testnet": { id: "near-testnet", name: "NEAR testnet", short: "NEAR", native: "NEAR", color: "#00ec97", testnet: true,
+    explorer: { account: "https://testnet.nearblocks.io/address/", token: "https://testnet.nearblocks.io/token/", tx: "https://testnet.nearblocks.io/txns/" } },
+  arc: { id: "arc", name: "Arc", short: "ARC", native: "USDC", color: "#7b61ff",
+    explorer: { account: "https://explorer.arc.io/address/", token: "https://explorer.arc.io/token/", tx: "https://explorer.arc.io/tx/" } },
+  "arc-testnet": { id: "arc-testnet", name: "Arc testnet", short: "ARC", native: "USDC", color: "#7b61ff", testnet: true,
+    explorer: { account: "https://explorer.testnet.arc.io/address/", token: "https://explorer.testnet.arc.io/token/", tx: "https://explorer.testnet.arc.io/tx/" } },
+};
+export const isExtraChain = (id: string | null | undefined): id is ExtraChainId => !!id && id in EXTRA_CHAINS;
+
+export const chainOf = (id: string | null | undefined): Chain =>
+  CHAINS[(id as ChainId) ?? "solana"] ?? EXTRA_CHAINS[id as ExtraChainId] ?? CHAINS.solana;
 export const native = (network: string | null | undefined) => chainOf(network).native;
 
 export function explorerUrl(network: string | null | undefined, type: "account" | "token" | "tx", value: string) {
@@ -69,4 +90,4 @@ export const MANAGED_NETWORKS: ChainId[] = ["solana", "base", "bsc", "robinhood"
 
 /** The dollar stablecoin kept on each chain. Robinhood Chain has no native USDC; it uses Paxos' USDG. */
 export const STABLE: Record<ChainId, string> = { solana: "USDC", base: "USDC", bsc: "USDC", robinhood: "USDG", ethereum: "USDC" };
-export const stableOf = (id: string | null | undefined) => STABLE[chainOf(id).id];
+export const stableOf = (id: string | null | undefined) => STABLE[chainOf(id).id as ChainId];
