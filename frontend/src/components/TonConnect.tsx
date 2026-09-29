@@ -37,7 +37,7 @@ function tonUI(userId: string): TonConnectUI {
   return ui;
 }
 
-interface TonNet { id: string; name: string; testnet: boolean }
+interface TonNet { id: string; name: string }
 
 /** Connect (with proof), show and disconnect the TON wallet in this browser. */
 export function TonConnectBox({ net, onLinked }: { net: TonNet; onLinked: () => void }) {
@@ -47,7 +47,7 @@ export function TonConnectBox({ net, onLinked }: { net: TonNet; onLinked: () => 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const pending = useRef(false);
-  const expected = net.testnet ? "-3" : "-239";
+  const expected = "-239";  // TON mainnet
 
   useEffect(() => {
     if (!me) return;
@@ -60,7 +60,7 @@ export function TonConnectBox({ net, onLinked }: { net: TonNet; onLinked: () => 
       pending.current = false;
       if (!("proof" in item)) { setErr("The wallet didn't sign the sign-in request."); setBusy(false); return; }
       if (w.account.chain !== expected) {
-        setErr(`That wallet is on ${w.account.chain === "-239" ? "TON mainnet" : "TON testnet"}, not ${net.name}. Switch networks in the wallet and connect again.`);
+        setErr("That wallet is on a TON test network. Switch it to TON mainnet and connect again.");
         setBusy(false);
         return;
       }
@@ -206,11 +206,11 @@ export function TonSendDialog({ net, wallet, tokens, onClose, onDone }: {
         {s && <ReviewHero s={s} />}
         {warnings.map((w) => <Callout key={w} tone="err">{w}</Callout>)}
         {s && phase !== "done" && <ol className="next-steps">{s.next.map((n) => <li key={n}>{n}</li>)}</ol>}
-        {pre.token && <span className="small muted">Jetton master <a className="mono" href={`${pre.testnet ? "https://testnet.tonviewer.com/" : "https://tonviewer.com/"}${pre.token}`} target="_blank" rel="noreferrer noopener">{short(pre.token)}</a></span>}
+        {pre.token && <span className="small muted">Jetton master <a className="mono" href={`https://tonviewer.com/${pre.token}`} target="_blank" rel="noreferrer noopener">{short(pre.token)}</a></span>}
         {job && (
           <div className="row between">
             <StatusBadge status={job.status} />
-            {job.transactions?.[0]?.signature && <a href={`${pre.testnet ? "https://testnet.tonviewer.com/transaction/" : "https://tonviewer.com/transaction/"}${job.transactions[0].signature}`} target="_blank" rel="noreferrer noopener">View on explorer <Icon name="ext" size={11} /></a>}
+            {job.transactions?.[0]?.signature && <a href={`https://tonviewer.com/transaction/${job.transactions[0].signature}`} target="_blank" rel="noreferrer noopener">View on explorer <Icon name="ext" size={11} /></a>}
           </div>)}
         {job?.transactions?.[0]?.error && <Callout tone="warn">{job.transactions[0].error}</Callout>}
         {err && <Callout tone="err">{err}</Callout>}

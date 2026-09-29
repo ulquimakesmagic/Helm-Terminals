@@ -55,17 +55,13 @@ class Settings(BaseSettings):
     evm_rpc_ethereum: str = ""
     evm_rpc_robinhood: str = ""
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
-    extra_networks: str = "tron,near,arc,ton"  # mainnets; testnets: "tron-nile,near-testnet,arc-testnet,ton-testnet"; "" = off
+    extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
     tron_rpc_url: str = ""  # TronGrid full-node HTTP API (default https://api.trongrid.io)
-    tron_nile_rpc_url: str = ""  # default https://nile.trongrid.io
     trongrid_api_key: str = ""  # sent as TRON-PRO-API-KEY; TronGrid expects one for production
     near_rpc_url: str = ""  # comma-separated JSON-RPC endpoints; default FastNEAR's free endpoint
-    near_testnet_rpc_url: str = ""
     arc_rpc_url: str = ""  # default https://rpc.mainnet.arc.io
-    arc_testnet_rpc_url: str = ""  # default https://rpc.testnet.arc.io
     ton_rpc_url: str = ""  # toncenter-compatible index API base (default https://toncenter.com)
-    ton_testnet_rpc_url: str = ""
     toncenter_api_key: str = ""  # X-API-Key; without it toncenter allows 1 request a second
     ton_proof_domains: str = ""  # hosts a TON Connect proof may name; default: helmterminals.xyz + CORS_ORIGINS hosts
     pinata_jwt: str = ""  # Pinata API JWT: pins Meme.Cooking token images and metadata to IPFS

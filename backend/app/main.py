@@ -54,7 +54,7 @@ def _extra_health(s) -> dict:
     from .chains.networks import EXTRA_NETWORKS, extra_enabled
 
     on = set(extra_enabled())
-    return {n: {"enabled": n in on, "testnet": net.testnet,
+    return {n: {"enabled": n in on,
                 "custom_rpc": bool(getattr(s, f"{n.replace('-', '_')}_rpc_url", ""))}
             for n, net in EXTRA_NETWORKS.items()}
 

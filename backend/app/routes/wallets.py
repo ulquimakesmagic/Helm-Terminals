@@ -80,7 +80,10 @@ def _core_only(network: str) -> None:
 async def list_wallets(with_balances: bool = False, user: User = Depends(current_user),
                        db: AsyncSession = Depends(get_db), rpc: SolanaRPC = Depends(get_rpc),
                        ex: Executor = Depends(get_executor)):
-    rows = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
+    from ..chains.networks import offered
+
+    rows = [w for w in (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
+            if offered(w.network)]
     mains = await main_wallet_ids(db, user.id)
     # Main wallets first, so they're easy to find and are the first place people look for USDC.
     rows = sorted(rows, key=lambda w: w.id not in mains)

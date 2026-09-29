@@ -76,10 +76,9 @@ def proof_message(domain: str, network: str, address: str, payload: str) -> str:
     net = EXTRA_NETWORKS[network]
     issued = int.from_bytes(bytes.fromhex(payload)[:8], "big")
     iso = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
-    kind = "testnet" if net.testnet else "mainnet"
     ident = f", chain ID {net.chain_id}" if net.chain_id else ""
     return (f"{domain} wants you to link this {net.name} wallet to your Helm Terminals account.\n\n"
-            f"Network: {net.name} ({kind}{ident})\nAddress: {address}\nNonce: {payload}\n"
+            f"Network: {net.name} (mainnet{ident})\nAddress: {address}\nNonce: {payload}\n"
             f"Issued at: {iso(issued)}\nExpires at: {iso(issued + PROOF_TTL_S)}\n\n"
             "Linking a wallet doesn't authorize any transaction.")
 
@@ -261,7 +260,7 @@ async def overview(user: User = Depends(current_user), db: AsyncSession = Depend
     for w in rows:
         net = EXTRA_NETWORKS[w.network]
         out = {"id": w.id, "network": w.network, "family": net.family, "network_name": net.name,
-               "testnet": net.testnet, "enabled": w.network in enabled, "address": w.address, "kind": w.kind,
+               "enabled": w.network in enabled, "address": w.address, "kind": w.kind,
                "label": w.label, "explorer": net.explorer["account"] + w.address, "native": None, "tokens": [],
                "fees": None, "error": None,
                "can_send": w.kind == "managed" or (w.kind == "connected"), "signer": {
@@ -279,7 +278,7 @@ async def overview(user: User = Depends(current_user), db: AsyncSession = Depend
             except Exception as e:
                 out["error"] = (str(e) if isinstance(e, AdapterError) else type(e).__name__)[:160]
         wallets.append(out)
-    networks = [{"id": n.id, "name": n.name, "family": n.family, "testnet": n.testnet, "enabled": n.id in enabled,
+    networks = [{"id": n.id, "name": n.name, "family": n.family, "enabled": n.id in enabled,
                  "chain_id": n.chain_id, "network_id": n.network_id, "native": n.native,
                  "managed": n.family != "ton", "external": {"tron": "TronLink", "evm": "Browser EVM wallet",
                                                             "near": "NEAR wallet (NEAR Connect)",
@@ -332,7 +331,7 @@ async def external_transfer(network: str, body: ExternalTransferBody, user: User
         raise HTTPException(400, "the recipient is the sending wallet")
     plan, token = await _plan(ex, network, w, to, body.token, body.amount)
     kind = "external_transfer"  # approved and signed in the user's own wallet; Helm holds no key
-    summary = {"network": network, "chain": net.name, "testnet": net.testnet, "from": w.address, "to": to,
+    summary = {"network": network, "chain": net.name, "from": w.address, "to": to,
                "asset": plan["symbol"], "token": token, "amount": plan["amount"], "amount_raw": str(plan["raw"]),
                "decimals": plan["decimals"], "platform_fee": "none", "external_wallet": True,
                **plan.get("hashed", {})}

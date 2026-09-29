@@ -21,7 +21,7 @@ function fmtRaw(raw: string, decimals: number): string {
 
 /* TRON, NEAR, Arc and TON: what Helm supports on each, and the wallets, balances, transfers and history it offers there. */
 
-interface Net { id: ExtraChainId; name: string; family: string; testnet: boolean; native: string; decimals: number; chain_id: number | null; network_id?: string | null;
+interface Net { id: ExtraChainId; name: string; family: string; native: string; decimals: number; chain_id: number | null; network_id?: string | null;
   enabled: boolean; notes: string; capabilities: Record<string, string>; sources: string[]; explorer: Record<string, string> }
 interface Chains { core: { id: string; name: string; capabilities: string }[]; extra: Net[]; note: string }
 const CAP_LABEL: Record<string, string> = {
@@ -55,7 +55,7 @@ export default function Networks() {
           <tbody>{data.extra.map((n) => (
             <tr key={n.id}>
               <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={20} label /><b>{n.name}</b>
-                {n.testnet ? <span className="badge info">testnet</span> : <span className="badge warn">mainnet · real money</span>}</span>
+                <span className="badge warn">mainnet · real money</span></span>
                 <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}{n.network_id ? ` · TON Connect network ${n.network_id}` : ""}</div></td>
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
@@ -64,18 +64,18 @@ export default function Networks() {
       </Card>
       <details className="card" style={{ padding: 14 }}>
         <summary style={{ cursor: "pointer" }}><b>Why each feature is or isn't available, and the documentation used</b></summary>
-        <div className="stack" style={{ marginTop: 10 }}>{data.extra.filter((n) => !n.testnet).map((n) => (
+        <div className="stack" style={{ marginTop: 10 }}>{data.extra.map((n) => (
           <div key={n.id} className="stack tight">
             <b>{n.name}</b>{n.notes && <span className="muted small">{n.notes}</span>}
             {Object.entries(n.capabilities).map(([k, v]) => <span key={k} className="small"><span className="muted">{CAP_LABEL[k]}:</span> {v}</span>)}
             <span className="small muted">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
           </div>))}</div>
       </details>
-      {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS; mainnets also need ALLOW_MAINNET_EXTRA_NETWORKS to be true." /> : (
-        <Card title="Use a network" icon="globe" sub="Pick one explicitly. Testnet and mainnet are separate networks with separate wallets.">
+      {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (
+        <Card title="Use a network" icon="globe" sub="Pick one explicitly. These are mainnets: transfers move real money.">
           <div className="chips">{enabled.map((n) => (
             <button key={n.id} type="button" className={`chip ${current?.id === n.id ? "on" : ""}`} onClick={() => setSearch({ network: n.id })}>
-              <ChainMark network={n.id} size={16} />{n.name}{n.testnet ? " (testnet)" : ""}
+              <ChainMark network={n.id} size={16} />{n.name}
             </button>))}</div>
         </Card>
       )}
@@ -100,7 +100,7 @@ function NetworkPanel({ net }: { net: Net }) {
   };
   return (
     <div className="stack">
-      {!net.testnet && <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>}
+      <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
       <Card title={`${net.name} wallets`} icon="wallet" flush
         actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
         {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}
@@ -148,7 +148,7 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
               </div>))}
             {bal.errors.map((e: string) => <Callout key={e} tone="warn">{e}</Callout>)}
             <form className="row" onSubmit={(e) => { e.preventDefault(); if (add.trim()) { setTokens([...new Set([...tokens, add.trim()])]); setAdd(""); } }}>
-              <input className="mono grow" placeholder={net.family === "near" ? "Token contract account (e.g. usdc.testnet)" : net.family === "ton" ? "Jetton master address" : "Token contract address"} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
+              <input className="mono grow" placeholder={net.family === "near" ? "Token contract account (e.g. usdt.tether-token.near)" : net.family === "ton" ? "Jetton master address" : "Token contract address"} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
               <button className="btn sm secondary" type="submit">Add token</button>
             </form>
             <span className="muted small">Tokens are matched by contract address, never by ticker.</span>
@@ -170,7 +170,7 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
       </Card>
       {send && net.family === "ton" && <Suspense fallback={null}><TonSendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
       {send && net.family !== "ton" && wallet.kind === "connected" && <Suspense fallback={null}><ExternalSendDialog
-        w={{ id: wallet.id, network: net.id, family: net.family, network_name: net.name, testnet: net.testnet, enabled: true, address: wallet.address,
+        w={{ id: wallet.id, network: net.id, family: net.family, network_name: net.name, enabled: true, address: wallet.address,
           kind: wallet.kind, label: wallet.label, explorer: net.explorer.account + wallet.address, native: { asset: net.native, amount: bal?.native?.amount ?? "" },
           tokens: (bal?.tokens ?? []).map((t: any) => ({ symbol: t.symbol, address: t.address, amount: t.amount })), fees: null, error: null, can_send: true, signer: "Your wallet" }}
         onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}

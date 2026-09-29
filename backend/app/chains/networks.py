@@ -2,7 +2,7 @@
 
 These networks sit beside Helm's original chains (Solana, Base, BNB Chain, Ethereum, Robinhood Chain) and are
 enabled by EXTRA_NETWORKS (default: the TRON, NEAR, Arc and TON mainnets). ALLOW_MAINNET_EXTRA_NETWORKS=false switches every mainnet
-off at once. Testnets and mainnets are separate network ids, and users still pick a network explicitly.
+off at once. Only mainnets are offered; Helm has no testnet mode for these networks.
 
 Every value here comes from the official documentation listed in SOURCES (consulted 2026-09-28).
 """
@@ -17,62 +17,44 @@ class ExtraNetwork:
     id: str
     family: str  # tron | near | evm | ton
     name: str
-    testnet: bool
     native: str
     decimals: int  # of the native asset
     default_rpc: str
     explorer: dict = field(default_factory=dict)  # account / tx / token URL prefixes
     chain_id: int | None = None  # EVM chain id (Arc)
-    network_id: str | None = None  # TON Connect network id (TON: -239 mainnet, -3 testnet); not an EVM chain id
+    network_id: str | None = None  # TON Connect network id (-239, TON mainnet); not an EVM chain id
     notes: str = ""
 
 
 EXTRA_NETWORKS: dict[str, ExtraNetwork] = {
     "tron": ExtraNetwork(
-        "tron", "tron", "TRON", False, "TRX", 6, "https://api.trongrid.io",
+        "tron", "tron", "TRON", "TRX", 6, "https://api.trongrid.io",
         {"account": "https://tronscan.org/address/", "tx": "https://tronscan.org/transaction/",
          "token": "https://tronscan.org/token20/"},
         notes="Fees are paid in resources: bandwidth (600 free a day) and energy for contracts, else TRX is burned."),
-    "tron-nile": ExtraNetwork(
-        "tron-nile", "tron", "TRON Nile testnet", True, "TRX", 6, "https://nile.trongrid.io",
-        {"account": "https://nile.tronscan.org/address/", "tx": "https://nile.tronscan.org/transaction/",
-         "token": "https://nile.tronscan.org/token20/"}),
     "near": ExtraNetwork(
-        "near", "near", "NEAR", False, "NEAR", 24, "https://free.rpc.fastnear.com",
+        "near", "near", "NEAR", "NEAR", 24, "https://free.rpc.fastnear.com",
         {"account": "https://nearblocks.io/address/", "tx": "https://nearblocks.io/txns/",
          "token": "https://nearblocks.io/token/"},
         notes="Accounts are names (alice.near) or 64-hex implicit accounts; tokens need a storage deposit."),
-    "near-testnet": ExtraNetwork(
-        "near-testnet", "near", "NEAR testnet", True, "NEAR", 24, "https://test.rpc.fastnear.com",
-        {"account": "https://testnet.nearblocks.io/address/", "tx": "https://testnet.nearblocks.io/txns/",
-         "token": "https://testnet.nearblocks.io/token/"}),
     "arc": ExtraNetwork(
-        "arc", "evm", "Arc", False, "USDC", 18, "https://rpc.mainnet.arc.io",
+        "arc", "evm", "Arc", "USDC", 18, "https://rpc.mainnet.arc.io",
         {"account": "https://explorer.arc.io/address/", "tx": "https://explorer.arc.io/tx/",
          "token": "https://explorer.arc.io/token/"}, chain_id=5042,
         notes="Gas is paid in USDC. Native USDC has 18 decimals; its ERC-20 interface (0x3600…) shows the same "
               "balance with 6 decimals, so it is never counted twice."),
-    "arc-testnet": ExtraNetwork(
-        "arc-testnet", "evm", "Arc testnet", True, "USDC", 18, "https://rpc.testnet.arc.io",
-        {"account": "https://explorer.testnet.arc.io/address/", "tx": "https://explorer.testnet.arc.io/tx/",
-         "token": "https://explorer.testnet.arc.io/token/"}, chain_id=5042002),
     "ton": ExtraNetwork(
-        "ton", "ton", "TON", False, "TON", 9, "https://toncenter.com",
+        "ton", "ton", "TON", "TON", 9, "https://toncenter.com",
         {"account": "https://tonviewer.com/", "tx": "https://tonviewer.com/transaction/",
          "token": "https://tonviewer.com/"}, network_id="-239",
         notes="Your own wallet signs through TON Connect; Helm never holds TON keys. Jettons move through the "
               "sender's jetton wallet with 0.05 TON attached (the unused part comes back)."),
-    "ton-testnet": ExtraNetwork(
-        "ton-testnet", "ton", "TON testnet", True, "TON", 9, "https://testnet.toncenter.com",
-        {"account": "https://testnet.tonviewer.com/", "tx": "https://testnet.tonviewer.com/transaction/",
-         "token": "https://testnet.tonviewer.com/"}, network_id="-3"),
 }
 
 # Known token contracts from the chains' official docs, matched by chain and address, never by ticker.
 KNOWN_TOKENS: dict[str, list[dict]] = {
     # Arc: the USDC ERC-20 interface is the native balance again, so it is not listed as a separate token.
     "arc": [{"address": "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1", "symbol": "EURC", "decimals": 6}],
-    "arc-testnet": [{"address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", "symbol": "EURC", "decimals": 6}],
 }
 ARC_USDC_INTERFACE = "0x3600000000000000000000000000000000000000"
 
@@ -156,7 +138,7 @@ CAPABILITIES = {
         "cross_chain": "no: Helm's route provider isn't wired for NEAR",
     },
     "evm": {  # Arc
-        "wallets": "yes: Helm-managed EVM keys (a separate key per Arc network) and watch-only addresses",
+        "wallets": "yes: Helm-managed EVM keys and watch-only addresses",
         "balances": "yes: USDC (native, 18 decimals) and ERC-20 tokens such as EURC",
         "token_metadata": "yes: ERC-20 name, symbol, decimals",
         "history": "partial: Helm's own transfers only; no official Arc history API is documented",
@@ -183,13 +165,13 @@ CAPABILITIES = {
 
 
 def extra_enabled() -> list[str]:
-    """Extra networks switched on for this server (EXTRA_NETWORKS), mainnets only with the explicit opt-in."""
+    """Extra networks switched on for this server (EXTRA_NETWORKS), unless ALLOW_MAINNET_EXTRA_NETWORKS=false."""
     s = get_settings()
     wanted = [n.strip() for n in (s.extra_networks or "").split(",") if n.strip()]
     out = []
     for n in wanted:
         net = EXTRA_NETWORKS.get(n)
-        if net and (net.testnet or s.allow_mainnet_extra_networks):
+        if net and s.allow_mainnet_extra_networks:
             out.append(n)
     return out
 
@@ -213,3 +195,11 @@ def rpc_urls(network: str) -> str:
     """The configured endpoint(s) for a network, else its public default. Env: {NETWORK}_RPC_URL."""
     s = get_settings()
     return getattr(s, f"{network.replace('-', '_')}_rpc_url", "") or EXTRA_NETWORKS[network].default_rpc
+
+
+def offered(network: str) -> bool:
+    """Whether Helm still offers this network. Wallets saved on a network Helm no longer offers (the TRON, NEAR, Arc
+    and TON testnets were retired) stay in the database untouched but aren't listed or read."""
+    from .evm import EVM_CHAINS
+
+    return network == "solana" or network in EVM_CHAINS or network in EXTRA_NETWORKS

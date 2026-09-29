@@ -82,7 +82,7 @@ def _slip_min(amount: int, slippage_pct: float) -> int:
 
 # --- SunPump (TRON) ---------------------------------------------------------------------------------------
 
-SUNPUMP = {"tron": "TTfvyrAz86hbZk5iDpKD78pqLGgi8C7AAw", "tron-nile": "TLtTyEwqacNKc5CHLunKvxmqLB336R4Lrm"}
+SUNPUMP = {"tron": "TTfvyrAz86hbZk5iDpKD78pqLGgi8C7AAw"}
 SUNPUMP_TOKEN_CREATE = keccak(text="TokenCreate(address,uint256,address)").hex()
 SUNPUMP_STATES = {0: "not a SunPump token", 1: "trading on the bonding curve", 2: "graduating", 3: "graduated"}
 TRX = 1_000_000

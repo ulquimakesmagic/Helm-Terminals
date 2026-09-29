@@ -89,7 +89,8 @@ def valid_address_for(network: str, addr: str) -> bool:
     if net.family == "near":
         from .chains import near
 
-        return near.valid_account(addr)
+        # Helm is on NEAR mainnet only: a .testnet account doesn't exist there, so a transfer to it would fail
+        return near.valid_account(addr) and not addr.strip().lower().endswith(".testnet")
     if net.family == "ton":
         from .chains import ton
 

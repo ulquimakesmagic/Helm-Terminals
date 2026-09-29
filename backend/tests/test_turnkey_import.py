@@ -109,17 +109,17 @@ async def test_tron_arc_and_near_keys_import_in_their_own_formats(monkeypatch):
     from app.chains import near
     from app.config import get_settings
 
-    monkeypatch.setattr(get_settings(), "extra_networks", "tron-nile,near-testnet,arc-testnet,ton-testnet")
+    monkeypatch.setattr(get_settings(), "extra_networks", "tron,near,arc,ton")
     tk = FakeTurnkey()
-    ref = await tk.signer().import_wallet("u1", "tron-nile", "11" * 32)
+    ref = await tk.signer().import_wallet("u1", "tron", "11" * 32)
     assert ref.address == "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ" and tk.formats == ["ADDRESS_FORMAT_TRON"]
-    ref = await tk.signer().import_wallet("u1", "arc-testnet", "0x" + "11" * 32)
+    ref = await tk.signer().import_wallet("u1", "arc", "0x" + "11" * 32)
     assert ref.address == "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A" and tk.formats == ["ADDRESS_FORMAT_ETHEREUM"]
     kp = Keypair.from_seed(bytes([7]) * 32)
-    ref = await tk.signer().import_wallet("u1", "near-testnet", "ed25519:" + near._b58(bytes(kp)))
+    ref = await tk.signer().import_wallet("u1", "near", "ed25519:" + near._b58(bytes(kp)))
     assert tk.received == bytes([7]) * 32 and ref.address == bytes(kp.pubkey()).hex()
     with pytest.raises(SigningError, match="TON"):
-        await tk.signer().import_wallet("u1", "ton-testnet", "11" * 32)
+        await tk.signer().import_wallet("u1", "ton", "11" * 32)
 
 
 async def test_import_refuses_an_unverified_or_mismatched_bundle():

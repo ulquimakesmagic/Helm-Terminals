@@ -17,7 +17,7 @@ export class WalletError extends Error {
   constructor(message: string, declined = false, nothingSent = true) { super(message); this.declined = declined; this.nothingSent = declined || nothingSent; }
 }
 
-export interface NetInfo { id: string; name: string; family: string; testnet: boolean; chain_id?: number | null }
+export interface NetInfo { id: string; name: string; family: string; chain_id?: number | null }
 
 const w = window as any;
 const declinedCodes = new Set([4001, "ACTION_REJECTED"]);
@@ -33,10 +33,10 @@ function tronWeb(): any {
   return w.tronLink?.tronWeb || w.tronWeb;
 }
 
-function tronNetworkOf(tw: any): "tron" | "tron-nile" | "other" {
+/** TRON mainnet, or anything else (TronLink's test networks included), from the node TronLink points at. */
+function tronNetworkOf(tw: any): "tron" | "other" {
   const host = String(tw?.fullNode?.host ?? "");
-  if (/nile/i.test(host)) return "tron-nile";
-  if (/shasta/i.test(host)) return "other";
+  if (/nile|shasta/i.test(host)) return "other";
   return /trongrid\.io|tron/i.test(host) ? "tron" : "other";
 }
 
@@ -52,7 +52,7 @@ async function tronConnect(net: NetInfo): Promise<string> {
   const address = tw?.defaultAddress?.base58;
   if (!address) throw new WalletError("Unlock TronLink and choose an account, then try again.");
   const on = tronNetworkOf(tw);
-  if (on !== net.id) throw new WalletError(`TronLink is on ${on === "tron-nile" ? "the Nile testnet" : on === "tron" ? "TRON mainnet" : "another network"}; switch it to ${net.name} and try again.`);
+  if (on !== net.id) throw new WalletError(`TronLink is on another network; switch it to TRON mainnet and try again.`);
   return address;
 }
 
@@ -60,7 +60,6 @@ async function tronConnect(net: NetInfo): Promise<string> {
 
 const ARC_PARAMS: Record<number, any> = {
   5042: { chainName: "Arc", rpcUrls: ["https://rpc.mainnet.arc.io"], blockExplorerUrls: ["https://explorer.arc.io"] },
-  5042002: { chainName: "Arc Testnet", rpcUrls: ["https://rpc.testnet.arc.io"], blockExplorerUrls: ["https://explorer.testnet.arc.io"] },
 };
 
 async function evmChain(): Promise<number> {
@@ -95,10 +94,10 @@ const hexOf = (s: string) => "0x" + Array.from(new TextEncoder().encode(s)).map(
 
 let nearConn: { key: string; c: any } | null = null;
 
-async function near(net: NetInfo, userId: string) {
-  const key = `${userId}:${net.testnet ? "testnet" : "mainnet"}`;
+async function near(userId: string) {
+  const key = userId;
   if (nearConn?.key === key) return nearConn.c;
-  if (nearConn && !nearConn.key.startsWith(`${userId}:`)) { window.location.reload(); throw new WalletError("switching accounts"); }
+  if (nearConn) { window.location.reload(); throw new WalletError("switching accounts"); }
   const { NearConnector } = await import("@hot-labs/near-connect");
   const pre = `helm-near:${userId}:`;
   const storage = {
@@ -106,13 +105,13 @@ async function near(net: NetInfo, userId: string) {
     set: async (k: string, v: string) => { try { localStorage.setItem(pre + k, v); } catch { /* private mode */ } },
     remove: async (k: string) => { try { localStorage.removeItem(pre + k); } catch { /* private mode */ } },
   };
-  const c = new NearConnector({ network: net.testnet ? "testnet" : "mainnet", storage, features: { signMessage: true, signAndSendTransaction: true } } as any);
+  const c = new NearConnector({ network: "mainnet", storage, features: { signMessage: true, signAndSendTransaction: true } } as any);
   nearConn = { key, c };
   return c;
 }
 
-async function nearAccount(net: NetInfo, userId: string): Promise<{ wallet: any; accountId: string }> {
-  const c = await near(net, userId);
+async function nearAccount(_net: NetInfo, userId: string): Promise<{ wallet: any; accountId: string }> {
+  const c = await near(userId);
   try {
     let got = await c.getConnectedWallet().catch(() => null);
     if (!got) { await c.connect(); got = await c.getConnectedWallet(); }
@@ -185,7 +184,7 @@ export async function signTransfer(net: NetInfo, userId: string, from: string, r
 /** Forget the NEAR Connect session in this browser (TronLink and EVM wallets are disconnected in the wallet). */
 export async function forgetWallet(net: NetInfo, userId: string) {
   if (net.family !== "near") return;
-  const c = await near(net, userId);
+  const c = await near(userId);
   await c.disconnect().catch(() => undefined);
 }
 

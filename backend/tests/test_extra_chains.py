@@ -35,10 +35,10 @@ NEAR_PK = bytes.fromhex("725da2eda4b2ee1b9e3221f046e23f92035a7f2ae6758c51184ce8b
 
 @pytest.fixture
 def extra(monkeypatch):
-    """Enable the three testnets for a test, with fake clients (no network)."""
+    """Enable TRON, NEAR and Arc for a test, with fake clients (no network)."""
     s = get_settings()
-    monkeypatch.setattr(s, "extra_networks", "tron-nile,near-testnet,arc-testnet")
-    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)
+    monkeypatch.setattr(s, "extra_networks", "tron,near,arc")
+    monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
     xc._clients.clear()
     yield
     xc._clients.clear()
@@ -125,7 +125,7 @@ def test_node_built_tron_transactions_are_checked_before_signing():
 
 
 def test_near_account_formats():
-    for ok in ("alice.near", "bob.testnet", "a1", "app-1_x.sub.testnet", "ab" * 32, "0x" + "ab" * 20):
+    for ok in ("alice.near", "bob.near", "a1", "app-1_x.sub.testnet", "ab" * 32, "0x" + "ab" * 20):
         assert near.valid_account(ok), ok
     for bad in ("A.near", "a", "-bob.near", "bob..near", "bob.near.", "a" * 65, "0x" + "AB" * 20, "TXLAQ63X"):
         assert not near.valid_account(bad), bad
@@ -133,6 +133,7 @@ def test_near_account_formats():
 
 def test_our_near_borsh_matches_near_api_js():
     tx = near.serialize_transaction(
+        # the account names are those near-api-js serialised for this vector; borsh doesn't depend on the network
         "alice.testnet", NEAR_PK, 7, "bob.testnet", bytes(range(32)),
         [near.transfer_action(10**24),
          near.function_call_action("ft_transfer", {"receiver_id": "bob.testnet", "amount": "5"}, 30 * near.TGAS, 1)])
@@ -255,43 +256,57 @@ class FakeNear(near.NearClient):
 # --- gating and wallets --------------------------------------------------------------------------------------
 
 
-async def test_new_networks_are_off_unless_enabled_and_mainnets_need_an_opt_in(client, monkeypatch):
+async def test_only_mainnets_are_offered_and_the_switches_turn_them_off(client, monkeypatch):
     h = await signup(client, main=False)
-    r = await client.post("/wallets", json={"network": "tron-nile", "count": 1}, headers=h)
-    assert r.status_code == 400
     s = get_settings()
-    default = {n["id"] for n in (await client.get("/chains")).json()["extra"] if n["enabled"]}
-    assert default == {"tron", "near", "arc", "ton"}  # mainnets by default; testnets only when listed
-    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)
-    monkeypatch.setattr(s, "extra_networks", "tron,near,arc,tron-nile")
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
-    assert listed["tron-nile"]["enabled"] and not listed["tron"]["enabled"] and not listed["arc"]["enabled"]
-    assert listed["arc-testnet"]["chain_id"] == 5042002 and listed["arc"]["chain_id"] == 5042
+    assert set(listed) == {"tron", "near", "arc", "ton"} and all(n["enabled"] for n in listed.values())
+    assert "testnet" not in listed["tron"] and listed["arc"]["chain_id"] == 5042
     assert listed["tron"]["capabilities"]["launches"].startswith("yes")
-    assert listed["tron-nile"]["capabilities"]["launches"].startswith("no")
+    # the retired testnets are unknown networks now
+    for gone in ("tron-nile", "near-testnet", "arc-testnet", "ton-testnet"):
+        r = await client.post("/wallets", json={"network": gone, "count": 1}, headers=h)
+        assert r.status_code == 400, gone
+    monkeypatch.setattr(s, "extra_networks", "")
     assert (await client.post("/wallets", json={"network": "tron", "count": 1}, headers=h)).status_code == 400
-    monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
-    assert (await client.get("/chains")).json()["extra"][0]["enabled"] is True  # tron mainnet, now opted in
+    monkeypatch.setattr(s, "extra_networks", "tron,near,arc,ton")
+    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)  # the kill switch
+    assert not any(n["enabled"] for n in (await client.get("/chains")).json()["extra"])
+    assert (await client.post("/wallets", json={"network": "near", "count": 1}, headers=h)).status_code == 400
+
+
+async def test_wallets_left_on_a_retired_testnet_are_not_listed(client, monkeypatch):
+    from app.db import get_sessionmaker
+    from app.models import User, Wallet
+    from sqlalchemy import select
+
+    h = await signup(client, main=False)
+    async with get_sessionmaker()() as db:
+        u = (await db.execute(select(User))).scalars().first()
+        db.add(Wallet(user_id=u.id, network="tron-nile", address="TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ", kind="watch", label="old"))
+        await db.commit()
+    assert all(w["network"] != "tron-nile" for w in (await client.get("/wallets", headers=h)).json())
+    assert all(w["network"] != "tron-nile" for w in (await client.get("/chains/wallets/overview", headers=h)).json()["wallets"])
 
 
 async def test_managed_wallets_use_each_networks_own_address_format(client, extra):
     h = await signup(client, main=False)
     made = {}
-    for net in ("tron-nile", "near-testnet", "arc-testnet"):
+    for net in ("tron", "near", "arc"):
         r = await client.post("/wallets", json={"network": net, "count": 1}, headers=h)
         assert r.status_code == 201, r.text
         made[net] = r.json()[0]["address"]
-    assert tron.valid_address(made["tron-nile"])
-    assert near.IMPLICIT.match(made["near-testnet"])
-    assert made["arc-testnet"].startswith("0x") and len(made["arc-testnet"]) == 42
+    assert tron.valid_address(made["tron"])
+    assert near.IMPLICIT.match(made["near"])
+    assert made["arc"].startswith("0x") and len(made["arc"]) == 42
     # watch-only: each network's rules, not EVM's
-    for net, addr, ok in (("tron-nile", TW["to"], 201), ("tron-nile", "0x" + "ab" * 20, 400),
-                          ("near-testnet", "alice.testnet", 201), ("near-testnet", "Alice", 400),
-                          ("arc-testnet", "0x" + "cd" * 20, 201), ("arc-testnet", TW["to"], 400)):
+    for net, addr, ok in (("tron", TW["to"], 201), ("tron", "0x" + "ab" * 20, 400),
+                          ("near", "alice.near", 201), ("near", "Alice", 400), ("near", "bob.testnet", 400),
+                          ("arc", "0x" + "cd" * 20, 201), ("arc", TW["to"], 400)):
         r = await client.post("/wallets/watch", json={"network": net, "address": addr}, headers=h)
         assert r.status_code == ok, (net, addr, r.text)
     # core fund-moving routes refuse these wallets; they use the network's own transfer
-    wid = [w for w in (await client.get("/wallets", headers=h)).json() if w["network"] == "tron-nile"][0]["id"]
+    wid = [w for w in (await client.get("/wallets", headers=h)).json() if w["network"] == "tron"][0]["id"]
     r = await client.post("/wallets/withdraw", json={"wallet_ids": [wid], "destination": TW["to"], "all": True},
                           headers=h)
     assert r.status_code == 400 and "own transfer" in r.json()["detail"]
@@ -305,13 +320,13 @@ async def test_importing_keys_on_tron_near_and_arc(client, extra, monkeypatch):
     from app.chains import near
     from app.config import get_settings
 
-    monkeypatch.setattr(get_settings(), "extra_networks", "tron-nile,near-testnet,arc-testnet,ton-testnet")
+    monkeypatch.setattr(get_settings(), "extra_networks", "tron,near,arc,ton")
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
     kp = Keypair.from_seed(bytes([7]) * 32)
-    cases = [("tron-nile", "11" * 32, "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ"),
-             ("arc-testnet", "0x" + "11" * 32, "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A"),
-             ("near-testnet", "ed25519:" + near._b58(bytes(kp)), bytes(kp.pubkey()).hex())]
+    cases = [("tron", "11" * 32, "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ"),
+             ("arc", "0x" + "11" * 32, "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A"),
+             ("near", "ed25519:" + near._b58(bytes(kp)), bytes(kp.pubkey()).hex())]
     for net, key, address in cases:
         r = await client.post("/wallets/import", json={"network": net, "private_key": key, "all_evm": True,
                                                        "password": "correct-horse-battery",
@@ -320,7 +335,7 @@ async def test_importing_keys_on_tron_near_and_arc(client, extra, monkeypatch):
         out = r.json()
         assert [(w["network"], w["address"], w["kind"]) for w in out] == [(net, address, "managed")]
         assert "signer_ref" not in out[0] and key not in r.text
-    for net, key in (("ton-testnet", "11" * 32), ("near-testnet", "ed25519:notakey"), ("tron-nile", "zz" * 32)):
+    for net, key in (("ton", "11" * 32), ("near", "ed25519:notakey"), ("tron", "zz" * 32)):
         r = await client.post("/wallets/import", json={"network": net, "private_key": key, "password": "correct-horse-battery",
                                                        "totp": await totp_code(secret)}, headers=h)
         assert r.status_code == 400, (net, r.text)
@@ -336,39 +351,39 @@ async def _wallet(client, h, net):
 
 async def test_tron_balances_metadata_and_history(client, extra):
     t = FakeTron()
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     h = await signup(client, main=False)
-    w = await _wallet(client, h, "tron-nile")
+    w = await _wallet(client, h, "tron")
     t.accounts[w["address"]] = 12_500_000
     t.tokens[(TW["token"], w["address"])] = 7_000_000
-    r = (await client.get(f"/chains/tron-nile/wallets/{w['id']}/balances?tokens={TW['token']}", headers=h)).json()
+    r = (await client.get(f"/chains/tron/wallets/{w['id']}/balances?tokens={TW['token']}", headers=h)).json()
     assert r["native"]["amount"] == "12.5" and r["native"]["asset"] == "TRX"
-    assert r["tokens"][0]["symbol"] == "USDT" and r["tokens"][0]["amount"] == "7" and "nile.tronscan.org" in r["explorer"]
-    m = (await client.get(f"/chains/tron-nile/tokens/{TW['token']}", headers=h)).json()
+    assert r["tokens"][0]["symbol"] == "USDT" and r["tokens"][0]["amount"] == "7" and "tronscan.org" in r["explorer"]
+    m = (await client.get(f"/chains/tron/tokens/{TW['token']}", headers=h)).json()
     assert m["decimals"] == 6 and m["explorer"].endswith(TW["token"])
-    assert (await client.get("/chains/tron-nile/tokens/0xdeadbeef", headers=h)).status_code == 400
-    hist = (await client.get(f"/chains/tron-nile/wallets/{w['id']}/history", headers=h)).json()
+    assert (await client.get("/chains/tron/tokens/0xdeadbeef", headers=h)).status_code == 400
+    hist = (await client.get(f"/chains/tron/wallets/{w['id']}/history", headers=h)).json()
     trc20, trx = hist["chain"]  # newest first
     assert trx["status"] == "SUCCESS" and trx["raw"] == "2500000" and trx["decimals"] == 6 and trx["to"] == TW["to"]
     assert trc20["token"] == TW["token"] and trc20["raw"] == "1500000" and trc20["explorer"].endswith("cd" * 32)
     wallets = (await client.get("/wallets?with_balances=true", headers=h)).json()
     assert wallets[0]["balance_native"] == "12.5"
     t.fail = "TronGrid is unreachable right now (HTTP 503)"
-    r = (await client.get(f"/chains/tron-nile/wallets/{w['id']}/balances", headers=h)).json()
+    r = (await client.get(f"/chains/tron/wallets/{w['id']}/balances", headers=h)).json()
     assert r["native"] is None and "unreachable" in r["errors"][0]
 
 
 async def test_near_balances_are_after_storage_and_tokens_by_contract(client, extra):
     n = FakeNear()
-    xc._clients["near-testnet"] = n
+    xc._clients["near"] = n
     h = await signup(client, main=False)
-    w = await _wallet(client, h, "near-testnet")
+    w = await _wallet(client, h, "near")
     n.accounts[w["address"]] = 2 * 10**24
     n.ft[w["address"]] = 1_500_000
-    r = (await client.get(f"/chains/near-testnet/wallets/{w['id']}/balances?tokens=usdc.testnet", headers=h)).json()
+    r = (await client.get(f"/chains/near/wallets/{w['id']}/balances?tokens=usdc.near", headers=h)).json()
     assert r["native"]["amount"] == str(2 - 182 * 10**19 / 10**24).rstrip("0")  # storage kept aside
     assert r["tokens"][0]["symbol"] == "TUSD" and r["tokens"][0]["amount"] == "1.5"
-    hist = (await client.get(f"/chains/near-testnet/wallets/{w['id']}/history", headers=h)).json()
+    hist = (await client.get(f"/chains/near/wallets/{w['id']}/history", headers=h)).json()
     assert hist["chain"] == [] and "no official account-history API" in hist["note"]
 
 
@@ -386,14 +401,14 @@ async def _confirm(client, h, path, body, secret, key):
 
 async def test_tron_trx_transfer_shows_activation_and_bandwidth_then_waits_for_solidity(client, extra, monkeypatch):
     t = FakeTron()
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     monkeypatch.setattr(tron.asyncio, "sleep", _nosleep)
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
-    w = await _wallet(client, h, "tron-nile")
+    w = await _wallet(client, h, "tron")
     t.accounts[w["address"]] = 5 * tron.SUN
     body = {"wallet_id": w["id"], "to": TW["to"], "amount": "2"}
-    pf, r = await _confirm(client, h, "/chains/tron-nile/transfer", body, secret, "tron-trx-1")
+    pf, r = await _confirm(client, h, "/chains/tron/transfer", body, secret, "tron-trx-1")
     p = pf["preflight"]
     assert p["kind"] == "withdraw" and p["amount_raw"] == "2000000" and p["activation_fee_trx"] == "1"
     assert "activates it" in p["recipient_note"] and pf["requires_2fa"] is True
@@ -407,7 +422,7 @@ async def test_tron_trx_transfer_shows_activation_and_bandwidth_then_waits_for_s
     assert tron.address_from_pubkey(pub.to_bytes()) == w["address"]
     # not enough TRX once the activation fee is counted
     t.accounts[w["address"]] = int(2.5 * tron.SUN)
-    pf = (await client.post("/chains/tron-nile/transfer", json=body, headers=h)).json()
+    pf = (await client.post("/chains/tron/transfer", json=body, headers=h)).json()
     assert any("plus about 1 TRX" in x for x in pf["preflight"]["warnings"])
 
 
@@ -417,20 +432,20 @@ async def _nosleep(*_):
 
 async def test_trc20_transfer_counts_energy_and_refuses_without_trx(client, extra, monkeypatch):
     t = FakeTron()
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     monkeypatch.setattr(tron.asyncio, "sleep", _nosleep)
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
-    w = await _wallet(client, h, "tron-nile")
+    w = await _wallet(client, h, "tron")
     t.accounts[w["address"]] = 1 * tron.SUN
     t.accounts[TW["to"]] = 0
     t.tokens[(TW["token"], w["address"])] = 10_000_000
     body = {"wallet_id": w["id"], "to": TW["to"], "amount": "3", "token": TW["token"]}
-    pf = (await client.post("/chains/tron-nile/transfer", json=body, headers=h)).json()["preflight"]
+    pf = (await client.post("/chains/tron/transfer", json=body, headers=h)).json()["preflight"]
     assert pf["kind"] == "send_tokens" and pf["energy_needed"] == 64_285 and pf["energy_fee_trx"] == "6.4285"
     assert any("energy and bandwidth" in x for x in pf["warnings"])  # 1 TRX isn't enough to burn for energy
     t.resources_["energy"] = 100_000  # staked energy covers it
-    pf, r = await _confirm(client, h, "/chains/tron-nile/transfer", body, secret, "tron-trc20-1")
+    pf, r = await _confirm(client, h, "/chains/tron/transfer", body, secret, "tron-trc20-1")
     assert not pf["preflight"]["warnings"] and r.status_code == 200, r.text
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed" and t.broadcasts[-1]["raw_data_hex"]
@@ -438,11 +453,11 @@ async def test_trc20_transfer_counts_energy_and_refuses_without_trx(client, extr
 
 async def test_tron_rpc_failure_and_unsolidified_transfers(client, extra, monkeypatch):
     t = FakeTron()
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     monkeypatch.setattr(tron.asyncio, "sleep", _nosleep)
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
-    w = await _wallet(client, h, "tron-nile")
+    w = await _wallet(client, h, "tron")
     t.accounts[w["address"]] = 5 * tron.SUN
     t.accounts[TW["to"]] = 1
     t.solid_after = 10**9  # never solidifies within the wait
@@ -455,28 +470,28 @@ async def test_tron_rpc_failure_and_unsolidified_transfers(client, extra, monkey
         return await orig(*a, **{**k, "confirm_timeout_s": 0.01, "poll_s": 0})
 
     monkeypatch.setattr(tr, "sign_and_send", quick)
-    _, r = await _confirm(client, h, "/chains/tron-nile/transfer", body, secret, "tron-slow-1")
+    _, r = await _confirm(client, h, "/chains/tron/transfer", body, secret, "tron-slow-1")
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "unconfirmed" and "solidified" in job["transactions"][0]["error"]
     t.fail = "TronGrid is unreachable right now (HTTP 503)"
-    r = await client.post("/chains/tron-nile/transfer", json=body, headers=h)
+    r = await client.post("/chains/tron/transfer", json=body, headers=h)
     assert r.status_code == 502 and "unreachable" in r.json()["detail"]
 
 
 async def test_near_transfers_register_storage_and_await_final(client, extra):
     n = FakeNear()
-    xc._clients["near-testnet"] = n
+    xc._clients["near"] = n
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
-    w = await _wallet(client, h, "near-testnet")
+    w = await _wallet(client, h, "near")
     n.accounts[w["address"]] = 3 * 10**24
     n.ft[w["address"]] = 5_000_000
-    body = {"wallet_id": w["id"], "to": "bob.testnet", "amount": "2", "token": "usdc.testnet"}
+    body = {"wallet_id": w["id"], "to": "bob.near", "amount": "2", "token": "usdc.near"}
     # tokens to a named account that doesn't exist would be stranded: flagged and refused
-    pf = (await client.post("/chains/near-testnet/transfer", json=body, headers=h)).json()
+    pf = (await client.post("/chains/near/transfer", json=body, headers=h)).json()
     assert any("doesn't exist" in x for x in pf["preflight"]["warnings"])
-    n.accounts["bob.testnet"] = 1
-    pf, r = await _confirm(client, h, "/chains/near-testnet/transfer", body, secret, "near-ft-1")
+    n.accounts["bob.near"] = 1
+    pf, r = await _confirm(client, h, "/chains/near/transfer", body, secret, "near-ft-1")
     p = pf["preflight"]
     assert p["storage_deposit_near"] == "0.00125" and "registers it" in p["recipient_note"]
     assert p["storage_deposit_yocto"] == "1250000000000000000000"  # real NEAR attached: part of the confirmed hash
@@ -494,10 +509,10 @@ async def test_near_transfers_register_storage_and_await_final(client, extra):
     assert Signature(sig).verify(Pubkey(bytes.fromhex(w["address"])), hashlib.sha256(tx).digest())
     assert b"storage_deposit" in tx and b"ft_transfer" in tx and b'"amount":"2000000"' in tx
     # native: a transfer to a named account that doesn't exist is flagged; not enough NEAR is refused
-    pf = (await client.post("/chains/near-testnet/transfer", json={"wallet_id": w["id"], "to": "nobody.testnet",
+    pf = (await client.post("/chains/near/transfer", json={"wallet_id": w["id"], "to": "nobody.near",
                                                                    "amount": "1"}, headers=h)).json()
     assert any("doesn't exist" in x for x in pf["preflight"]["warnings"])
-    pf = (await client.post("/chains/near-testnet/transfer", json={"wallet_id": w["id"], "to": "bob.testnet",
+    pf = (await client.post("/chains/near/transfer", json={"wallet_id": w["id"], "to": "bob.near",
                                                                    "amount": "5"}, headers=h)).json()
     assert any("available" in x for x in pf["preflight"]["warnings"])
 
@@ -509,10 +524,10 @@ async def test_arc_uses_usdc_gas_and_its_own_chain(client, extra, monkeypatch):
     from app.services.executor import Executor
     from app.signing import get_signer
 
-    assert evm_config("arc-testnet")["chain_id"] == 5042002 and evm_config("arc")["native"] == "USDC"
+    assert evm_config("arc")["chain_id"] == 5042 and evm_config("arc")["native"] == "USDC"
 
     class ArcRPC:
-        network, chain_id = "arc-testnet", 5042002
+        network, chain_id = "arc", 5042
 
         def __init__(self):
             self.balance = 0
@@ -533,42 +548,42 @@ async def test_arc_uses_usdc_gas_and_its_own_chain(client, extra, monkeypatch):
             return 2_000_000
 
     rpc = ArcRPC()
-    app.dependency_overrides[get_executor] = lambda: Executor(None, get_signer(), evm_rpcs={"arc-testnet": rpc})
+    app.dependency_overrides[get_executor] = lambda: Executor(None, get_signer(), evm_rpcs={"arc": rpc})
     try:
         h = await signup(client, main=False)
-        w = await _wallet(client, h, "arc-testnet")
+        w = await _wallet(client, h, "arc")
         rpc.balance = 10**18  # 1 USDC (native, 18 decimals)
-        r = (await client.get(f"/chains/arc-testnet/wallets/{w['id']}/balances", headers=h)).json()
+        r = (await client.get(f"/chains/arc/wallets/{w['id']}/balances", headers=h)).json()
         assert r["native"]["asset"] == "USDC" and r["native"]["amount"] == "1" and r["tokens"][0]["symbol"] == "EURC"
         assert all(t["address"].lower() != "0x" + "36" + "0" * 38 for t in r["tokens"])  # no double-counted USDC
         body = {"wallet_id": w["id"], "to": "0x" + "cd" * 20, "amount": "0.5"}
-        pf = (await client.post("/chains/arc-testnet/transfer", json=body, headers=h)).json()["preflight"]
+        pf = (await client.post("/chains/arc/transfer", json=body, headers=h)).json()["preflight"]
         assert pf["asset"] == "USDC" and pf["amount_raw"] == str(5 * 10**17) and "one confirmation" in pf["finality"]
         assert pf["gas_fee_usdc_max"] == "0.000861"  # 21,000 gas x (2 x 20 gwei + 1 gwei), paid in USDC
-        pf = (await client.post("/chains/arc-testnet/transfer", json={**body, "amount": "1"}, headers=h)).json()
+        pf = (await client.post("/chains/arc/transfer", json={**body, "amount": "1"}, headers=h)).json()
         assert any("in gas" in x for x in pf["preflight"]["warnings"])
-        r = await client.post("/chains/arc-testnet/transfer", json={**body, "to": "0x" + "00" * 20}, headers=h)
+        r = await client.post("/chains/arc/transfer", json={**body, "to": "0x" + "00" * 20}, headers=h)
         assert r.status_code == 400 and "zero address" in r.json()["detail"]
-        r = await client.get("/chains/arc-testnet/tokens/0x3600000000000000000000000000000000000000", headers=h)
+        r = await client.get("/chains/arc/tokens/0x3600000000000000000000000000000000000000", headers=h)
         assert r.status_code == 502 and "same balance as native USDC" in r.json()["detail"]
     finally:
         app.dependency_overrides.pop(get_executor, None)
 
 
 async def test_amounts_and_recipients_are_validated(client, extra):
-    xc._clients["tron-nile"] = FakeTron()
+    xc._clients["tron"] = FakeTron()
     h = await signup(client, main=False)
-    w = await _wallet(client, h, "tron-nile")
+    w = await _wallet(client, h, "tron")
     for body, msg in (({"to": TW["to"], "amount": "0"}, "above zero"), ({"to": TW["to"], "amount": "1.0000001"}, "decimal places"),
                       ({"to": "0x" + "ab" * 20, "amount": "1"}, "valid"), ({"to": w["address"], "amount": "1"}, "sending wallet")):
-        r = await client.post("/chains/tron-nile/transfer", json={"wallet_id": w["id"], **body}, headers=h)
+        r = await client.post("/chains/tron/transfer", json={"wallet_id": w["id"], **body}, headers=h)
         assert r.status_code == 400 and msg in r.json()["detail"], (body, r.text)
 
 
 async def test_launches_swaps_and_market_data_stay_unavailable(client, extra):
     pads = {p["id"]: p["network"] for p in (await client.get("/launchpads")).json() if p["status"] != "planned"}
     assert {pads["sunpump"], pads["meme-cooking"], pads["tolly"]} == {"tron", "near", "arc"}
-    assert not any(n in ("tron-nile", "near-testnet", "arc-testnet", "ton", "ton-testnet") for n in pads.values())
+    assert all(n in ("solana", "base", "bsc", "robinhood", "ethereum", "tron", "near", "arc") for n in pads.values())
     caps = {n["id"]: n["capabilities"] for n in (await client.get("/chains")).json()["extra"]}
     for net in caps:
         for k in ("market_data", "cross_chain"):
@@ -669,17 +684,17 @@ async def test_near_send_is_not_resent_after_an_unknown_outcome(monkeypatch):
         return httpx.Response(200, json={"result": {"header": {"hash": near._b58(bytes(32))}}})
 
     c = near.NearClient(["https://a.test", "https://b.test"], client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-    h, status, err = await near.sign_and_send(c, _Signer(), "ref", "a" * 64, bytes(32), "bob.testnet",
+    h, status, err = await near.sign_and_send(c, _Signer(), "ref", "a" * 64, bytes(32), "bob.near",
                                               [near.transfer_action(1)])
     assert posts.count("send_tx") == 1 and status == "timeout" and h and "check the explorer" in err
     assert near.outcome_status({"status": {}})[0] == "timeout"
 
 
 async def test_long_amounts_are_rejected_not_rounded(client, extra):
-    xc._clients["tron-nile"] = FakeTron()
+    xc._clients["tron"] = FakeTron()
     h = await signup(client, main=False)
-    w = await _wallet(client, h, "tron-nile")
-    r = await client.post("/chains/tron-nile/transfer", json={"wallet_id": w["id"], "to": TW["to"],
+    w = await _wallet(client, h, "tron")
+    r = await client.post("/chains/tron/transfer", json={"wallet_id": w["id"], "to": TW["to"],
                                                               "amount": "1234567890123456789012.1234567"}, headers=h)
     assert r.status_code == 400 and "decimal places" in r.text
     from app.routes.chains import _raw_amount
@@ -696,11 +711,11 @@ async def test_arc_rpc_outage_is_reported_as_unavailable(monkeypatch):
         return httpx.Response(503)
 
     monkeypatch.setattr(asyncio, "sleep", _nosleep)
-    rpc = EvmRPC("arc-testnet", ["https://arc.test"], client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    rpc = EvmRPC("arc", ["https://arc.test"], client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     with pytest.raises(EvmRPCUnavailable) as e:
         await rpc.get_balance("0x" + "11" * 20)
-    assert "Arc testnet" in str(e.value)
+    assert "Arc" in str(e.value)
 
 
 async def test_health_needs_a_session(client, extra):
-    assert (await client.get("/chains/tron-nile/health")).status_code == 401
+    assert (await client.get("/chains/tron/health")).status_code == 401

@@ -8,14 +8,14 @@ import { Address, Callout, Empty, Field, Icon, LoadError, Loading, Modal, Spinne
 
 /*
  * Settings > Wallets for TRON, NEAR, Arc and TON: every wallet on these networks with its network (mainnet or
- * testnet), signer (Helm-managed, your own wallet, or watch-only), balances and what a transfer costs there. Link
+ * Helm offers mainnets only), signer (Helm-managed, your own wallet, or watch-only), balances and what a transfer costs there. Link
  * your own wallet by signing a Helm challenge in it; linking authorises nothing. Sending from a linked wallet is
  * reviewed here first, then approved and signed in the wallet.
  */
 
-export interface OvNet { id: string; name: string; family: string; testnet: boolean; enabled: boolean; chain_id: number | null;
+export interface OvNet { id: string; name: string; family: string; enabled: boolean; chain_id: number | null;
   network_id: string | null; native: string; managed: boolean; external: string }
-export interface OvWallet { id: string; network: string; family: string; network_name: string; testnet: boolean; enabled: boolean;
+export interface OvWallet { id: string; network: string; family: string; network_name: string; enabled: boolean;
   address: string; kind: string; label: string; explorer: string; native: { asset: string; amount: string } | null;
   tokens: { symbol: string; address: string; amount: string }[]; fees: Record<string, string | number> | null; error: string | null;
   can_send: boolean; signer: string }
@@ -23,8 +23,8 @@ export interface OvWallet { id: string; network: string; family: string; network
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
 const connectors = () => import("./walletConnectors");
 
-function NetBadge({ testnet }: { testnet: boolean }) {
-  return testnet ? <span className="badge info">testnet</span> : <span className="badge warn">mainnet</span>;
+function NetBadge() {
+  return <span className="badge warn">mainnet</span>;
 }
 
 export default function WalletSettings() {
@@ -47,7 +47,7 @@ export default function WalletSettings() {
     setLinkErr(""); setBusy("link");
     try {
       const c = await connectors();
-      await c.linkOwnWallet({ id: net.id, name: net.name, family: net.family, testnet: net.testnet, chain_id: net.chain_id }, me.id);
+      await c.linkOwnWallet({ id: net.id, name: net.name, family: net.family, chain_id: net.chain_id }, me.id);
       toast("good", `${net.name} wallet linked`);
       await load();
     } catch (e: any) { setLinkErr(e?.message ?? errMsg(e)); } finally { setBusy(""); }
@@ -65,7 +65,7 @@ export default function WalletSettings() {
   return (
     <div className="stack">
       <div className="stack tight">
-        <span className="small muted">Choose a network first. Testnet and mainnet are separate networks with separate addresses and balances.</span>
+        <span className="small muted">Choose a network first. Every network here is a mainnet: balances and transfers are real money.</span>
         <div className="chips" role="group" aria-label="Network">
           {data.networks.map((n) => (
             <button key={n.id} type="button" className={`chip ${pick === n.id ? "on" : ""}`} aria-pressed={pick === n.id} onClick={() => { setPick(n.id); setLinkErr(""); }}>
@@ -75,11 +75,11 @@ export default function WalletSettings() {
       </div>
       {net && (
         <div className="stack tight" style={{ padding: 12, borderRadius: 8, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
-          <div className="row" style={{ gap: 8 }}><ChainMark network={net.id} size={18} /><b>{net.name}</b><NetBadge testnet={net.testnet} />
+          <div className="row" style={{ gap: 8 }}><ChainMark network={net.id} size={18} /><b>{net.name}</b><NetBadge />
             {net.chain_id && <span className="muted small">chain ID {net.chain_id}</span>}{net.network_id && <span className="muted small">TON network {net.network_id}</span>}</div>
-          {!net.enabled ? <Callout tone="warn">{net.name} isn't enabled on this server (EXTRA_NETWORKS{net.testnet ? "" : ", ALLOW_MAINNET_EXTRA_NETWORKS"}), so nothing can be added here yet.</Callout> : (
+          {!net.enabled ? <Callout tone="warn">{net.name} isn't enabled on this server (EXTRA_NETWORKS, ALLOW_MAINNET_EXTRA_NETWORKS), so nothing can be added here yet.</Callout> : (
             <>
-              {!net.testnet && <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>}
+              <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
               <div className="row wrap" style={{ gap: 8 }}>
                 {net.family === "ton"
                   ? <Link className="btn sm" to={`/networks?network=${net.id}`}><Icon name="plus" size={13} />Connect with TON Connect</Link>
@@ -96,7 +96,7 @@ export default function WalletSettings() {
       )}
       {byNet.length === 0 ? <Empty icon="wallet" title="No wallets on these networks yet" text="Pick a network above to link your own wallet or create a Helm-managed one." /> : byNet.map(({ n, list }) => (
         <div key={n.id} className="stack tight">
-          <div className="row" style={{ gap: 8 }}><ChainMark network={n.id} size={16} /><b className="small">{n.name}</b><NetBadge testnet={n.testnet} /></div>
+          <div className="row" style={{ gap: 8 }}><ChainMark network={n.id} size={16} /><b className="small">{n.name}</b><NetBadge /></div>
           {list.map((w) => <WalletRow key={w.id} w={w} onSend={() => setSend(w)} act={act} />)}
         </div>
       ))}
@@ -113,7 +113,7 @@ function WalletRow({ w, onSend, act }: { w: OvWallet; onSend: () => void; act: (
   const disconnect = () => act(async () => {
     await api(`/wallets/${w.id}/disconnect`, { body: {} });
     const c = await connectors();
-    if (me) await c.forgetWallet({ id: w.network, name: w.network_name, family: w.family, testnet: w.testnet }, me.id);
+    if (me) await c.forgetWallet({ id: w.network, name: w.network_name, family: w.family }, me.id);
   }, "Unlinked: it's now watch-only");
   return (
     <div className="card" style={{ padding: 12 }}>
@@ -170,8 +170,7 @@ export function ExternalSendDialog({ w, onClose, onDone }: { w: OvWallet; onClos
   const [job, setJob] = useState<any>(null);
   const key = useRef(`ext-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const body = { wallet_id: w.id, to: to.trim(), amount: amount.trim(), token: token || null };
-  const net = { id: w.network, name: w.network_name, family: w.family, testnet: w.testnet,
-    chain_id: w.network.startsWith("arc") ? (w.testnet ? 5042002 : 5042) : null };
+  const net = { id: w.network, name: w.network_name, family: w.family, chain_id: w.network === "arc" ? 5042 : null };
 
   const preview = async () => {
     setErr("");
@@ -222,7 +221,7 @@ export function ExternalSendDialog({ w, onClose, onDone }: { w: OvWallet; onClos
 
   if (phase === "form") {
     return (
-      <Modal title={`Send on ${w.network_name}`} sub={`From ${w.label || short(w.address)} · ${w.testnet ? "testnet" : "mainnet"}`} onClose={onClose}
+      <Modal title={`Send on ${w.network_name}`} sub={`From ${w.label || short(w.address)} · mainnet`} onClose={onClose}
         foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn" disabled={!to.trim() || !(+amount > 0)} onClick={preview}>Review</button></>}>
         <div className="stack">
@@ -248,7 +247,7 @@ export function ExternalSendDialog({ w, onClose, onDone }: { w: OvWallet; onClos
           {phase === "wallet" ? <><Spinner />Waiting for your wallet…</> : phase === "following" ? <><Spinner />Following on the network…</> : <><Icon name="check" size={15} />Approve in wallet</>}
         </button></>}>
       <div className="stack">
-        <div className="row" style={{ gap: 8 }}><ChainMark network={w.network} size={16} /><b className="small">{w.network_name}</b><NetBadge testnet={w.testnet} /></div>
+        <div className="row" style={{ gap: 8 }}><ChainMark network={w.network} size={16} /><b className="small">{w.network_name}</b><NetBadge /></div>
         {s && <ReviewHero s={s} />}
         {warnings.map((x) => <Callout key={x} tone="err">{x}</Callout>)}
         {s && phase !== "done" && <ol className="next-steps">{s.next.map((n) => <li key={n}>{n}</li>)}</ol>}

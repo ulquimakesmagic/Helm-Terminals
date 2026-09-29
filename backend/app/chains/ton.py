@@ -98,7 +98,7 @@ def valid_address(s: str) -> bool:
         a = parse_address(s)
     except ValueError:
         return False
-    return a.wc in (0, -1)
+    return a.wc in (0, -1) and not a.testnet  # Helm is mainnet-only: a testnet-only address is refused
 
 
 # --- cells ------------------------------------------------------------------------------------------------

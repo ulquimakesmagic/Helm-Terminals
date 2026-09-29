@@ -29,12 +29,12 @@ JW = "0:" + "33" * 32
 @pytest.fixture
 def tonnet(monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "extra_networks", "ton-testnet")
-    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)
+    monkeypatch.setattr(s, "extra_networks", "ton")
+    monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
     monkeypatch.setattr(s, "ton_proof_domains", "helmterminals.xyz")
     xc._clients.clear()
     t = FakeToncenter()
-    xc._clients["ton-testnet"] = t
+    xc._clients["ton"] = t
     yield t
     xc._clients.clear()
 
@@ -157,32 +157,32 @@ def _proof(payload: str, domain="helmterminals.xyz", ts=None, address=W4):
 
 
 async def _connect(client, h, **over):
-    payload = (await client.post("/chains/ton-testnet/ton/proof-payload", headers=h)).json()["payload"]
-    body = {"address": W4, "chain": "-3", "state_init": V["wallet"]["v4_state_init"],
+    payload = (await client.post("/chains/ton/ton/proof-payload", headers=h)).json()["payload"]
+    body = {"address": W4, "chain": "-239", "state_init": V["wallet"]["v4_state_init"],
             "public_key": V["wallet"]["pub"], "proof": _proof(payload)}
     body.update(over.pop("body", {}))
     if "proof" in over:
         body["proof"] = over["proof"](payload)
-    return await client.post("/chains/ton-testnet/ton/connect", json=body, headers=h)
+    return await client.post("/chains/ton/ton/connect", json=body, headers=h)
 
 
 async def test_ton_is_off_unless_listed_and_helm_never_creates_ton_keys(client, monkeypatch):
     h = await signup(client, main=False)
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
-    assert listed["ton"]["enabled"] and not listed["ton-testnet"]["enabled"]  # TON mainnet on by default
+    assert listed["ton"]["enabled"] and listed["ton"]["network_id"] == "-239"  # TON mainnet on by default
     monkeypatch.setattr(get_settings(), "extra_networks", "")
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
-    assert not listed["ton"]["enabled"] and not listed["ton-testnet"]["enabled"]
+    assert not listed["ton"]["enabled"]
     assert listed["ton"]["capabilities"]["launches"].startswith("no")
-    assert (await client.post("/chains/ton-testnet/ton/proof-payload", headers=h)).status_code == 409
-    monkeypatch.setattr(get_settings(), "extra_networks", "ton-testnet")
-    r = await client.post("/wallets", json={"network": "ton-testnet", "count": 1}, headers=h)
+    assert (await client.post("/chains/ton/ton/proof-payload", headers=h)).status_code == 409
+    monkeypatch.setattr(get_settings(), "extra_networks", "ton")
+    r = await client.post("/wallets", json={"network": "ton", "count": 1}, headers=h)
     assert r.status_code == 400 and "TON Connect" in r.text
 
 
 async def test_connect_binds_the_wallet_only_with_a_valid_proof(client, tonnet):
     h = await signup(client, main=False)
-    assert (await _connect(client, h, body={"chain": "-239"})).status_code == 400  # mainnet wallet on testnet
+    assert (await _connect(client, h, body={"chain": "-3"})).status_code == 400  # a testnet wallet isn't accepted
     assert "other than Helm" in (await _connect(client, h, proof=lambda p: _proof(p, domain="evil.example"))).text
     assert "expired" in (await _connect(client, h, proof=lambda p: _proof(p, ts=time.time() - 3600))).text
     r = await _connect(client, h, body={"public_key": "ab" * 32})
@@ -194,16 +194,16 @@ async def test_connect_binds_the_wallet_only_with_a_valid_proof(client, tonnet):
     r = await _connect(client, h)
     assert r.status_code == 201, r.text
     w = r.json()
-    assert w["kind"] == "connected" and w["address"] == ton.parse_address(W4).friendly(False, True)
+    assert w["kind"] == "connected" and w["address"] == ton.parse_address(W4).friendly(False, False)
     again = await _connect(client, h)
     assert again.json()["id"] == w["id"]  # connecting again doesn't duplicate it
     wallets = (await client.get("/wallets", headers=h)).json()
-    assert [x["kind"] for x in wallets if x["network"] == "ton-testnet"] == ["connected"]
+    assert [x["kind"] for x in wallets if x["network"] == "ton"] == ["connected"]
     # a payload issued to one Helm user can't be used by another (sessions are per user)
     h2 = await signup(client, email="b@example.com", main=False)
-    p1 = (await client.post("/chains/ton-testnet/ton/proof-payload", headers=h)).json()["payload"]
-    r = await client.post("/chains/ton-testnet/ton/connect", headers=h2, json={
-        "address": W4, "chain": "-3", "state_init": V["wallet"]["v4_state_init"], "proof": _proof(p1)})
+    p1 = (await client.post("/chains/ton/ton/proof-payload", headers=h)).json()["payload"]
+    r = await client.post("/chains/ton/ton/connect", headers=h2, json={
+        "address": W4, "chain": "-239", "state_init": V["wallet"]["v4_state_init"], "proof": _proof(p1)})
     assert r.status_code == 400 and "wasn't issued" in r.text
 
 
@@ -219,10 +219,13 @@ async def test_deployed_wallet_proof_uses_the_indexed_contract(client, tonnet):
 
 async def test_watching_a_ton_address_stores_one_canonical_form(client, tonnet):
     h = await signup(client, main=False)
-    r = await client.post("/wallets/watch", json={"network": "ton-testnet", "address": V["addr"]["b"]}, headers=h)
-    assert r.status_code == 201 and r.json()["address"] == V["addr"]["tnb"]
-    r = await client.post("/wallets/watch", json={"network": "ton-testnet", "address": V["addr"]["raw"]}, headers=h)
+    r = await client.post("/wallets/watch", json={"network": "ton", "address": V["addr"]["b"]}, headers=h)
+    assert r.status_code == 201 and r.json()["address"] == V["addr"]["nb"]
+    r = await client.post("/wallets/watch", json={"network": "ton", "address": V["addr"]["raw"]}, headers=h)
     assert r.status_code == 409
+    for testnet_form in (V["addr"]["tb"], V["addr"]["tnb"]):  # testnet-only addresses are refused
+        r = await client.post("/wallets/watch", json={"network": "ton", "address": testnet_form}, headers=h)
+        assert r.status_code == 400
 
 
 # --- balances, history, health -------------------------------------------------------------------------------
@@ -234,16 +237,16 @@ async def test_balances_jettons_history_and_health(client, tonnet):
     tonnet.accounts[W4] = {"status": "active", "balance": "3500000000"}
     tonnet.jetton_wallets[(W4, JETTON)] = {"address": JW.upper(), "balance": "2500000", "owner": W4.upper(),
                                            "jetton": JETTON.upper()}
-    b = (await client.get(f"/chains/ton-testnet/wallets/{w['id']}/balances?tokens={JETTON}", headers=h)).json()
+    b = (await client.get(f"/chains/ton/wallets/{w['id']}/balances?tokens={JETTON}", headers=h)).json()
     assert b["native"]["amount"] == "3.5" and b["native"]["asset"] == "TON"
     assert b["tokens"][0]["amount"] == "2.5" and b["tokens"][0]["symbol"] == "TUSD" and not b["errors"]
-    hist = (await client.get(f"/chains/ton-testnet/wallets/{w['id']}/history", headers=h)).json()
+    hist = (await client.get(f"/chains/ton/wallets/{w['id']}/history", headers=h)).json()
     row = hist["chain"][0]
     assert row["direction"] == "in" and row["raw"] == "2500000000" and row["reference"] == bytes(range(32)).hex()
-    assert row["explorer"].startswith("https://testnet.tonviewer.com/transaction/")
-    assert (await client.get("/chains/ton-testnet/health", headers=h)).json()["ok"] is True
+    assert row["explorer"].startswith("https://tonviewer.com/transaction/")
+    assert (await client.get("/chains/ton/health", headers=h)).json()["ok"] is True
     tonnet.fail = "toncenter is unreachable right now (HTTP 503)"
-    b = (await client.get(f"/chains/ton-testnet/wallets/{w['id']}/balances", headers=h)).json()
+    b = (await client.get(f"/chains/ton/wallets/{w['id']}/balances", headers=h)).json()
     assert b["native"] is None and "unreachable" in b["errors"][0]
 
 
@@ -251,8 +254,8 @@ async def test_balances_jettons_history_and_health(client, tonnet):
 
 
 async def _confirm(client, h, body, key="k1"):
-    pf = (await client.post("/chains/ton-testnet/ton/transfer", json=body, headers=h)).json()
-    r = await client.post("/chains/ton-testnet/ton/transfer", headers=h, json={
+    pf = (await client.post("/chains/ton/ton/transfer", json=body, headers=h)).json()
+    r = await client.post("/chains/ton/ton/transfer", headers=h, json={
         **body, "confirm": True, "preflight_hash": pf.get("preflight_hash"), "idempotency_key": key})
     return pf, r
 
@@ -274,9 +277,9 @@ async def test_native_transfer_job_first_then_wallet_signed_message_is_followed(
     p = pf["preflight"]
     req = p["wallet_request"]
     assert pf["requires_2fa"] is False and p["kind"] == "ton_transfer"
-    assert req["network"] == "-3" and req["from"] == W4
-    # the recipient isn't deployed: sent non-bounceable (testnet form) so it arrives
-    assert req["messages"] == [{"address": ton.parse_address(V["addr"]["raw"]).friendly(False, True),
+    assert req["network"] == "-239" and req["from"] == W4
+    # the recipient isn't deployed: sent non-bounceable so it arrives
+    assert req["messages"] == [{"address": ton.parse_address(V["addr"]["raw"]).friendly(False, False),
                                 "amount": "1250000000"}]
     assert "non-bounceable" in p["recipient_note"]
     # confirming creates the job before the wallet is asked, and hands back exactly the reviewed request
@@ -284,13 +287,13 @@ async def test_native_transfer_job_first_then_wallet_signed_message_is_followed(
     jid = r.json()["job_id"]
     # the wallet spends the balance before Helm hears back: the job is already there, nothing is re-checked
     tonnet.accounts[W4] = {"status": "active", "balance": "1"}
-    again = (await client.post("/chains/ton-testnet/ton/transfer", headers=h, json={
+    again = (await client.post("/chains/ton/ton/transfer", headers=h, json={
         **body, "confirm": True, "preflight_hash": pf["preflight_hash"], "idempotency_key": "k1"})).json()
     assert again["job_id"] == jid and again["wallet_request"] == req
-    bad = await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["jetton"]["boc"]})
+    bad = await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["jetton"]["boc"]})
     assert bad.status_code == 400 and "signed message" in bad.text
     tonnet.by_msg[V["ext_inline"]["norm_hash"]] = [_wallet_tx(req["messages"])]
-    r = await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
+    r = await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
     assert r.status_code == 200 and r.json()["message_hash"] == V["ext_inline"]["norm_hash"]
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "confirmed" and job["transactions"][0]["signature"] == (bytes([9]) * 32).hex()
@@ -299,7 +302,7 @@ async def test_native_transfer_job_first_then_wallet_signed_message_is_followed(
     tonnet.accounts[W4] = {"status": "active", "balance": "3000000000"}
     _, r2 = await _confirm(client, h, body, key="k10")
     j2 = r2.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{j2}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{j2}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
     job2 = (await client.get(f"/jobs/{j2}", headers=h)).json()
     assert job2["status"] == "failed" and "already recorded" in job2["transactions"][0]["error"]
 
@@ -316,17 +319,17 @@ async def test_declined_unseen_failed_and_different_messages(client, tonnet, mon
     body = {"wallet_id": w["id"], "to": OTHER, "amount": "1"}
     pf, r = await _confirm(client, h, body, key="d1")
     msgs = pf["preflight"]["wallet_request"]["messages"]
-    assert msgs[0]["address"].startswith("k")  # active recipient: bounceable, testnet form
+    assert msgs[0]["address"].startswith("E")  # active recipient: bounceable, mainnet form
     jid = r.json()["job_id"]
-    assert (await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/declined", headers=h)).json()["status"] == "failed"
+    assert (await client.post(f"/chains/ton/ton/jobs/{jid}/declined", headers=h)).json()["status"] == "failed"
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert "Nothing was sent" in job["error"]
-    r = await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
+    r = await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
     assert r.json()["status"] == "failed"  # a declined job doesn't come back to life
     # never seen on the index: unconfirmed, not failed
     _, r = await _confirm(client, h, body, key="d2")
     jid = r.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "unconfirmed" and "check your wallet" in job["transactions"][0]["error"]
     # the wallet rejected it
@@ -334,18 +337,18 @@ async def test_declined_unseen_failed_and_different_messages(client, tonnet, mon
         "aborted": True, "compute_ph": {"success": False, "exit_code": 33}}}]
     _, r = await _confirm(client, h, body, key="d3")
     jid = r.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "failed" and "33" in job["transactions"][0]["error"]
     # the wallet sent something other than what was reviewed
     tonnet.by_msg[V["ext_inline"]["norm_hash"]] = [_wallet_tx([{**msgs[0], "amount": "999"}], h=7)]
     _, r = await _confirm(client, h, body, key="d4")
     jid = r.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "failed" and "isn't the transfer you reviewed" in job["transactions"][0]["error"]
     # not enough TON is refused before any job exists
-    r = (await client.post("/chains/ton-testnet/ton/transfer", headers=h, json={**body, "amount": "3"})).json()
+    r = (await client.post("/chains/ton/ton/transfer", headers=h, json={**body, "amount": "3"})).json()
     assert any("less than 3 TON" in x for x in r["preflight"]["warnings"])
 
 
@@ -355,16 +358,16 @@ async def test_jetton_transfer_is_followed_through_both_jetton_wallets(client, t
     w = (await _connect(client, h)).json()
     tonnet.accounts[W4] = {"status": "active", "balance": "1000000000"}
     body = {"wallet_id": w["id"], "to": OTHER, "amount": "1.5", "token": JETTON}
-    r = await client.post("/chains/ton-testnet/ton/transfer", json=body, headers=h)
+    r = await client.post("/chains/ton/ton/transfer", json=body, headers=h)
     assert r.status_code == 400 and "holds no" in r.text
     tonnet.jetton_wallets[(W4, JETTON)] = {"address": JW, "balance": "5000000", "owner": OTHER, "jetton": JETTON}
-    r = await client.post("/chains/ton-testnet/ton/transfer", json=body, headers=h)
+    r = await client.post("/chains/ton/ton/transfer", json=body, headers=h)
     assert r.status_code == 502 and "someone else" in r.text  # an index answer for another owner is refused
     tonnet.jetton_wallets[(W4, JETTON)] = {"address": JW, "balance": "5000000", "owner": W4, "jetton": JETTON}
     pf, r = await _confirm(client, h, body, key="j1")
     p = pf["preflight"]
     assert p["amount_raw"] == "1500000" and p["decimals"] == 6 and p["asset"] == "TUSD"
-    assert p["token"] == ton.parse_address(JETTON).friendly(True, True)
+    assert p["token"] == ton.parse_address(JETTON).friendly(True, False)
     (m,) = p["wallet_request"]["messages"]
     assert ton.parse_address(m["address"]).raw() == JW and ton.parse_address(m["address"]).bounceable
     assert m["amount"] == "50000000"
@@ -376,7 +379,7 @@ async def test_jetton_transfer_is_followed_through_both_jetton_wallets(client, t
           "out_msgs": [{"hash": "hop2"}]}
     tonnet.by_msg["out90"] = [{**ok, "description": {"aborted": True, "compute_ph": {"success": False, "exit_code": 47}}}]
     jid = r.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext_inline"]["boc"]})
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "failed" and "tokens didn't move" in job["transactions"][0]["error"]
     # both jetton wallets succeed: confirmed
@@ -385,12 +388,12 @@ async def test_jetton_transfer_is_followed_through_both_jetton_wallets(client, t
     tonnet.by_msg["hop2"] = [{**ok, "out_msgs": []}]
     _, r = await _confirm(client, h, body, key="j2")
     jid = r.json()["job_id"]
-    await client.post(f"/chains/ton-testnet/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
+    await client.post(f"/chains/ton/ton/jobs/{jid}/signed", headers=h, json={"signed_boc": V["ext"]["boc"]})
     assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "confirmed"
     tonnet.accounts[W4] = {"status": "active", "balance": "1000"}
-    r = (await client.post("/chains/ton-testnet/ton/transfer", json=body, headers=h)).json()
+    r = (await client.post("/chains/ton/ton/transfer", json=body, headers=h)).json()
     assert any("fees" in x for x in r["preflight"]["warnings"])
-    r = await client.post("/chains/ton-testnet/ton/transfer", headers=h, json={**body, "amount": "1e40"})
+    r = await client.post("/chains/ton/ton/transfer", headers=h, json={**body, "amount": "1e40"})
     assert r.status_code == 400
 
 
@@ -423,18 +426,18 @@ async def test_only_real_workchains(client, tonnet):
     h = await signup(client, main=False)
     w = (await _connect(client, h)).json()
     tonnet.accounts[W4] = {"status": "active", "balance": "3000000000"}
-    r = await client.post("/chains/ton-testnet/ton/transfer", headers=h,
+    r = await client.post("/chains/ton/ton/transfer", headers=h,
                           json={"wallet_id": w["id"], "to": "5:" + "11" * 32, "amount": "1"})
     assert r.status_code == 400 and "basechain" in r.text
 
 
 async def test_watch_only_and_other_routes_cannot_move_ton(client, tonnet):
     h = await signup(client, main=False)
-    wa = (await client.post("/wallets/watch", json={"network": "ton-testnet", "address": OTHER}, headers=h)).json()
-    r = await client.post("/chains/ton-testnet/ton/transfer", headers=h,
+    wa = (await client.post("/wallets/watch", json={"network": "ton", "address": OTHER}, headers=h)).json()
+    r = await client.post("/chains/ton/ton/transfer", headers=h,
                           json={"wallet_id": wa["id"], "to": W4, "amount": "1"})
     assert r.status_code == 400 and "TON Connect" in r.text
-    r = await client.post("/chains/ton-testnet/transfer", headers=h, json={"wallet_id": wa["id"], "to": W4, "amount": "1"})
+    r = await client.post("/chains/ton/transfer", headers=h, json={"wallet_id": wa["id"], "to": W4, "amount": "1"})
     assert r.status_code == 400 and "own wallet" in r.text
     r = await client.post("/wallets/withdraw", headers=h, json={"wallet_ids": [wa["id"]], "destination": W4})
     assert r.status_code == 400

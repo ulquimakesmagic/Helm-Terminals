@@ -33,8 +33,8 @@ DOMAIN = "helmterminals.xyz"
 @pytest.fixture
 def nets(monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "extra_networks", "tron-nile,near-testnet,arc-testnet")
-    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)
+    monkeypatch.setattr(s, "extra_networks", "tron,near,arc")
+    monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
     monkeypatch.setattr(s, "ton_proof_domains", DOMAIN)
     xc._clients.clear()
     yield
@@ -108,31 +108,31 @@ class Near(FakeNear):
 
 
 async def test_linking_proves_ownership_bound_to_user_network_site_and_time(client, nets, monkeypatch):
-    xc._clients["tron-nile"] = FakeTron()
+    xc._clients["tron"] = FakeTron()
     h = await signup(client, main=False)
-    c, r = await _link(client, h, "tron-nile", TRON_ADDR)
-    assert "TRON Nile testnet (testnet)" in c["message"] and TRON_ADDR in c["message"]
+    c, r = await _link(client, h, "tron", TRON_ADDR)
+    assert "TRON (mainnet)" in c["message"] and TRON_ADDR in c["message"]
     assert "doesn't authorize any transaction" in c["message"]
     assert r.status_code == 201, r.text
     w = r.json()
     assert w["kind"] == "connected" and "signer_ref" not in w
     # a challenge links once
     body = {"address": TRON_ADDR, "domain": DOMAIN, "nonce": c["nonce"], "signature": tron_sign(c["message"])}
-    r = await client.post("/chains/tron-nile/wallet-proof/verify", json=body, headers=h)
+    r = await client.post("/chains/tron/wallet-proof/verify", json=body, headers=h)
     assert r.status_code == 400 and "already used" in r.text
     # someone else's key
     other = "0x" + keys.PrivateKey(bytes([2]) * 32).sign_msg_hash(tron.message_hash_v2(c["message"])).to_bytes().hex()
-    c2, r = await _link(client, h, "tron-nile", TRON_ADDR, sig=other)
+    c2, r = await _link(client, h, "tron", TRON_ADDR, sig=other)
     assert r.status_code == 400 and "different TRON account" in r.text
     # another Helm user can't use this user's challenge
     h2 = await signup(client, email="b@example.com", main=False)
-    c3 = (await client.post("/chains/tron-nile/wallet-proof/challenge", json={"address": TRON_ADDR, "domain": DOMAIN},
+    c3 = (await client.post("/chains/tron/wallet-proof/challenge", json={"address": TRON_ADDR, "domain": DOMAIN},
                             headers=h)).json()
-    r = await client.post("/chains/tron-nile/wallet-proof/verify", headers=h2, json={
+    r = await client.post("/chains/tron/wallet-proof/verify", headers=h2, json={
         "address": TRON_ADDR, "domain": DOMAIN, "nonce": c3["nonce"], "signature": tron_sign(c3["message"])})
     assert r.status_code == 400 and "wasn't issued" in r.text
     # only Helm's own site, and challenges expire
-    r = await client.post("/chains/tron-nile/wallet-proof/challenge", json={"address": TRON_ADDR, "domain": "evil.example"},
+    r = await client.post("/chains/tron/wallet-proof/challenge", json={"address": TRON_ADDR, "domain": "evil.example"},
                           headers=h)
     assert r.status_code == 400
     from app.routes import ton as ton_routes
@@ -140,40 +140,40 @@ async def test_linking_proves_ownership_bound_to_user_network_site_and_time(clie
     real = time.time
     monkeypatch.setattr(ton_routes.time, "time", lambda: real() + 3600)
     c4 = {"nonce": c3["nonce"]}
-    r = await client.post("/chains/tron-nile/wallet-proof/verify", headers=h, json={
+    r = await client.post("/chains/tron/wallet-proof/verify", headers=h, json={
         "address": TRON_ADDR, "domain": DOMAIN, "nonce": c4["nonce"], "signature": tron_sign(c3["message"])})
     assert r.status_code == 400 and "expired" in r.text
 
 
 async def test_arc_link_needs_the_right_chain_and_signer(client, nets):
     h = await signup(client, main=False)
-    _, r = await _link(client, h, "arc-testnet", EVM_ADDR, chain_id=5042)  # mainnet id while linking testnet
+    _, r = await _link(client, h, "arc", EVM_ADDR, chain_id=5042002)  # the old Arc testnet id
     assert r.status_code == 400 and "switch networks" in r.text
-    _, r = await _link(client, h, "arc-testnet", EVM_ADDR.lower())
+    _, r = await _link(client, h, "arc", EVM_ADDR.lower())
     assert r.status_code == 201 and r.json()["address"] == EVM_ADDR  # stored checksummed
     other = Account.sign_message(encode_defunct(text="x"), bytes([3]) * 32).signature.hex()
-    _, r = await _link(client, h, "arc-testnet", "0x" + "44" * 20, sig=other)
+    _, r = await _link(client, h, "arc", "0x" + "44" * 20, sig=other)
     assert r.status_code == 400
 
 
 async def test_near_link_needs_a_full_access_key_of_the_account(client, nets):
     n = Near()
-    xc._clients["near-testnet"] = n
+    xc._clients["near"] = n
     h = await signup(client, main=False)
-    _, r = await _link(client, h, "near-testnet", "alice.testnet", recipient="evil.example")
+    _, r = await _link(client, h, "near", "alice.near", recipient="evil.example")
     assert r.status_code == 400 and "doesn't verify" in r.text
     n.permission = "FunctionCall"
-    _, r = await _link(client, h, "near-testnet", "alice.testnet")
+    _, r = await _link(client, h, "near", "alice.near")
     assert r.status_code == 400 and "full-access" in r.text
     n.permission = "FullAccess"
-    _, r = await _link(client, h, "near-testnet", "Alice.testnet")
-    assert r.status_code == 201 and r.json()["address"] == "alice.testnet"
+    _, r = await _link(client, h, "near", "Alice.near")
+    assert r.status_code == 201 and r.json()["address"] == "alice.near"
 
 
 async def test_ton_links_only_through_ton_connect(client, nets, monkeypatch):
-    monkeypatch.setattr(get_settings(), "extra_networks", "ton-testnet")
+    monkeypatch.setattr(get_settings(), "extra_networks", "ton")
     h = await signup(client, main=False)
-    r = await client.post("/chains/ton-testnet/wallet-proof/challenge", json={"address": "0:" + "11" * 32, "domain": DOMAIN},
+    r = await client.post("/chains/ton/wallet-proof/challenge", json={"address": "0:" + "11" * 32, "domain": DOMAIN},
                           headers=h)
     assert r.status_code == 400 and "TON Connect" in r.text
 
@@ -184,20 +184,20 @@ async def test_ton_links_only_through_ton_connect(client, nets, monkeypatch):
 async def test_overview_rename_disconnect_remove_and_isolation(client, nets):
     t = FakeTron()
     t.accounts[TRON_ADDR] = 7_000_000
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     h = await signup(client, main=False)
-    w = (await _link(client, h, "tron-nile", TRON_ADDR))[1].json()
-    managed = (await client.post("/wallets", json={"network": "tron-nile", "count": 1}, headers=h)).json()[0]
+    w = (await _link(client, h, "tron", TRON_ADDR))[1].json()
+    managed = (await client.post("/wallets", json={"network": "tron", "count": 1}, headers=h)).json()[0]
     ov = (await client.get("/chains/wallets/overview", headers=h)).json()
     rows = {x["id"]: x for x in ov["wallets"]}
     mine = rows[w["id"]]
-    assert mine["kind"] == "connected" and mine["signer"] == "Your wallet" and mine["testnet"] is True
+    assert mine["kind"] == "connected" and mine["signer"] == "Your wallet" and "testnet" not in mine
     assert mine["native"] == {"asset": "TRX", "amount": "7"} and mine["fees"]["kind"] == "resources"
-    assert "energy" in mine["fees"]["token_transfer"] and mine["explorer"].startswith("https://nile.tronscan.org/")
+    assert "energy" in mine["fees"]["token_transfer"] and mine["explorer"].startswith("https://tronscan.org/")
     assert rows[managed["id"]]["signer"] == "Helm signer"
     text = json.dumps(ov)
     assert "signer_ref" not in text and "local:" not in text  # no key material in wallet APIs
-    tron_net = next(n for n in ov["networks"] if n["id"] == "tron-nile")
+    tron_net = next(n for n in ov["networks"] if n["id"] == "tron")
     assert tron_net["external"] == "TronLink" and tron_net["managed"] is True
     ton_net = next(n for n in ov["networks"] if n["id"] == "ton")
     assert ton_net["managed"] is False and ton_net["enabled"] is False
@@ -207,33 +207,30 @@ async def test_overview_rename_disconnect_remove_and_isolation(client, nets):
     assert (await client.get("/chains/wallets/overview", headers=h2)).json()["wallets"] == []
     assert (await client.patch(f"/wallets/{w['id']}", json={"label": "x"}, headers=h2)).status_code == 404
     assert (await client.post(f"/wallets/{w['id']}/disconnect", headers=h2)).status_code == 404
-    r = await client.post("/chains/tron-nile/external/transfer", headers=h2,
+    r = await client.post("/chains/tron/external/transfer", headers=h2,
                           json={"wallet_id": w["id"], "to": managed["address"], "amount": "1"})
     assert r.status_code == 404
     # disconnect keeps it watch-only; a managed wallet can't be disconnected or removed
     assert (await client.post(f"/wallets/{managed['id']}/disconnect", headers=h)).status_code == 400
     assert (await client.delete(f"/wallets/{managed['id']}", headers=h)).status_code == 400
     assert (await client.post(f"/wallets/{w['id']}/disconnect", headers=h)).json()["kind"] == "watch"
-    r = await client.post("/chains/tron-nile/external/transfer", headers=h,
+    r = await client.post("/chains/tron/external/transfer", headers=h,
                           json={"wallet_id": w["id"], "to": managed["address"], "amount": "1"})
     assert r.status_code == 400 and "link this wallet" in r.text
     assert (await client.delete(f"/wallets/{w['id']}", headers=h)).json() == {"removed": w["id"]}
 
 
-async def test_testnet_wallets_never_count_as_mainnet(client, nets, monkeypatch):
+async def test_a_wallet_only_sends_on_its_own_network(client, nets):
     t = FakeTron()
     t.accounts[TRON_ADDR] = 5_000_000
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     h = await signup(client, main=False)
-    await _link(client, h, "tron-nile", TRON_ADDR)
+    await _link(client, h, "tron", TRON_ADDR)
     ov = (await client.get("/chains/wallets/overview", headers=h)).json()
-    assert [(w["network"], w["testnet"]) for w in ov["wallets"]] == [("tron-nile", True)]
-    # the same address can't be used on mainnet without linking it there
-    monkeypatch.setattr(get_settings(), "extra_networks", "tron,tron-nile")
-    monkeypatch.setattr(get_settings(), "allow_mainnet_extra_networks", True)
+    assert [w["network"] for w in ov["wallets"]] == ["tron"]
     w = ov["wallets"][0]
-    r = await client.post("/chains/tron/external/transfer", headers=h, json={"wallet_id": w["id"], "to": TRON_ADDR, "amount": "1"})
-    assert r.status_code == 400 and "tron-nile, not tron" in r.text
+    r = await client.post("/chains/near/external/transfer", headers=h, json={"wallet_id": w["id"], "to": "bob.near", "amount": "1"})
+    assert r.status_code == 400 and "tron, not near" in r.text
 
 
 # --- sending from a linked wallet ------------------------------------------------------------------------------
@@ -256,11 +253,11 @@ async def test_tron_linked_wallet_signs_what_was_reviewed_then_helm_broadcasts(c
     to = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
     t.accounts[TRON_ADDR] = 50_000_000
     t.accounts[to] = 1
-    xc._clients["tron-nile"] = t
+    xc._clients["tron"] = t
     h = await signup(client, main=False)
-    w = (await _link(client, h, "tron-nile", TRON_ADDR))[1].json()
+    w = (await _link(client, h, "tron", TRON_ADDR))[1].json()
     body = {"wallet_id": w["id"], "to": to, "amount": "2"}
-    pf, r = await _pending(client, h, "tron-nile", body, "t1")
+    pf, r = await _pending(client, h, "tron", body, "t1")
     assert pf["requires_2fa"] is False and pf["preflight"]["kind"] == "external_transfer"
     assert "bandwidth_bytes" in pf["preflight"]
     tx = r.json()["wallet_request"]["tx"]
@@ -268,15 +265,15 @@ async def test_tron_linked_wallet_signs_what_was_reviewed_then_helm_broadcasts(c
     # nothing is broadcast until the wallet signs; a different transaction or signer is refused
     assert t.broadcasts == []
     other = build_tron_tx(TRON_ADDR, to=to, amount=3)
-    r = await client.post(f"/chains/tron-nile/external/jobs/{jid}/signed", headers=h,
+    r = await client.post(f"/chains/tron/external/jobs/{jid}/signed", headers=h,
                           json={"signed_tx": {**other, "signature": ["00" * 65]}})
     assert r.status_code == 400 and "different transaction" in r.text
     bad = keys.PrivateKey(bytes([5]) * 32).sign_msg_hash(bytes.fromhex(tx["txID"]))
-    r = await client.post(f"/chains/tron-nile/external/jobs/{jid}/signed", headers=h,
+    r = await client.post(f"/chains/tron/external/jobs/{jid}/signed", headers=h,
                           json={"signed_tx": {**tx, "signature": [bad.to_bytes().hex()]}})
     assert r.status_code == 400 and "different account" in r.text
     good = keys.PrivateKey(PK).sign_msg_hash(bytes.fromhex(tx["txID"]))
-    r = await client.post(f"/chains/tron-nile/external/jobs/{jid}/signed", headers=h,
+    r = await client.post(f"/chains/tron/external/jobs/{jid}/signed", headers=h,
                           json={"signed_tx": {**tx, "signature": [good.to_bytes().hex()]}})
     assert r.status_code == 200
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
@@ -325,49 +322,49 @@ async def test_arc_linked_wallet_sends_and_helm_checks_what_it_sent(client, nets
     app.dependency_overrides[get_executor] = lambda: fake
     try:
         h = await signup(client, main=False)
-        w = (await _link(client, h, "arc-testnet", EVM_ADDR))[1].json()
+        w = (await _link(client, h, "arc", EVM_ADDR))[1].json()
         to = "0x" + "44" * 20
-        _, r = await _pending(client, h, "arc-testnet", {"wallet_id": w["id"], "to": to, "amount": "1.5"}, "a1")
+        _, r = await _pending(client, h, "arc", {"wallet_id": w["id"], "to": to, "amount": "1.5"}, "a1")
         req = r.json()["wallet_request"]
-        assert req["chain_id"] == 5042002 and req["from"] == EVM_ADDR and int(req["value"], 16) == 15 * 10**17
+        assert req["chain_id"] == 5042 and req["from"] == EVM_ADDR and int(req["value"], 16) == 15 * 10**17
         jid = r.json()["job_id"]
         good = "0x" + "aa" * 32
         fake.txs[good] = {"from": EVM_ADDR.lower(), "to": req["to"].lower(), "input": req["data"], "value": req["value"],
-                          "chainId": hex(5042002)}
-        await client.post(f"/chains/arc-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": good})
+                          "chainId": hex(5042)}
+        await client.post(f"/chains/arc/external/jobs/{jid}/signed", headers=h, json={"tx_hash": good})
         assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "confirmed"
         # a hash for something else is recorded as not the reviewed transfer
-        _, r = await _pending(client, h, "arc-testnet", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a2")
+        _, r = await _pending(client, h, "arc", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a2")
         jid = r.json()["job_id"]
         wrong = "0x" + "bb" * 32
         fake.txs[wrong] = {**fake.txs[good], "value": hex(1)}
-        await client.post(f"/chains/arc-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": wrong})
+        await client.post(f"/chains/arc/external/jobs/{jid}/signed", headers=h, json={"tx_hash": wrong})
         job = (await client.get(f"/jobs/{jid}", headers=h)).json()
         # money may have moved, so it's never "failed" (which would invite a resend): it waits for a look on the explorer
         assert job["status"] == "unconfirmed" and "different transaction" in job["transactions"][0]["error"]
         # a hash Helm already recorded can't be claimed for another transfer
-        _, r = await _pending(client, h, "arc-testnet", {"wallet_id": w["id"], "to": to, "amount": "1.5"}, "a4")
-        r = await client.post(f"/chains/arc-testnet/external/jobs/{r.json()['job_id']}/signed", headers=h,
+        _, r = await _pending(client, h, "arc", {"wallet_id": w["id"], "to": to, "amount": "1.5"}, "a4")
+        r = await client.post(f"/chains/arc/external/jobs/{r.json()['job_id']}/signed", headers=h,
                               json={"tx_hash": good.upper().replace("0X", "0x")})
         assert r.status_code == 400 and "already recorded" in r.text
         # the wallet errored after approval: unknown, not failed, and it can't be sent again as new
-        _, r = await _pending(client, h, "arc-testnet", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a5")
+        _, r = await _pending(client, h, "arc", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a5")
         jid5 = r.json()["job_id"]
-        assert (await client.post(f"/chains/arc-testnet/external/jobs/{jid5}/unknown", headers=h)).json()["status"] == "unconfirmed"
-        assert (await client.post(f"/chains/arc-testnet/external/jobs/{jid5}/declined", headers=h)).json()["status"] == "unconfirmed"
+        assert (await client.post(f"/chains/arc/external/jobs/{jid5}/unknown", headers=h)).json()["status"] == "unconfirmed"
+        assert (await client.post(f"/chains/arc/external/jobs/{jid5}/declined", headers=h)).json()["status"] == "unconfirmed"
         # another user can't touch the job
         other = await signup(client, email="b@example.com", main=False)
-        r = await client.post(f"/chains/arc-testnet/external/jobs/{jid5}/unknown", headers=other)
+        r = await client.post(f"/chains/arc/external/jobs/{jid5}/unknown", headers=other)
         assert r.status_code == 404
         # declined in the wallet
-        _, r = await _pending(client, h, "arc-testnet", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a3")
+        _, r = await _pending(client, h, "arc", {"wallet_id": w["id"], "to": to, "amount": "1"}, "a3")
         jid = r.json()["job_id"]
-        assert (await client.post(f"/chains/arc-testnet/external/jobs/{jid}/declined", headers=h)).json()["status"] == "failed"
-        r = await client.post(f"/chains/arc-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": good})
+        assert (await client.post(f"/chains/arc/external/jobs/{jid}/declined", headers=h)).json()["status"] == "failed"
+        r = await client.post(f"/chains/arc/external/jobs/{jid}/signed", headers=h, json={"tx_hash": good})
         assert r.json()["status"] == "failed"  # a declined transfer doesn't come back
         # not enough USDC for the amount plus gas is refused before any job exists
         fake.balance = 10**15
-        r = (await client.post("/chains/arc-testnet/external/transfer", headers=h,
+        r = (await client.post("/chains/arc/external/transfer", headers=h,
                                json={"wallet_id": w["id"], "to": to, "amount": "1"})).json()
         assert r["preflight"]["warnings"]
     finally:
@@ -376,31 +373,31 @@ async def test_arc_linked_wallet_sends_and_helm_checks_what_it_sent(client, nets
 
 async def test_near_linked_wallet_sends_the_reviewed_actions(client, nets):
     n = Near()
-    n.accounts["alice.testnet"] = 5 * 10**24
-    n.accounts["bob.testnet"] = 1
-    xc._clients["near-testnet"] = n
+    n.accounts["alice.near"] = 5 * 10**24
+    n.accounts["bob.near"] = 1
+    xc._clients["near"] = n
     h = await signup(client, main=False)
-    w = (await _link(client, h, "near-testnet", "alice.testnet"))[1].json()
-    _, r = await _pending(client, h, "near-testnet", {"wallet_id": w["id"], "to": "bob.testnet", "amount": "1"}, "n1")
+    w = (await _link(client, h, "near", "alice.near"))[1].json()
+    _, r = await _pending(client, h, "near", {"wallet_id": w["id"], "to": "bob.near", "amount": "1"}, "n1")
     req = r.json()["wallet_request"]
-    assert req == {"receiver_id": "bob.testnet", "actions": [{"type": "Transfer", "params": {"deposit": str(10**24)}}]}
+    assert req == {"receiver_id": "bob.near", "actions": [{"type": "Transfer", "params": {"deposit": str(10**24)}}]}
     jid = r.json()["job_id"]
     n.txs["H1"] = {"status": {"SuccessValue": ""}, "receipts_outcome": [], "transaction": {
-        "signer_id": "alice.testnet", "receiver_id": "bob.testnet", "actions": [{"Transfer": {"deposit": str(10**24)}}]}}
-    await client.post(f"/chains/near-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H1"})
+        "signer_id": "alice.near", "receiver_id": "bob.near", "actions": [{"Transfer": {"deposit": str(10**24)}}]}}
+    await client.post(f"/chains/near/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H1"})
     assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "confirmed"
-    _, r = await _pending(client, h, "near-testnet", {"wallet_id": w["id"], "to": "bob.testnet", "amount": "1"}, "n2")
+    _, r = await _pending(client, h, "near", {"wallet_id": w["id"], "to": "bob.near", "amount": "1"}, "n2")
     jid = r.json()["job_id"]
-    n.txs["H2"] = {**n.txs["H1"], "transaction": {**n.txs["H1"]["transaction"], "receiver_id": "eve.testnet"}}
-    await client.post(f"/chains/near-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H2"})
+    n.txs["H2"] = {**n.txs["H1"], "transaction": {**n.txs["H1"]["transaction"], "receiver_id": "eve.near"}}
+    await client.post(f"/chains/near/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H2"})
     assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "unconfirmed"
     # two /signed calls racing for one job record one transaction
-    _, r = await _pending(client, h, "near-testnet", {"wallet_id": w["id"], "to": "bob.testnet", "amount": "1"}, "n3")
+    _, r = await _pending(client, h, "near", {"wallet_id": w["id"], "to": "bob.near", "amount": "1"}, "n3")
     jid = r.json()["job_id"]
     n.txs["H3"] = n.txs["H1"]
     import asyncio
 
-    await asyncio.gather(*[client.post(f"/chains/near-testnet/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H3"})
+    await asyncio.gather(*[client.post(f"/chains/near/external/jobs/{jid}/signed", headers=h, json={"tx_hash": "H3"})
                            for _ in range(3)])
     job = (await client.get(f"/jobs/{jid}", headers=h)).json()
     assert job["status"] == "confirmed" and len(job["transactions"]) == 1

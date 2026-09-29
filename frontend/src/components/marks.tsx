@@ -86,8 +86,7 @@ function BrandTile({ kind, brand, name, size, label, className, text }: {
 /** A chain's logo. Decorative unless `label` is set (use it when no chain name is printed next to it). */
 export function ChainMark({ network, size = 18, label }: { network?: string | null; size?: number; label?: boolean }) {
   const c = chainOf(network);
-  // A testnet uses its network's logo; the name beside it (and the testnet badge) tells them apart.
-  const brand = isExtraChain(c.id) ? c.id.split("-")[0] : c.id;
+  const brand = c.id;
   return <BrandTile kind="chains" brand={brand} name={c.name} size={size} label={label} className="chain-mark"
     text={isExtraChain(c.id) ? c.short : undefined} />;
 }

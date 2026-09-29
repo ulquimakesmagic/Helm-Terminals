@@ -127,7 +127,7 @@ function FolderSelect({ folders, value, onChange, newName, onNewName }: {
 interface Funder { id: string; wallet_id: string; label: string; is_default: boolean }
 type Dialog = null | { title: string; path: string; body: Record<string, unknown>; network?: string };
 
-export interface ExtraNet { id: string; name: string; family: string; testnet: boolean; chain_id: number | null; enabled: boolean }
+export interface ExtraNet { id: string; name: string; family: string; chain_id: number | null; enabled: boolean }
 type AddTab = "managed" | "import" | "connect" | "watch";
 const OWN_APP: Record<string, string> = { tron: "TronLink", evm: "your EVM wallet", near: "your NEAR wallet", ton: "TON Connect" };
 
@@ -180,7 +180,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
       if (tab === "connect") {
         if (!me || !extra) return;
         const c = await import("../components/walletConnectors");
-        await c.linkOwnWallet({ id: extra.id, name: extra.name, family: extra.family, testnet: extra.testnet, chain_id: extra.chain_id }, me.id);
+        await c.linkOwnWallet({ id: extra.id, name: extra.name, family: extra.family, chain_id: extra.chain_id }, me.id);
         toast("good", `${name} wallet connected`);
         onDone(); onClose();
         return;
@@ -206,7 +206,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
     return (
       <button key={id} type="button" disabled={!!why} className={`chip ${network === id ? "on" : ""}`} aria-pressed={network === id}
         style={why ? { opacity: 0.45, cursor: "not-allowed" } : undefined} onClick={() => { setNetwork(id); setError(""); }} title={why ?? undefined}>
-        <ChainMark network={id} size={16} />{x ? x.name : CHAINS[id as ChainId].name}{x?.testnet && !/test/i.test(x.name) && <span className="badge info" style={{ marginLeft: 4 }}>testnet</span>}
+        <ChainMark network={id} size={16} />{x ? x.name : CHAINS[id as ChainId].name}
       </button>
     );
   };
@@ -236,9 +236,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
         <div className="chips">{CHAIN_ORDER.map(chip)}</div>
         {extras.length > 0 && <div className="chips" style={{ marginTop: 6 }}>{extras.map((n) => chip(n.id))}</div>}
       </div>
-      {extra && tab !== "watch" && (extra.testnet
-        ? <Callout icon="info">{extra.name} is a test network: its addresses and balances are separate from mainnet, and its coins have no value.</Callout>
-        : <Callout tone="warn" icon="alert">{extra.name} is a mainnet: transfers from this wallet move real money.</Callout>)}
+      {extra && tab !== "watch" && <Callout tone="warn" icon="alert">{extra.name} is a mainnet: transfers from this wallet move real money.</Callout>}
       {error && <Callout tone="err">{error}</Callout>}
       {tab === "managed" ? (
         <>

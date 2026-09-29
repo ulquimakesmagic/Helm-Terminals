@@ -83,8 +83,11 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
 async def portfolio(fresh: bool = False, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
                     ex: Executor = Depends(get_executor)):
     """Coins and dollar stablecoins across every chain, valued in USD."""
-    wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
-    return await build_portfolio(ex, user.id, list(wallets), fresh=fresh)
+    from ..chains.networks import offered
+
+    wallets = [w for w in (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
+               if offered(w.network)]
+    return await build_portfolio(ex, user.id, wallets, fresh=fresh)
 
 
 @router.post("/referrals", status_code=201)

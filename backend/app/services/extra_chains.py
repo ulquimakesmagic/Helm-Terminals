@@ -41,10 +41,10 @@ def ton_client(network: str):
 
 def ton_address(network: str, addr: str, wallet: bool = True) -> str:
     """The one stored/displayed form of a TON address on a network: user-friendly base64url, non-bounceable for
-    wallets (so an undeployed wallet still receives), bounceable for contracts, with the testnet flag on testnet."""
+    wallets (so an undeployed wallet still receives), bounceable for contracts (mainnet form)."""
     from ..chains.ton import parse_address
 
-    return parse_address(addr).friendly(bounceable=not wallet, testnet=EXTRA_NETWORKS[network].testnet)
+    return parse_address(addr).friendly(bounceable=not wallet, testnet=False)
 
 
 def evm_rpc(ex, network: str):

@@ -208,7 +208,7 @@ async def _plan(network: str, w: Wallet, to: str, token: str | None, amount: str
     me = await c.account(sender.raw())
     recipient = await c.account(dest.raw())
     warnings, display = [], {}
-    to_wallet = dest.friendly(bounceable=False, testnet=net.testnet)
+    to_wallet = dest.friendly(bounceable=False, testnet=False)
     if token:
         master = _addr(token)
         meta = await c.jetton_master(master.raw())
@@ -230,9 +230,9 @@ async def _plan(network: str, w: Wallet, to: str, token: str | None, amount: str
                                             sender)
         except ValueError as e:
             raise HTTPException(400, f"that amount can't be sent: {e}")
-        messages = [{"address": jw_addr.friendly(bounceable=True, testnet=net.testnet),
+        messages = [{"address": jw_addr.friendly(bounceable=True, testnet=False),
                      "amount": str(ton.JETTON_ATTACH), "payload": body.boc_b64()}]
-        symbol, decimals, token_out = meta["symbol"], meta["decimals"], master.friendly(True, net.testnet)
+        symbol, decimals, token_out = meta["symbol"], meta["decimals"], master.friendly(True, False)
         display = {"ton_attached": xc.human(ton.JETTON_ATTACH, 9),
                    "fee_note": "0.05 TON is attached to pay the Jetton wallets; the unused part returns to you."}
         if recipient["status"] != "active":
@@ -244,7 +244,7 @@ async def _plan(network: str, w: Wallet, to: str, token: str | None, amount: str
         if raw + SEND_FEE_RESERVE > me["balance"]:
             warnings.append(f"The wallet holds {xc.human(me['balance'], 9)} TON, less than {amount} TON plus about "
                             f"{xc.human(SEND_FEE_RESERVE, 9)} TON in fees.")
-        messages = [{"address": dest.friendly(bounceable=bounce, testnet=net.testnet), "amount": str(raw)}]
+        messages = [{"address": dest.friendly(bounceable=bounce, testnet=False), "amount": str(raw)}]
         symbol, decimals, token_out = "TON", 9, None
         display = {"fee_note": "Network fees (about 0.005 TON) are paid by your wallet on top of the amount."}
         if recipient["status"] != "active":
@@ -350,7 +350,7 @@ async def transfer(network: str, body: TonTransferBody, user: User = Depends(cur
     except AdapterError as e:
         raise HTTPException(502, str(e))
     kind = "ton_transfer"  # the wallet's own approval authorises it; Helm holds no key
-    summary = {"network": network, "chain": net.name, "testnet": net.testnet, "from": w.address, "to": plan["to"],
+    summary = {"network": network, "chain": net.name, "from": w.address, "to": plan["to"],
                "asset": plan["symbol"], "token": plan["token"], "amount": xc.human(plan["raw"], plan["decimals"]),
                "amount_raw": str(plan["raw"]), "decimals": plan["decimals"], "platform_fee": "none",
                "wallet_request": plan["request"], "external_wallet": True}

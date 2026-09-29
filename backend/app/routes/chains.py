@@ -33,27 +33,21 @@ router = APIRouter()
 
 
 def _net_out(n) -> dict:
-    return {"id": n.id, "family": n.family, "name": n.name, "testnet": n.testnet, "native": n.native,
+    return {"id": n.id, "family": n.family, "name": n.name, "native": n.native,
             "decimals": n.decimals, "chain_id": n.chain_id, "network_id": n.network_id, "explorer": n.explorer,
             "notes": n.notes,
             "enabled": n.id in extra_enabled(), "capabilities": _caps(n), "sources": SOURCES[n.family]}
 
 
 def _caps(n) -> dict:
-    """The family's capabilities; launchpads are integrated on mainnets only, so testnets say so."""
-    caps = dict(CAPABILITIES[n.family])
-    if n.testnet:
-        for k in ("launches", "swaps"):
-            if not caps[k].startswith("no"):
-                caps[k] = "no: launchpads are integrated on mainnet only"
-    return caps
+    return dict(CAPABILITIES[n.family])
 
 
 @router.get("/chains")
 async def chains():
-    core = [{"id": "solana", "name": "Solana", "family": "solana", "testnet": False, "enabled": True,
+    core = [{"id": "solana", "name": "Solana", "family": "solana", "enabled": True,
              "capabilities": "full: wallets, launches, trading, market data"}] + [
-        {"id": k, "name": v["name"], "family": "evm", "testnet": False, "enabled": True, "chain_id": v["chain_id"],
+        {"id": k, "name": v["name"], "family": "evm", "enabled": True, "chain_id": v["chain_id"],
          "capabilities": "full: wallets, launches, trading, market data"} for k, v in EVM_CHAINS.items()]
     return {"core": core, "extra": [_net_out(n) for n in EXTRA_NETWORKS.values()],
             "note": "Enabled networks are the ones the server lists in EXTRA_NETWORKS (mainnets by default; "
@@ -268,7 +262,7 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
     except AdapterError as e:
         raise HTTPException(502, str(e))
     kind = "send_tokens" if token else "withdraw"
-    summary = {"network": network, "chain": net.name, "testnet": net.testnet, "from": w.address, "to": to,
+    summary = {"network": network, "chain": net.name, "from": w.address, "to": to,
                "asset": plan["symbol"], "token": token, "amount": plan["amount"], "amount_raw": str(plan["raw"]),
                "decimals": plan["decimals"], "platform_fee": "none", **plan.get("hashed", {})}
     pf = build_preflight(kind, summary, plan["warnings"])
