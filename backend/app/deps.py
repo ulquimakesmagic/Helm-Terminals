@@ -90,6 +90,10 @@ def valid_address_for(network: str, addr: str) -> bool:
         from .chains import near
 
         return near.valid_account(addr)
+    if net.family == "ton":
+        from .chains import ton
+
+        return ton.valid_address(addr)
     from eth_utils import is_checksum_address  # Arc: EVM addresses, checksum enforced when mixed-case
 
     body = addr[2:] if addr[:2] == "0x" else ""

@@ -34,7 +34,8 @@ router = APIRouter()
 
 def _net_out(n) -> dict:
     return {"id": n.id, "family": n.family, "name": n.name, "testnet": n.testnet, "native": n.native,
-            "decimals": n.decimals, "chain_id": n.chain_id, "explorer": n.explorer, "notes": n.notes,
+            "decimals": n.decimals, "chain_id": n.chain_id, "network_id": n.network_id, "explorer": n.explorer,
+            "notes": n.notes,
             "enabled": n.id in extra_enabled(), "capabilities": CAPABILITIES[n.family], "sources": SOURCES[n.family]}
 
 
@@ -61,6 +62,8 @@ async def network_health(network: str, user: User = Depends(current_user), ex: E
             await xc.tron_client(network).chain_parameters()
         elif net.family == "near":
             await xc.near_client(network).final_block_hash()
+        elif net.family == "ton":
+            await xc.ton_client(network).get("/api/v3/masterchainInfo", {})
         else:
             got = int(await ex.evm(network).rpc.call("eth_chainId", []), 16)
             if got != net.chain_id:
@@ -74,6 +77,8 @@ def _token_ok(network: str, token: str) -> str:
     token = token.strip()
     if not valid_address_for(network, token):
         raise HTTPException(400, f"that isn't a valid {EXTRA_NETWORKS[network].name} token address")
+    if EXTRA_NETWORKS[network].family == "ton":  # one form per Jetton master, so it's matched by address
+        token = xc.ton_address(network, token, wallet=False)
     return token
 
 
@@ -124,6 +129,12 @@ async def balances(network: str, wallet_id: str, tokens: str = Query(default="",
     return out
 
 
+def _ton_hash(h):
+    from .ton import _hex_hash
+
+    return _hex_hash(h)
+
+
 def _why(e: Exception) -> str:
     return str(e)[:160] if isinstance(e, (AdapterError, HTTPException)) else type(e).__name__
 
@@ -166,6 +177,31 @@ async def history(network: str, wallet_id: str, user: User = Depends(current_use
             chain.sort(key=lambda x: -(x.get("at_ms") or 0))
         except AdapterError as e:
             note = f"TronGrid history is unavailable right now: {e}"
+    elif net.family == "ton":
+        from ..chains import ton
+
+        try:
+            for tx in await xc.ton_client(network).transactions(w.address, 20):
+                status, err = ton.tx_outcome(tx)
+                inm = tx.get("in_msg") or {}
+                out = (tx.get("out_msgs") or [{}])[0] or {}
+                incoming = bool(inm.get("source"))  # an external message (no source) is the wallet sending
+                ref = _ton_hash(tx.get("hash"))
+                op = out.get("opcode")
+                if not incoming and (op == ton.JETTON_TRANSFER or str(op).lower() in ("0x0f8a7ea5", "jetton_transfer")
+                                     or out.get("decoded_opcode") == "jetton_transfer"):
+                    chain.append({"at_ms": (tx.get("now") or 0) * 1000, "reference": ref, "status": status,
+                                  "error": err, "symbol": "Jetton transfer", "direction": "out",
+                                  "explorer": net.explorer["tx"] + ref if ref else None})
+                    continue
+                chain.append({"at_ms": (tx.get("now") or 0) * 1000, "reference": ref, "status": status,
+                              "error": err, "raw": (inm if incoming else out).get("value"), "decimals": 9,
+                              "from": inm.get("source") if incoming else None,
+                              "to": None if incoming else out.get("destination"),
+                              "direction": "in" if incoming else "out",
+                              "explorer": net.explorer["tx"] + ref if ref else None})
+        except AdapterError as e:
+            note = f"The TON index is unavailable right now: {e}"
     else:
         note = (f"{net.name} has no official account-history API, so only transfers made through Helm are listed. "
                 "The explorer link shows everything.")
@@ -203,6 +239,8 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
     if (prior := await find_replay(db, user, body)):
         return prior
     net = require_enabled(network)
+    if net.family == "ton":
+        raise HTTPException(400, "TON transfers are approved in your own wallet: use /chains/{network}/ton/transfer")
     w = await _wallet(db, user, body.wallet_id, network, managed=True)
     to = body.to.strip()
     if not valid_address_for(network, to):

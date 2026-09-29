@@ -35,6 +35,8 @@ const PAD_BRAND: Record<string, string> = {
 const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: boolean }> = {
   "chains/solana": { fit: "pad" }, "chains/base": { fit: "fill", round: true }, "chains/bsc": { fit: "pad" },
   "chains/ethereum": { fit: "pad" }, "chains/robinhood": { fit: "pad", bg: "#ccff00" },
+  // Owner-supplied square tiles with their own backgrounds: shown whole (contained), never cropped or recoloured.
+  "chains/tron": { fit: "fill" }, "chains/near": { fit: "fill" }, "chains/arc": { fit: "fill" }, "chains/ton": { fit: "fill" },
   "launchpads/pumpfun": { fit: "pad" }, "launchpads/four-meme": { fit: "pad" }, "launchpads/meteora": { fit: "pad" },
   "launchpads/flap": { fit: "pad" }, "launchpads/uniswap": { fit: "fill" }, "launchpads/bankr": { fit: "fill" },
   "launchpads/printr": { fit: "fill" }, "launchpads/pons": { fit: "fill" }, "launchpads/surge": { fit: "fill" },
@@ -59,7 +61,7 @@ function BrandTile({ kind, brand, name, size, label, className, text }: {
   const radius = t.round ? "50%" : Math.max(4, Math.round(size * 0.28));
   const a11y = label ? { role: "img", "aria-label": name } : { "aria-hidden": true as const };
   if ((!src || failed) && text) {
-    // No verified logo file (TRON, NEAR, Arc): a text mark instead of a guessed logo.
+    // No logo file, or it failed to load: the network's short name instead of a guessed logo.
     return <span className={`brand ${className} brand-text`} title={name} {...a11y}
       style={{ width: size, height: size, borderRadius: radius, fontSize: Math.max(6, Math.min(size * 0.34, (size - 3) / (text.length * 0.62))) }}>{text}</span>;
   }
@@ -82,7 +84,9 @@ function BrandTile({ kind, brand, name, size, label, className, text }: {
 /** A chain's logo. Decorative unless `label` is set (use it when no chain name is printed next to it). */
 export function ChainMark({ network, size = 18, label }: { network?: string | null; size?: number; label?: boolean }) {
   const c = chainOf(network);
-  return <BrandTile kind="chains" brand={c.id} name={c.name} size={size} label={label} className="chain-mark"
+  // A testnet uses its network's logo; the name beside it (and the testnet badge) tells them apart.
+  const brand = isExtraChain(c.id) ? c.id.split("-")[0] : c.id;
+  return <BrandTile kind="chains" brand={brand} name={c.name} size={size} label={label} className="chain-mark"
     text={isExtraChain(c.id) ? c.short : undefined} />;
 }
 

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { chainOf, ExtraChainId } from "../chains";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { Address, Callout, Card, Empty, Field, Icon, Loading, Modal, PageHeader, Spinner, useToast } from "../components/ui";
+
+// TON Connect is only loaded when a TON network is opened.
+const TonConnectBox = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonConnectBox })));
+const TonSendDialog = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonSendDialog })));
 
 /** Exact decimal string of a base-unit integer (no floats). */
 function fmtRaw(raw: string, decimals: number): string {
@@ -14,9 +18,9 @@ function fmtRaw(raw: string, decimals: number): string {
   return frac ? `${whole}.${frac}` : whole;
 }
 
-/* TRON, NEAR and Arc: what Helm supports on each, and the wallets, balances, transfers and history it offers there. */
+/* TRON, NEAR, Arc and TON: what Helm supports on each, and the wallets, balances, transfers and history it offers there. */
 
-interface Net { id: ExtraChainId; name: string; family: string; testnet: boolean; native: string; decimals: number; chain_id: number | null;
+interface Net { id: ExtraChainId; name: string; family: string; testnet: boolean; native: string; decimals: number; chain_id: number | null; network_id?: string | null;
   enabled: boolean; notes: string; capabilities: Record<string, string>; sources: string[]; explorer: Record<string, string> }
 interface Chains { core: { id: string; name: string; capabilities: string }[]; extra: Net[]; note: string }
 const CAP_LABEL: Record<string, string> = {
@@ -42,16 +46,16 @@ export default function Networks() {
   const current = enabled.find((n) => n.id === pick) ?? null;
   return (
     <>
-      <PageHeader title="Networks" sub="What Helm supports on TRON, NEAR and Arc. Wallets, balances and transfers only: no launches, swaps or market data there yet." />
+      <PageHeader title="Networks" sub="What Helm supports on TRON, NEAR, Arc and TON. Wallets, balances and transfers only: no launches, swaps or market data there yet." />
       <Card title="Capability matrix" icon="layers" flush sub={data.note}>
         <div className="table-wrap"><table className="rtable">
           <caption className="sr-only">What Helm supports on each network</caption>
           <thead><tr><th>Network</th>{Object.values(CAP_LABEL).map((l) => <th key={l}>{l}</th>)}<th>Status</th></tr></thead>
           <tbody>{data.extra.map((n) => (
             <tr key={n.id}>
-              <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={18} /><b>{n.name}</b>
+              <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={20} label /><b>{n.name}</b>
                 {n.testnet ? <span className="badge info">testnet</span> : <span className="badge warn">mainnet · real money</span>}</span>
-                <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}</div></td>
+                <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}{n.network_id ? ` · TON Connect network ${n.network_id}` : ""}</div></td>
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
             </tr>))}</tbody>
@@ -97,14 +101,15 @@ function NetworkPanel({ net }: { net: Net }) {
     <div className="stack">
       {!net.testnet && <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>}
       <Card title={`${net.name} wallets`} icon="wallet" flush
-        actions={<button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
-        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text="Create one to hold funds on this network." /> : (
+        actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
+        {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}
+        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={net.family === "ton" ? "Connect your own TON wallet to use it here." : "Create one to hold funds on this network."} /> : (
           <div className="table-wrap"><table className="rtable">
             <caption className="sr-only">{net.name} wallets</caption>
             <thead><tr><th>Wallet</th><th>Address</th><th className="r">Balance</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{wallets.map((w) => (
               <tr key={w.id}>
-                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
+                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind === "connected" ? <span className="badge info">your wallet · TON Connect</span> : w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
                 <td data-label="Address"><Address address={w.address} network={net.id} /></td>
                 <td className="r mono" data-label="Balance">{w.balance_native != null ? `${w.balance_native} ${net.native}` : <span className="muted">unavailable</span>}</td>
                 <td className="r act"><button className="btn sm ghost" onClick={() => setOpenId(openId === w.id ? null : w.id)}>{openId === w.id ? "Close" : "Open"}</button></td>
@@ -131,7 +136,7 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
   return (
     <div className="grid g-2">
       <Card title="Balances" icon="coins" sub={<span className="row nowrap" style={{ gap: 6 }}><ChainLabel network={net.id} size={14} /> · {short(wallet.address)}</span>}
-        actions={wallet.kind === "managed" ? <button className="btn sm" onClick={() => setSend(true)}><Icon name="send" size={13} />Send</button> : undefined}>
+        actions={wallet.kind === "managed" || wallet.kind === "connected" ? <button className="btn sm" onClick={() => setSend(true)}><Icon name="send" size={13} />Send</button> : undefined}>
         {!bal ? <Loading rows={2} /> : (
           <div className="stack tight">
             <div className="row between"><b>{net.native}</b><span className="mono">{bal.native ? bal.native.amount : "unavailable"}</span></div>
@@ -142,7 +147,7 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
               </div>))}
             {bal.errors.map((e: string) => <Callout key={e} tone="warn">{e}</Callout>)}
             <form className="row" onSubmit={(e) => { e.preventDefault(); if (add.trim()) { setTokens([...new Set([...tokens, add.trim()])]); setAdd(""); } }}>
-              <input className="mono grow" placeholder={net.family === "near" ? "Token contract account (e.g. usdc.testnet)" : "Token contract address"} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
+              <input className="mono grow" placeholder={net.family === "near" ? "Token contract account (e.g. usdc.testnet)" : net.family === "ton" ? "Jetton master address" : "Token contract address"} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
               <button className="btn sm secondary" type="submit">Add token</button>
             </form>
             <span className="muted small">Tokens are matched by contract address, never by ticker.</span>
@@ -162,7 +167,8 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
           </div>
         )}
       </Card>
-      {send && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
+      {send && net.family === "ton" && <Suspense fallback={null}><TonSendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
+      {send && net.family !== "ton" && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
     </div>
   );
 }

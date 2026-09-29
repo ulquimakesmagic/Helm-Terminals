@@ -378,11 +378,11 @@ export default function Wallets() {
                       <span style={{ fontWeight: 550 }}>{w.label || "Untitled"}</span>
                       {w.is_main ? <span className="badge good" title="Your account's main wallet. Launches draw USDC from it first.">main</span>
                         : fu && <span className="badge info">funder{fu.is_default ? " · default" : ""}</span>}
-                      {w.kind !== "managed" && <span className="badge show-sm">watch-only</span>}
+                      {w.kind !== "managed" && <span className="badge show-sm">{w.kind === "connected" ? "your wallet" : "watch-only"}</span>}
                     </div></td>
                     <td data-label="Chain"><ChainLabel network={w.network} size={16} /></td>
                     <td data-label="Address"><Address address={w.address} network={w.network} /></td>
-                    <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : "watch-only"} /></td>
+                    <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : w.kind === "connected" ? "your wallet (TON Connect)" : "watch-only"} /></td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
                     <td className="r num" data-label="Balance">{isExtraChain(w.network) ? (
                       <span className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>

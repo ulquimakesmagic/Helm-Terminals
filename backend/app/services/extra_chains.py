@@ -29,6 +29,24 @@ def near_client(network: str):
     return _clients[network]
 
 
+def ton_client(network: str):
+    from ..chains.ton import Toncenter
+
+    if network not in _clients:
+        s = get_settings()
+        _clients[network] = Toncenter(parse_list(rpc_urls(network))[0], s.toncenter_api_key,
+                                      timeout_s=s.extra_rpc_timeout_s)
+    return _clients[network]
+
+
+def ton_address(network: str, addr: str, wallet: bool = True) -> str:
+    """The one stored/displayed form of a TON address on a network: user-friendly base64url, non-bounceable for
+    wallets (so an undeployed wallet still receives), bounceable for contracts, with the testnet flag on testnet."""
+    from ..chains.ton import parse_address
+
+    return parse_address(addr).friendly(bounceable=not wallet, testnet=EXTRA_NETWORKS[network].testnet)
+
+
 def evm_rpc(ex, network: str):
     return ex.evm(network).rpc
 
@@ -48,6 +66,8 @@ async def native_balance(ex, network: str, address: str) -> int:
         from ..chains.near import available_balance
 
         return available_balance(await near_client(network).account(address))
+    if fam == "ton":
+        return (await ton_client(network).account(address))["balance"]
     return await evm_rpc(ex, network).get_balance(address)
 
 
@@ -60,6 +80,9 @@ async def token_metadata(ex, network: str, token: str, reader: str | None = None
         if not isinstance(m, dict) or "decimals" not in m:
             raise AdapterError("that account doesn't answer like a NEP-141 token")
         return {"name": m.get("name"), "symbol": m.get("symbol"), "decimals": int(m["decimals"])}
+    if fam == "ton":
+        m = await ton_client(network).jetton_master(token)
+        return {"name": m["name"], "symbol": m["symbol"], "decimals": m["decimals"]}
     rpc = evm_rpc(ex, network)
     from ..chains.networks import ARC_USDC_INTERFACE
 
@@ -76,6 +99,9 @@ async def token_balance(ex, network: str, token: str, holder: str) -> int:
         return await tron_client(network).trc20_balance(token, holder)
     if fam == "near":
         return int(await near_client(network).view(token, "ft_balance_of", {"account_id": holder}) or 0)
+    if fam == "ton":
+        w = await ton_client(network).jetton_wallet(holder, token)
+        return w["balance"] if w else 0
     return await evm_rpc(ex, network).erc20_balance(token, holder)
 
 

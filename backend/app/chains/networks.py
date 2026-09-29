@@ -1,7 +1,7 @@
-"""TRON, NEAR and Arc: network registry and capability matrix.
+"""TRON, NEAR, Arc and TON: network registry and capability matrix.
 
 These networks sit beside Helm's original chains (Solana, Base, BNB Chain, Ethereum, Robinhood Chain) and are
-enabled by EXTRA_NETWORKS (default: the three mainnets). ALLOW_MAINNET_EXTRA_NETWORKS=false switches every mainnet
+enabled by EXTRA_NETWORKS (default: the TRON, NEAR and Arc mainnets; TON only when listed). ALLOW_MAINNET_EXTRA_NETWORKS=false switches every mainnet
 off at once. Testnets and mainnets are separate network ids, and users still pick a network explicitly.
 
 Every value here comes from the official documentation listed in SOURCES (consulted 2026-09-28).
@@ -15,7 +15,7 @@ from ..config import get_settings
 @dataclass(frozen=True)
 class ExtraNetwork:
     id: str
-    family: str  # tron | near | evm
+    family: str  # tron | near | evm | ton
     name: str
     testnet: bool
     native: str
@@ -23,6 +23,7 @@ class ExtraNetwork:
     default_rpc: str
     explorer: dict = field(default_factory=dict)  # account / tx / token URL prefixes
     chain_id: int | None = None  # EVM chain id (Arc)
+    network_id: str | None = None  # TON Connect network id (TON: -239 mainnet, -3 testnet); not an EVM chain id
     notes: str = ""
 
 
@@ -55,6 +56,16 @@ EXTRA_NETWORKS: dict[str, ExtraNetwork] = {
         "arc-testnet", "evm", "Arc testnet", True, "USDC", 18, "https://rpc.testnet.arc.io",
         {"account": "https://explorer.testnet.arc.io/address/", "tx": "https://explorer.testnet.arc.io/tx/",
          "token": "https://explorer.testnet.arc.io/token/"}, chain_id=5042002),
+    "ton": ExtraNetwork(
+        "ton", "ton", "TON", False, "TON", 9, "https://toncenter.com",
+        {"account": "https://tonviewer.com/", "tx": "https://tonviewer.com/transaction/",
+         "token": "https://tonviewer.com/"}, network_id="-239",
+        notes="Your own wallet signs through TON Connect; Helm never holds TON keys. Jettons move through the "
+              "sender's jetton wallet with 0.05 TON attached (the unused part comes back)."),
+    "ton-testnet": ExtraNetwork(
+        "ton-testnet", "ton", "TON testnet", True, "TON", 9, "https://testnet.toncenter.com",
+        {"account": "https://testnet.tonviewer.com/", "tx": "https://testnet.tonviewer.com/transaction/",
+         "token": "https://testnet.tonviewer.com/"}, network_id="-3"),
 }
 
 # Known token contracts from the chains' official docs, matched by chain and address, never by ticker.
@@ -100,6 +111,22 @@ SOURCES = {
         "https://docs.arc.io/arc/references/gas-and-fees.md",
         "https://docs.arc.io/arc/concepts/deterministic-finality.md",
     ],
+    "ton": [
+        "https://github.com/ton-blockchain/ton-connect/blob/main/spec/connect.md",
+        "https://github.com/ton-blockchain/ton-connect/blob/main/spec/rpc.md",
+        "https://github.com/ton-blockchain/ton-connect/blob/main/spec/manifest.md",
+        "https://docs.ton.org/applications/ton-connect/how-to/ton-proof",
+        "https://docs.ton.org/applications/ton-connect/how-to/send-transaction",
+        "https://docs.ton.org/applications/ton-connect/how-to/message-lookup",
+        "https://github.com/ton-blockchain/TEPs/blob/master/text/0002-address.md",
+        "https://github.com/ton-blockchain/TEPs/blob/master/text/0074-jettons-standard.md",
+        "https://github.com/ton-blockchain/TEPs/blob/master/text/0467-normalized-message-hash.md",
+        "https://docs.ton.org/foundations/addresses/formats",
+        "https://docs.ton.org/foundations/status",
+        "https://docs.ton.org/foundations/fees",
+        "https://docs.ton.org/api/v3/overview",
+        "https://docs.ton.org/api/rate-limit",
+    ],
 }
 
 # What Helm does on each family. "yes" = implemented on a documented path; anything else says why not.
@@ -138,6 +165,19 @@ CAPABILITIES = {
         "swaps": "no: Arc's docs name no DEX contracts; App Kit swaps cover only USDC/EURC/cirBTC",
         "market_data": "no: no provider coverage verified for Arc",
         "cross_chain": "no: not wired in this release",
+    },
+    "ton": {
+        "wallets": "yes: your own wallet via TON Connect (bound with a signed ton_proof) and watch-only addresses; "
+                   "Helm-managed TON keys aren't offered",
+        "balances": "yes: TON and Jettons by master address (toncenter index)",
+        "token_metadata": "yes: Jetton name, symbol, decimals from the index (decimals default to 9)",
+        "history": "yes: toncenter account transactions",
+        "transfers": "yes: TON and Jettons, approved and signed in your wallet; followed by message hash until "
+                     "final",
+        "launches": "no: no TON launchpad integrated with verified contracts and terms",
+        "swaps": "no: no TON DEX route integrated in this release",
+        "market_data": "no: no provider coverage verified for Helm's market views on TON yet",
+        "cross_chain": "no: Helm's route provider isn't wired for TON",
     },
 }
 

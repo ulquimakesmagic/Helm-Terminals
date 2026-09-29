@@ -133,9 +133,11 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
         from ..chains.networks import require_enabled
 
         try:
-            require_enabled(body.network)
+            net = require_enabled(body.network)
         except HTTPException:
             raise HTTPException(400, f"unsupported network {body.network}")
+        if net.family == "ton":
+            raise HTTPException(400, "Helm doesn't hold TON keys: connect your own wallet with TON Connect instead")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     await _check_room(db, user, body.count)
@@ -163,6 +165,12 @@ async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     address = body.address.strip()
+    from ..chains.networks import EXTRA_NETWORKS
+
+    if EXTRA_NETWORKS.get(body.network) and EXTRA_NETWORKS[body.network].family == "ton":
+        from ..services.extra_chains import ton_address
+
+        address = ton_address(body.network, address)  # one canonical form, so the same wallet isn't added twice
     await _check_room(db, user, 1)
     existing = (await db.execute(select(Wallet).where(
         Wallet.user_id == user.id, Wallet.network == body.network, Wallet.address == address))).scalar_one_or_none()

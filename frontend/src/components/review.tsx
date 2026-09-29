@@ -29,7 +29,7 @@ export function summarize(pre: any, network: string): ReviewSummary | null {
   const gas = num(pre.max_gas_each) ?? num(pre.max_gas) ?? num(pre.network_fees_max);
   const gasCell: [string, ReactNode][] = gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`]] : [];
 
-  if (isExtraChain(pre.network) && (pre.kind === "withdraw" || pre.kind === "send_tokens")) return extraTransfer(pre);
+  if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "ton_transfer"].includes(pre.kind)) return extraTransfer(pre);
 
   switch (pre.kind) {
     case "deploy": {
@@ -175,11 +175,14 @@ function extraTransfer(pre: any): ReviewSummary {
     ["activation_fee_trx", "Account activation", "TRX"], ["bandwidth_fee_trx", "Bandwidth burn", "TRX"],
     ["energy_fee_trx", "Energy burn", "TRX"], ["fee_limit_trx", "Fee limit (max)", "TRX"],
     ["network_fee_trx_about", "Network fee (about)", "TRX"], ["storage_deposit_near", "Storage deposit", "NEAR"],
-    ["gas_fee_near_max", "Gas (max)", "NEAR"], ["gas_fee_usdc_max", "Gas (max)", "USDC"],
+    ["gas_fee_near_max", "Gas (max)", "NEAR"], ["gas_fee_usdc_max", "Gas (max)", "USDC"], ["ton_attached", "TON attached", "TON"],
   ];
   for (const [k, label, unit] of est) if (typeof pre[k] === "string" && (pre[k] !== "0" || k === "network_fee_trx_about")) cells.push([label, `${pre[k]} ${unit}`]);
   cells.push(["Platform fee", fee(pre.platform_fee)]);
-  const next = ["Funds leave this wallet for the recipient. Transfers can't be reversed."];
+  const next = pre.external_wallet
+    ? ["Your wallet shows this transfer for approval and signs it; Helm never holds the key.", "Transfers can't be reversed."]
+    : ["Funds leave this wallet for the recipient. Transfers can't be reversed."];
+  if (pre.fee_note) next.push(String(pre.fee_note));
   if (pre.recipient_note) next.push(String(pre.recipient_note));
   if (pre.finality) next.push(String(pre.finality));
   return {

@@ -43,7 +43,7 @@ export const CHAIN_ORDER: ChainId[] = ["solana", "base", "bsc", "robinhood", "et
 
 /** TRON, NEAR and Arc: wallets, balances and transfers only, when the server enables them (GET /chains).
  * Explorer paths for NEAR (nearblocks) and Arc are the explorers' standard ones. */
-export type ExtraChainId = "tron" | "tron-nile" | "near" | "near-testnet" | "arc" | "arc-testnet";
+export type ExtraChainId = "tron" | "tron-nile" | "near" | "near-testnet" | "arc" | "arc-testnet" | "ton" | "ton-testnet";
 export const EXTRA_CHAINS: Record<ExtraChainId, Chain> = {
   tron: { id: "tron", name: "TRON", short: "TRX", native: "TRX", color: "#ff060a",
     explorer: { account: "https://tronscan.org/address/", token: "https://tronscan.org/token20/", tx: "https://tronscan.org/transaction/" } },
@@ -57,6 +57,10 @@ export const EXTRA_CHAINS: Record<ExtraChainId, Chain> = {
     explorer: { account: "https://explorer.arc.io/address/", token: "https://explorer.arc.io/token/", tx: "https://explorer.arc.io/tx/" } },
   "arc-testnet": { id: "arc-testnet", name: "Arc testnet", short: "ARC", native: "USDC", color: "#7b61ff", testnet: true,
     explorer: { account: "https://explorer.testnet.arc.io/address/", token: "https://explorer.testnet.arc.io/token/", tx: "https://explorer.testnet.arc.io/tx/" } },
+  ton: { id: "ton", name: "TON", short: "TON", native: "TON", color: "#0098ea",
+    explorer: { account: "https://tonviewer.com/", token: "https://tonviewer.com/", tx: "https://tonviewer.com/transaction/" } },
+  "ton-testnet": { id: "ton-testnet", name: "TON testnet", short: "TON", native: "TON", color: "#0098ea", testnet: true,
+    explorer: { account: "https://testnet.tonviewer.com/", token: "https://testnet.tonviewer.com/", tx: "https://testnet.tonviewer.com/transaction/" } },
 };
 export const isExtraChain = (id: string | null | undefined): id is ExtraChainId => !!id && id in EXTRA_CHAINS;
 

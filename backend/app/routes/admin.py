@@ -510,8 +510,8 @@ async def user_detail(user_id: str, request: Request, user: User = Depends(any_a
                                 .order_by(AdminAudit.created_at.desc()).limit(20))).scalars().all()
     by_net: dict[str, dict] = {}
     for net, kind, addr, created in wallets:
-        by_net.setdefault(net, {"network": net, "managed": 0, "watch": 0, "sample": []})
-        by_net[net][kind if kind in ("managed", "watch") else "managed"] += 1
+        by_net.setdefault(net, {"network": net, "managed": 0, "watch": 0, "connected": 0, "sample": []})
+        by_net[net][kind if kind in ("managed", "watch", "connected") else "managed"] += 1
         if len(by_net[net]["sample"]) < 5:
             by_net[net]["sample"].append({"address": mask(addr), "kind": kind, "created_at": iso(created)})
     return {

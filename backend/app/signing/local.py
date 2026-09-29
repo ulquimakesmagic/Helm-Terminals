@@ -27,6 +27,8 @@ class LocalDevSigner:
         from .base import family
 
         fam = family(network)
+        if fam == "ton":  # never derive a TON address from another chain's key format
+            raise SigningError("Helm doesn't create TON keys; TON wallets connect through TON Connect")
         if fam in ("evm", "tron"):  # a new secp256k1 key; TRON shows it in its own address format
             pk = eth_keys.PrivateKey(os.urandom(32))
             token = self._f.encrypt(pk.to_bytes()).decode()

@@ -82,6 +82,8 @@ class TurnkeySigner:
         from .base import family
 
         fam = family(network)
+        if fam == "ton":  # never derive a TON address from another chain's key format
+            raise SigningError("Helm doesn't create TON keys; TON wallets connect through TON Connect")
         evm = fam in ("evm", "tron")  # secp256k1
         # TRON has its own Turnkey address format. NEAR has none, so its ed25519 key is created with the Solana
         # format (base58 of the public key) and shown as the NEAR implicit account (hex of the same public key).
