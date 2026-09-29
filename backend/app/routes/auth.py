@@ -11,7 +11,8 @@ from ..db import get_db
 from ..deps import current_user, log_activity, web_user
 from ..models import Profile, Referral, ReferralLink, Session, User, utcnow
 from ..services.guard import (
-    LOGIN_LIMIT, LOGIN_LIMIT_ANY, check_password, check_totp_once, client_address, ensure_not_locked, record_failure,
+    LOGIN_LIMIT, LOGIN_LIMIT_ANY, SIGNUP_LIMIT, check_password, check_totp_once, client_address, ensure_not_locked,
+    record_attempt, record_failure,
 )
 from ..services.main_wallet import ensure_main_wallets
 from ..signing import get_signer
@@ -46,7 +47,10 @@ class PasswordConfirm(BaseModel):
 
 
 @router.post("/register", status_code=201)
-async def register(body: Register, db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
+async def register(body: Register, request: Request, db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
+    signup_key = f"signup:{client_address(request)}"
+    await ensure_not_locked(db, signup_key, SIGNUP_LIMIT)
+    await record_attempt(db, signup_key)
     email = body.email.lower()
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(409, "email already registered")
@@ -95,14 +99,14 @@ async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db
     sess = Session(
         user_id=user.id,
         token_hash=token_hash(token),
-        ip=request.client.host if request.client else None,
+        ip=client_address(request),
         user_agent=(request.headers.get("user-agent") or "")[:255],
         expires_at=utcnow() + ttl,
     )
     db.add(sess)
     await log_activity(db, user.id, "session.created", "session", sess.id)
     await db.commit()
-    # The first successful sign-in of the designated superadmin account binds the role to its user ID.
+    # The role binds only when the configured user ID and designated email both match.
     await role_of(db, user)
     return {"token": token, "expires_at": sess.expires_at.isoformat()}
 

@@ -6,8 +6,12 @@ import {
 
 /* Admin dashboard. The server checks the admin role on every request; this page only decides what to show. */
 
-type Tab = "revenue" | "treasury" | "fees" | "users" | "audit";
+type Tab = "revenue" | "treasury" | "fees" | "users" | "audit" | "operations";
 interface AdminMe { id: string; role: "superadmin" | "viewer"; can_change: boolean }
+interface ConfigDiagnostics {
+  signer: string; superadmin_id_configured: boolean; trusted_proxy_ranges_configured: boolean;
+  rpc_configured: Record<string, boolean>; external_provider_keys_configured: Record<string, boolean>;
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   trade_fee: "Trading fees (Solana)", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
@@ -69,8 +73,8 @@ function StepUpDialog({ title, detail, onCancel, onConfirm, needsReason }: {
 }
 
 /* ------------------------------------------------------------------ revenue */
-interface Bucket { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number; unreconciled: number; entries: number; estimated_entries: number; unknown_amount_entries: number }
-interface Summary { totals: Bucket[]; by_source: { source: string; entries: number; by_asset: { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number }[] }[]; valuation: { method: string; as_of: string }; notes: Record<string, string>; warnings: string[] }
+interface Bucket { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number; failed: number; estimated: number; estimated_by_status: Record<string, number>; unreconciled: number; entries: number; estimated_entries: number; unknown_amount_entries: number }
+interface Summary { totals: Bucket[]; by_source: { source: string; entries: number; by_asset: { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number; failed: number; estimated: number; estimated_by_status: Record<string, number> }[] }[]; referral_liabilities: { network: string; asset: string; amount_raw: string; decimals: number; entries: number }[]; valuation: { method: string; as_of: string }; notes: Record<string, string>; warnings: string[] }
 interface LedgerItem { id: string; source: string; network: string; asset: string; amount_raw: string | null; decimals: number; estimated: boolean; status: string; reconciled_at: string | null; destination: string | null; reference: string | null; created_at: string; launch: { id: string; name: string; symbol: string; token: string | null } | null; note: string }
 
 interface RelayFees { wallet: string | null; claim_url: string; as_of: string; source: string; unavailable?: string; total_usd?: number; available_usd?: number;
@@ -150,7 +154,7 @@ function Revenue({ me }: { me: AdminMe }) {
           <label className="field"><span>Source</span><select value={f.source} onChange={set("source")}><option value="">All</option>
             {Object.entries(SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <label className="field"><span>Status (ledger)</span><select value={f.status} onChange={set("status")}><option value="">All</option>
-            <option value="received">Received</option><option value="pending">Pending</option><option value="claimable">Claimable</option><option value="unreconciled">Unreconciled</option></select></label>
+            <option value="received">Received</option><option value="pending">Pending</option><option value="claimable">Claimable</option><option value="failed">Failed</option><option value="unreconciled">Unreconciled</option></select></label>
         </div>
       </Card>
 
@@ -160,7 +164,7 @@ function Revenue({ me }: { me: AdminMe }) {
             {sum.totals.length === 0 ? <Empty icon="coins" title="No revenue recorded yet" text="Entries appear here as fees are earned." /> : (
               <TableWrap><table className="rtable">
                 <caption className="sr-only">Revenue totals by asset and chain</caption>
-                <thead><tr><th>Asset</th><th className="r">Received</th><th className="r">Pending</th><th className="r">Claimable</th><th className="r">Unreconciled</th><th className="r hide-sm">Entries</th></tr></thead>
+                <thead><tr><th>Asset</th><th className="r">Received</th><th className="r">Pending</th><th className="r">Claimable</th><th className="r">Failed</th><th className="r">Estimated</th><th className="r">Unreconciled</th><th className="r hide-sm">Entries</th></tr></thead>
                 <tbody>{sum.totals.map((b) => (
                   <tr key={b.network + b.asset}>
                     <td className="span"><b>{b.asset}</b> <span className="muted">on {NET_LABEL[b.network] ?? b.network}</span>
@@ -169,6 +173,9 @@ function Revenue({ me }: { me: AdminMe }) {
                     <td className="r mono" data-label="Received">{units(b.received, b.decimals)}</td>
                     <td className="r mono" data-label="Pending">{units(b.pending, b.decimals)}</td>
                     <td className="r mono" data-label="Claimable">{units(b.claimable, b.decimals)}</td>
+                    <td className="r mono" data-label="Failed">{units(b.failed, b.decimals)}</td>
+                    <td className="r mono" data-label="Estimated">{units(b.estimated, b.decimals)}
+                      {b.estimated > 0 && <span className="muted small" style={{ display: "block" }}>{Object.entries(b.estimated_by_status).filter(([, amount]) => amount > 0).map(([status, amount]) => `${units(amount, b.decimals)} ${status}`).join(" · ")}</span>}</td>
                     <td className="r mono" data-label="Unreconciled">{units(b.unreconciled, b.decimals)}</td>
                     <td className="r hide-sm muted">{b.entries}</td>
                   </tr>))}</tbody>
@@ -176,8 +183,17 @@ function Revenue({ me }: { me: AdminMe }) {
             )}
           </Card>
           <Callout tone="info">
-            <b>Received</b>: {sum.notes.received} <b>Claimable</b>: {sum.notes.claimable} <b>Estimated</b>: {sum.notes.estimated} Valuation: {sum.valuation.method}.
+            <b>Received</b>: {sum.notes.received} <b>Pending</b>: {sum.notes.pending} <b>Claimable</b>: {sum.notes.claimable} <b>Failed</b>: {sum.notes.failed} <b>Estimated</b>: {sum.notes.estimated} Valuation: {sum.valuation.method}.
           </Callout>
+
+          <Card title="Referral liabilities · excluded from Helm revenue" icon="gift">
+            <p className="muted small">{sum.notes.referral_liabilities} This is a read-only total; no treasury payout controls are available here.</p>
+            {sum.referral_liabilities.length === 0 ? <span className="muted small">No confirmed referral shares are currently owed.</span> : (
+              <div className="stack tight">{sum.referral_liabilities.map((liability) => (
+                <div key={liability.network} className="row between"><span>{liability.asset} · {NET_LABEL[liability.network] ?? liability.network} · {liability.entries} entries</span>
+                  <b className="mono">{units(liability.amount_raw, liability.decimals)} {liability.asset}</b></div>))}</div>
+            )}
+          </Card>
 
           <Card title="By source" icon="pie">
             <div className="grid g-2">
@@ -187,7 +203,7 @@ function Revenue({ me }: { me: AdminMe }) {
                   {s.by_asset.length === 0 ? <span className="muted small">Nothing yet</span> : s.by_asset.map((a) => (
                     <div key={a.network + a.asset} className="row between small">
                       <span className="muted">{a.asset} · {NET_LABEL[a.network] ?? a.network}</span>
-                      <span className="mono">{units(a.received, a.decimals)} received{a.claimable ? ` · ${units(a.claimable, a.decimals)} claimable` : ""}{a.pending ? ` · ${units(a.pending, a.decimals)} pending` : ""}</span>
+                      <span className="mono">{units(a.received, a.decimals)} received{a.claimable ? ` · ${units(a.claimable, a.decimals)} claimable` : ""}{a.pending ? ` · ${units(a.pending, a.decimals)} pending` : ""}{a.failed ? ` · ${units(a.failed, a.decimals)} failed` : ""}{a.estimated ? ` · ${units(a.estimated, a.decimals)} estimated (${Object.entries(a.estimated_by_status).filter(([, amount]) => amount > 0).map(([status]) => status).join(", ")})` : ""}</span>
                     </div>))}
                 </div>))}
             </div>
@@ -220,7 +236,7 @@ function Revenue({ me }: { me: AdminMe }) {
                 <td data-label="Launch">{r.launch ? <>{r.launch.name} <span className="muted">${r.launch.symbol}</span></> : <span className="muted">—</span>}</td>
                 <td className="r mono" data-label="Amount" title={r.amount_raw ? `${r.amount_raw} raw · ${r.decimals} decimals` : r.note}>
                   {units(r.amount_raw, r.decimals)} {r.asset}{r.estimated && <div className="muted small">estimated</div>}</td>
-                <td data-label="Status"><div><StatusBadge status={r.status === "received" ? "confirmed" : r.status === "claimable" ? "scheduled" : "pending"} label={r.status} /></div>
+                <td data-label="Status"><div><StatusBadge status={r.status === "received" ? "confirmed" : r.status === "failed" ? "failed" : r.status === "claimable" ? "scheduled" : "pending"} label={r.status} /></div>
                   <div className="muted small">{r.reconciled_at ? `reconciled ${utc(r.reconciled_at)}` : "unreconciled"}</div></td>
                 <td className="hide-sm mono small">{r.destination ? <span className="row nowrap">{r.destination.slice(0, 6)}…{r.destination.slice(-4)}<CopyButton text={r.destination} /></span> : "—"}</td>
                 <td className="hide-sm mono small">{r.reference ? <span className="row nowrap">{r.reference.slice(0, 8)}…<CopyButton text={r.reference} /></span> : "—"}</td>
@@ -526,12 +542,42 @@ export default function Admin() {
   return (
     <>
       <PageHeader title="Admin" sub={me.role === "superadmin" ? "Superadmin · changes need your password and a fresh 2FA code" : "Viewer · read-only"} />
-      <Seg<Tab> options={[["revenue", "Revenue"], ["treasury", "Treasury"], ["fees", "Fees"], ["users", "Users"], ["audit", "Audit log"]]} value={tab} onChange={setTab} />
+      <Seg<Tab> options={[["revenue", "Revenue"], ["treasury", "Treasury"], ["fees", "Fees"], ["users", "Users"], ["audit", "Audit log"], ["operations", "Operations"]]} value={tab} onChange={setTab} />
       {tab === "revenue" && <Revenue me={me} />}
       {tab === "treasury" && <Treasury me={me} />}
       {tab === "fees" && <Fees me={me} />}
       {tab === "users" && <Users me={me} />}
       {tab === "audit" && <Audit />}
+      {tab === "operations" && <Operations />}
     </>
   );
+}
+
+function Operations() {
+  const [config, setConfig] = useState<ConfigDiagnostics | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => { api<ConfigDiagnostics>("/admin/config").then(setConfig).catch((e) => setError(errMsg(e))); }, []);
+  if (error) return <LoadError what="Operational configuration" error={error} onRetry={() => {
+    setError(""); api<ConfigDiagnostics>("/admin/config").then(setConfig).catch((e) => setError(errMsg(e)));
+  }} />;
+  if (!config) return <Loading />;
+  const list = (title: string, values: Record<string, boolean>) => (
+    <Card title={title} icon="settings">
+      <div className="stack tight">{Object.entries(values).map(([name, ready]) => (
+        <div className="row between" key={name}><span className="mono small">{name.replace(/_/g, " ")}</span>
+          <StatusBadge status={ready ? "available" : "failed"} label={ready ? "configured" : "not configured"} /></div>
+      ))}</div>
+    </Card>
+  );
+  return <div className="stack">
+    <Callout tone="info">Only configuration presence is shown. Secret values, endpoint URLs, and treasury addresses are never returned here.</Callout>
+    <Card title="Runtime safeguards" icon="shield">
+      <div className="stack tight">
+        <div className="row between"><span>Signer mode</span><StatusBadge status={config.signer === "turnkey" ? "available" : "pending"} label={config.signer} /></div>
+        <div className="row between"><span>Superadmin user ID</span><StatusBadge status={config.superadmin_id_configured ? "available" : "failed"} label={config.superadmin_id_configured ? "configured" : "missing · admin access disabled"} /></div>
+        <div className="row between"><span>Trusted proxy ranges</span><StatusBadge status={config.trusted_proxy_ranges_configured ? "available" : "pending"} label={config.trusted_proxy_ranges_configured ? "configured" : "unset · forwarded IPs ignored"} /></div>
+      </div>
+    </Card>
+    <div className="grid g-2">{list("RPC endpoints", config.rpc_configured)}{list("Provider keys", config.external_provider_keys_configured)}</div>
+  </div>;
 }

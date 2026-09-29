@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..models import Job, Wallet
 from .chain_balances import native_coin, stable_for, token_decimals
 from .evm_exec import EvmCall
-from .executor import Executor, SubmitResult, _record
+from .executor import Executor, SubmitResult, _record, send_evm_tracked, submit_tracked
 
 ROUTE_GAS = 350_000  # approve + deposit on the origin chain
 
@@ -44,7 +44,8 @@ async def asset_balance(ex: Executor, network: str, asset: str, address: str) ->
     return int(await ex.evm(network).rpc.erc20_balance(token, address))
 
 
-async def send_item(ex: Executor, w: Wallet, data: dict) -> SubmitResult:
+async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
+                    kind: str = "bridge") -> SubmitResult:
     """Send one Relay step item from wallet `w`."""
     if w.network == "solana":
         ixs = [Instruction(Pubkey.from_string(i["programId"]), bytes.fromhex(i.get("data") or ""),
@@ -59,11 +60,16 @@ async def send_item(ex: Executor, w: Wallet, data: dict) -> SubmitResult:
             if table:
                 tables.append(table)
         raw = build_unsigned(Pubkey.from_string(w.address), ixs, await ex.rpc.get_latest_blockhash(), tables)
-        return await ex.submit(raw, {w.address: w.signer_ref or ""})
+        if job is None:  # test/utility call without a user-facing job record
+            return await ex.submit(raw, {w.address: w.signer_ref or ""})
+        return await submit_tracked(ex, job, w, kind, raw, {w.address: w.signer_ref or ""})
     hexdata = data.get("data") or "0x"
     call = EvmCall(to=data["to"], data=bytes.fromhex(hexdata[2:] if hexdata.startswith("0x") else hexdata),
                    value=int(data.get("value") or 0))
-    return await ex.evm(w.network).send(w.address, w.signer_ref or "", call)
+    sender = ex.evm(w.network)
+    if job is None:
+        return await sender.send(w.address, w.signer_ref or "", call)
+    return await send_evm_tracked(sender, job, w, kind, call)
 
 
 async def quote(ex: Executor, src: Wallet, dst: Wallet, from_asset: str, to_asset: str, amount_raw: int,
@@ -121,9 +127,9 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
         for item in step.get("items") or []:
             if item.get("status") == "complete":
                 continue
-            res = await send_item(ex, src, item.get("data") or {})
-            await _record(session, job, src, kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24],
-                          res, None)
+            tx_kind = kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
+            res = await send_item(ex, src, item.get("data") or {}, job, tx_kind)
+            await _record(session, job, src, tx_kind, res, None)
             await session.commit()
             last = res
             if res.status != "confirmed":

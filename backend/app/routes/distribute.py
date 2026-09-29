@@ -27,7 +27,7 @@ from ..deps import (SpendConfirm, begin_spend, current_user, find_replay, get_ex
 from ..models import Launch, LaunchWallet, User, Wallet
 from ..services.chain_balances import chain_name, native_coin, stable_for
 from ..services.evm_exec import NATIVE_RESERVE_WEI, EvmCall
-from ..services.executor import Executor, SubmitResult, _finish, _record
+from ..services.executor import Executor, SubmitResult, _finish, _record, send_evm_tracked, submit_tracked
 from ..services.preflight import build_preflight
 
 router = APIRouter()
@@ -144,7 +144,8 @@ def _erc20_transfer(to: str, amount: int) -> bytes:
     return selector("transfer(address,uint256)") + abi_encode(["address", "uint256"], [to, amount])
 
 
-async def _send_solana(ex: Executor, src: Wallet, a: dict, legs: list[tuple[Wallet, int]]) -> SubmitResult:
+async def _send_solana(ex: Executor, job, src: Wallet, kind: str, a: dict,
+                       legs: list[tuple[Wallet, int]]) -> SubmitResult:
     owner = Pubkey.from_string(src.address)
     ixs = []
     for dst, raw in legs:
@@ -156,14 +157,14 @@ async def _send_solana(ex: Executor, src: Wallet, a: dict, legs: list[tuple[Wall
             ixs += [create_ata_idempotent_ix(owner, dest, mint, program),
                     token_transfer_checked_ix(owner, dest, mint, raw, a["decimals"], program)]
     tx = build_unsigned(owner, ixs, await ex.rpc.get_latest_blockhash())
-    return await ex.submit(tx, {src.address: src.signer_ref or ""})
+    return await submit_tracked(ex, job, src, kind, tx, {src.address: src.signer_ref or ""})
 
 
-async def _send_evm(ex: Executor, src: Wallet, a: dict, dst: Wallet, raw: int) -> SubmitResult:
+async def _send_evm(ex: Executor, job, src: Wallet, kind: str, a: dict, dst: Wallet, raw: int) -> SubmitResult:
     sender = ex.evm(src.network)
     call = EvmCall(to=dst.address, value=raw) if a["kind"] == "native" else \
         EvmCall(to=a["token"], data=_erc20_transfer(dst.address, raw))
-    return await sender.send(src.address, src.signer_ref or "", call)
+    return await send_evm_tracked(sender, job, src, kind, call)
 
 
 # --- disperse -------------------------------------------------------------------------------------
@@ -279,9 +280,9 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 chunks = [[leg] for leg in legs]
             for chunk in chunks:
                 if net == "solana":
-                    res = await _send_solana(ex, src, a, chunk)
+                    res = await _send_solana(ex, j, src, "disperse", a, chunk)
                 else:
-                    res = await _send_evm(ex, src, a, chunk[0][0], chunk[0][1])
+                    res = await _send_evm(ex, j, src, "disperse", a, chunk[0][0], chunk[0][1])
                 await _record(session, j, src, "disperse", res, None)
                 if res.status == "confirmed" and launch is not None:
                     # The supply moved to these wallets: record it in the launch's allocation plan and trail.
@@ -393,9 +394,9 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
             results = []
             for s, raw in plan:  # each source signs its own transfer; one failing doesn't stop the others
                 if net == "solana":
-                    res = await _send_solana(ex, s, a, [(dest, raw)])
+                    res = await _send_solana(ex, j, s, "consolidate", a, [(dest, raw)])
                 else:
-                    res = await _send_evm(ex, s, a, dest, raw)
+                    res = await _send_evm(ex, j, s, "consolidate", a, dest, raw)
                 await _record(session, j, s, "consolidate", res, None)
                 await session.commit()
                 results.append(res)

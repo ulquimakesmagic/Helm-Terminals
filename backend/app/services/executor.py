@@ -18,6 +18,7 @@ from ..chains.solana import (
     sign_versioned, sol_transfer_ix,
 )
 from ..models import FeeRecord, Job, Transaction, Wallet, utcnow
+from sqlalchemy import select
 from ..signing.base import Signer, SigningError
 from .fees import RENT_EXEMPT_MIN, FeePlan
 from solders.pubkey import Pubkey
@@ -86,7 +87,7 @@ class Executor:
 
     async def submit(
         self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None,
-        fast_poll_s: float = 0.25,
+        fast_poll_s: float = 0.25, on_signed: Callable[[str], Awaitable[None]] | None = None,
     ) -> SubmitResult:
         """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
         endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
@@ -102,6 +103,13 @@ class Executor:
         from solders.transaction import VersionedTransaction
 
         sig = str(VersionedTransaction.from_bytes(signed).signatures[0])  # known before sending
+        if on_signed is not None:
+            try:
+                # Commit the chain lookup key before broadcasting. If persistence fails, do not send an
+                # untrackable transaction.
+                await on_signed(sig)
+            except Exception as e:
+                return SubmitResult(None, "failed", f"couldn't persist transaction tracking before send ({type(e).__name__})")
         if submit_via is not None:
             try:
                 await submit_via(signed)
@@ -109,13 +117,15 @@ class Executor:
                 return SubmitResult(None, "failed", str(e))
         else:
             try:
-                sig = await self.rpc.send(signed)
+                rpc_sig = await self.rpc.send(signed)
             except RPCError as e:  # the node answered and refused it: nothing was broadcast
                 return SubmitResult(None, "failed", f"rejected by the node: {e}")
             except (RPCUnavailable, httpx.HTTPError) as e:
                 # No answer: it may or may not have gone out. Treat it as sent-but-unconfirmed, never as failed,
                 # so nobody retries into a double buy or send.
                 return SubmitResult(sig, "timeout", f"couldn't confirm it was sent ({type(e).__name__}); check the explorer")
+            if rpc_sig != sig:
+                return SubmitResult(sig, "timeout", "RPC returned a different signature; check the explorer")
         try:
             status, err = await self.rpc.confirm(sig, timeout_s=self.confirm_timeout_s, fast_poll_s=fast_poll_s)
         except Exception as e:  # anything after sending: the transaction may be out there, so never "failed"
@@ -126,6 +136,25 @@ class Executor:
 async def _record(
     db: AsyncSession, job: Job, wallet: Wallet | None, kind: str, res: SubmitResult, delta: int | None
 ) -> Transaction:
+    q = select(Transaction).where(Transaction.job_id == job.id, Transaction.kind == kind)
+    q = q.where(Transaction.wallet_id == (wallet.id if wallet else None))
+    if res.signature:
+        q = q.where(Transaction.signature == res.signature)
+    else:
+        q = q.where(Transaction.status == "pending").order_by(Transaction.created_at.desc())
+    existing = (await db.execute(q.limit(1))).scalars().first()
+    if existing is None and res.signature:
+        # The chain/provider's response should match the signature computed before broadcast. If it doesn't, keep
+        # the locally signed lookup key and resolve the row created by the pre-broadcast callback.
+        pending = select(Transaction).where(
+            Transaction.job_id == job.id, Transaction.kind == kind,
+            Transaction.wallet_id == (wallet.id if wallet else None), Transaction.status == "pending",
+        ).order_by(Transaction.created_at.desc())
+        existing = (await db.execute(pending.limit(1))).scalars().first()
+    if existing:
+        existing.signature = existing.signature or res.signature
+        existing.status, existing.error, existing.sol_delta_lamports = res.status, res.error, delta
+        return existing
     tx = Transaction(
         job_id=job.id,
         wallet_id=wallet.id if wallet else None,
@@ -138,6 +167,62 @@ async def _record(
     db.add(tx)
     await db.flush()
     return tx
+
+
+async def _persist_pending_transaction(
+    job: Job, wallet: Wallet | None, kind: str, signature: str, fee_record: FeeRecord | None = None,
+    revenue_destination: str | None = None,
+) -> None:
+    """Commit a signed transaction's lookup key before any network broadcast."""
+    from ..db import get_sessionmaker
+
+    async with get_sessionmaker()() as pending_db:
+        row = (await pending_db.execute(select(Transaction).where(
+            Transaction.job_id == job.id, Transaction.wallet_id == (wallet.id if wallet else None),
+            Transaction.kind == kind, Transaction.signature == signature,
+        ))).scalars().first()
+        if row is None:
+            pending_db.add(Transaction(job_id=job.id, wallet_id=wallet.id if wallet else None, kind=kind,
+                                       signature=signature, status="pending"))
+        else:
+            row.status, row.error = "pending", None
+        if fee_record is not None:
+            fee = (await pending_db.execute(select(FeeRecord).where(
+                FeeRecord.job_id == job.id, FeeRecord.wallet_id == (wallet.id if wallet else None),
+                FeeRecord.signature == signature,
+            ))).scalars().first()
+            if fee is None:
+                fee = fee_record
+                pending_db.add(fee)
+                await pending_db.flush()
+            if revenue_destination:
+                from ..models import RevenueEvent
+
+                event = (await pending_db.execute(select(RevenueEvent).where(
+                    RevenueEvent.fee_record_id == fee.id
+                ))).scalars().first()
+                if event is None:
+                    from .revenue import trade_fee_event
+
+                    pending_db.add(trade_fee_event(fee, revenue_destination, job.launch_id))
+        await pending_db.commit()
+
+
+async def submit_tracked(
+    ex: Executor, job: Job, wallet: Wallet | None, kind: str, raw: bytes, refs: dict[str, str],
+    extra: list[Keypair] | None = None, submit_via=None,
+) -> SubmitResult:
+    async def persist(signature: str) -> None:
+        await _persist_pending_transaction(job, wallet, kind, signature)
+
+    return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist)
+
+
+async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call) -> SubmitResult:
+    async def persist(signature: str) -> None:
+        await _persist_pending_transaction(job, wallet, kind, signature)
+
+    return await sender.send(wallet.address, wallet.signer_ref or "", call, on_signed=persist)
 
 
 def _finish(job: Job, results: list[SubmitResult]) -> None:
@@ -163,6 +248,8 @@ class FeeOutcome:
     referral_status: str  # none | paid | owed
     mode: str  # in_tx | follow_up
     result: SubmitResult | None = None  # set for follow_up transfers
+    trade_signature: str | None = None
+    fee_signature: str | None = None
 
 
 async def _can_receive(rpc: SolanaRPC, address: str, lamports: int) -> bool:
@@ -243,7 +330,25 @@ async def run_trade(
             before_task.cancel()
             return [(side, SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent."), None)], None
         before = await before_task
-        res = await ex.submit(raw, refs, built.extra_signers, fast_poll_s=fast_poll)
+
+        async def persist_trade_signature(signature: str) -> None:
+            if fee:
+                fee.trade_signature = signature
+            pending_fee = None
+            destination = None
+            if fee and fee.mode == "in_tx" and fee.platform > 0:
+                pending_fee = FeeRecord(
+                    job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side, basis_lamports=fee.basis,
+                    platform_lamports=fee.platform,
+                    referrer_user_id=plan.referrer_user_id if fee.referral else None,
+                    referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
+                    status="pending", signature=signature,
+                )
+                destination = plan.platform_wallet
+            await _persist_pending_transaction(job, w, side, signature, pending_fee, destination)
+
+        res = await ex.submit(raw, refs, built.extra_signers, fast_poll_s=fast_poll,
+                              on_signed=persist_trade_signature)
         delta = None
         if res.status == "confirmed":
             delta = await ex.rpc.get_balance(w.address) - before
@@ -252,7 +357,19 @@ async def run_trade(
             blockhash = await ex.rpc.get_latest_blockhash()
             payer = Pubkey.from_string(w.address)
             fee_raw = build_unsigned(payer, [sol_transfer_ix(payer, d, n) for d, n in transfers], blockhash)
-            fee.result = await ex.submit(fee_raw, refs)
+            async def persist_fee_signature(signature: str) -> None:
+                fee.fee_signature = signature
+                pending_fee = FeeRecord(
+                    job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side, basis_lamports=fee.basis,
+                    platform_lamports=fee.platform,
+                    referrer_user_id=plan.referrer_user_id if fee.referral else None,
+                    referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
+                    status="pending", signature=signature,
+                )
+                await _persist_pending_transaction(job, w, "platform_fee", signature, pending_fee,
+                                                   plan.platform_wallet)
+
+            fee.result = await ex.submit(fee_raw, refs, on_signed=persist_fee_signature)
             total = sum(n for _, n in transfers)
             records.append(("platform_fee", fee.result, -total if fee.result.status == "confirmed" else None))
         return records, fee
@@ -263,22 +380,37 @@ async def run_trade(
             await _record(db, job, w, kind, res, delta)
         trade_res = records[0][1]
         results.append(trade_res)  # the trade itself decides the job outcome, not the fee transfer
-        if fee and trade_res.status == "confirmed":  # a failed trade never costs a fee
+        if fee:
+            # Pending fee records were committed before broadcast. This write resolves the known outcome when the
+            # worker stays alive; a later GET /jobs rechecks them if the worker was interrupted.
             paid_by = fee.result if fee.mode == "follow_up" else trade_res
-            fee_rec = FeeRecord(
-                job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side, basis_lamports=fee.basis,
-                platform_lamports=fee.platform, referrer_user_id=plan.referrer_user_id if fee.referral else None,
-                referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
-                status="confirmed" if paid_by is not None and paid_by.status == "confirmed" else "failed",
-                signature=paid_by.signature if paid_by else None,
-            )
-            db.add(fee_rec)
-            if fee_rec.status == "confirmed" and fee.platform > 0:
-                # Helm's revenue ledger gets only the platform part; the referral share is never Helm's.
-                from .revenue import trade_fee_event
+            signature = ((fee.fee_signature if fee.mode == "follow_up" else fee.trade_signature)
+                         or (paid_by.signature if paid_by else None))
+            fee_rec = None
+            if signature:
+                fee_rec = (await db.execute(select(FeeRecord).where(
+                    FeeRecord.job_id == job.id, FeeRecord.wallet_id == w.id, FeeRecord.signature == signature
+                ))).scalars().first()
+            if fee_rec:
+                fee_rec.status = "confirmed" if paid_by and paid_by.status == "confirmed" else (
+                    "failed" if paid_by and paid_by.status == "failed" else "pending")
+                if fee_rec.status != "pending":
+                    from ..models import RevenueEvent
 
-                await db.flush()
-                db.add(trade_fee_event(fee_rec, plan.platform_wallet, job.launch_id))
+                    ev = (await db.execute(select(RevenueEvent).where(RevenueEvent.fee_record_id == fee_rec.id)))\
+                        .scalars().first()
+                    if ev:
+                        ev.status = "received" if fee_rec.status == "confirmed" else "failed"
+            elif trade_res.status == "confirmed" and fee.mode == "follow_up" and paid_by is not None:
+                # A signing or simulation failure before a signature exists has no pending row to resolve.
+                fee_rec = FeeRecord(
+                    job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side,
+                    basis_lamports=fee.basis, platform_lamports=fee.platform,
+                    referrer_user_id=plan.referrer_user_id if fee.referral else None,
+                    referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
+                    status="failed", signature=None,
+                )
+                db.add(fee_rec)
         await db.commit()
 
     # Many wallets confirming at once poll less often each, so a batch stays near one status call per second per
@@ -311,7 +443,7 @@ async def run_single(
     job.status = "submitted"
     await db.commit()
     before = await ex.rpc.get_balance(wallet.address) if wallet else None
-    res = await ex.submit(raw, refs, extra, submit_via=submit_via) if submit_via else await ex.submit(raw, refs, extra)
+    res = await submit_tracked(ex, job, wallet, kind, raw, refs, extra, submit_via)
     delta = None
     if res.status == "confirmed" and wallet is not None and before is not None:
         delta = await ex.rpc.get_balance(wallet.address) - before
@@ -336,9 +468,13 @@ async def run_built(
     """
     job.status = "submitted"
     await db.commit()
+    setup_kind = f"{kind}_setup"[:24]
     for raw in built.pre:
-        res = await ex.submit(raw, refs)
-        await _record(db, job, wallet, f"{kind}_setup"[:24], res, None)
+        async def persist_setup(signature: str) -> None:
+            await _persist_pending_transaction(job, wallet, setup_kind, signature)
+
+        res = await ex.submit(raw, refs, on_signed=persist_setup)
+        await _record(db, job, wallet, setup_kind, res, None)
         if res.status != "confirmed":
             _finish(job, [res])
             await db.commit()
@@ -347,8 +483,13 @@ async def run_built(
     res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers, built.submit_via)
     if res.status == "confirmed":
         for raw in built.post:
-            cleanup = await ex.submit(raw, refs)
-            await _record(db, job, wallet, f"{kind}_cleanup"[:24], cleanup, None)
+            cleanup_kind = f"{kind}_cleanup"[:24]
+
+            async def persist_cleanup(signature: str) -> None:
+                await _persist_pending_transaction(job, wallet, cleanup_kind, signature)
+
+            cleanup = await ex.submit(raw, refs, on_signed=persist_cleanup)
+            await _record(db, job, wallet, cleanup_kind, cleanup, None)
         await db.commit()
     return res
 
@@ -376,11 +517,16 @@ async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Walle
             await _record(db, job, wallet, kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24], res, None)
             await db.commit()
             return res
-        res = await sender.send(wallet.address, wallet.signer_ref or "", EvmCall(to, data, step.value))
+        tx_kind = kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24]
+
+        async def persist_signature(signature: str) -> None:
+            await _persist_pending_transaction(job, wallet, tx_kind, signature)
+
+        res = await sender.send(wallet.address, wallet.signer_ref or "", EvmCall(to, data, step.value),
+                                on_signed=persist_signature)
         if res.status == "confirmed" and step.after:
             step.after(res)
-        label = kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24]
-        await _record(db, job, wallet, label, res, None)
+        await _record(db, job, wallet, tx_kind, res, None)
         await db.commit()
         last = res
         if res.status != "confirmed" and step.essential:
@@ -475,7 +621,7 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
 
         async def fire(w, plan):
             out = []
-            for step in plan.steps:
+            for i, step in enumerate(plan.steps):
                 to, data = step.to, step.data
                 try:
                     if step.build:
@@ -484,7 +630,13 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
                 except AdapterError as e:
                     out.append((step, SubmitResult(None, "failed", str(e))))
                     break
-                r = await sender.send(w.address, w.signer_ref or "", EvmCall(to, data, step.value))
+                tx_kind = side if i == len(plan.steps) - 1 else f"{side}_{step.label}"[:24]
+
+                async def persist_signature(signature: str) -> None:
+                    await _persist_pending_transaction(job, w, tx_kind, signature)
+
+                r = await sender.send(w.address, w.signer_ref or "", EvmCall(to, data, step.value),
+                                      on_signed=persist_signature)
                 out.append((step, r))
                 if r.status != "confirmed" and step.essential:
                     break
@@ -498,7 +650,7 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
                 results.append(res)
                 continue
             for i, (step, r) in enumerate(run):
-                await _record(db, job, w, side if i == len(plan.steps) - 1 else f"{side}_{step.label}", r, None)
+                await _record(db, job, w, side if i == len(plan.steps) - 1 else f"{side}_{step.label}"[:24], r, None)
             if len(run) == len(plan.steps):  # the swap itself was sent (not stopped at an earlier step)
                 await _note_dex_fee(w, plan, run[-1][1])
             results.append(run[-1][1])

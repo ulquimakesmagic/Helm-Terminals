@@ -7,11 +7,11 @@ import { Icon, IconName, Logo } from "./ui";
 
 /*
  * Shared pieces of the public pages (landing and sign-in). Everything stated here is checked against the product:
- * chain and launchpad counts come live from /launchpads, the signer line from /health, and the trust facts
+ * chain and launchpad counts come live from /launchpads, the custody-mode label from /public-info, and trust facts
  * describe behaviour the API enforces (preview-then-confirm, 2FA on transfers out, per-tab sessions).
  */
 
-export interface PublicInfo { pads: Pad[]; padsLoaded: boolean; health: { env: string; signer: string } | null }
+export interface PublicInfo { pads: Pad[]; padsLoaded: boolean; health: { test_signer: boolean } | null }
 
 export function usePublicInfo(): PublicInfo {
   const [pads, setPads] = useState<Pad[]>([]);
@@ -19,7 +19,7 @@ export function usePublicInfo(): PublicInfo {
   const [health, setHealth] = useState<PublicInfo["health"]>(null);
   useEffect(() => {
     api<Pad[]>("/launchpads").then(setPads).catch(() => undefined).finally(() => setPadsLoaded(true));
-    api<{ env: string; signer: string }>("/health").then(setHealth).catch(() => undefined);
+    api<{ test_signer: boolean }>("/public-info").then(setHealth).catch(() => undefined);
   }, []);
   return { pads, padsLoaded, health };
 }
@@ -102,10 +102,10 @@ export function SafeguardList({ compact }: { compact?: boolean }) {
   );
 }
 
-/** Which signer this deployment runs, from /health. Says nothing until it knows. */
+/** Whether this is a local test deployment, from the deliberately minimal public-info endpoint. */
 export function SignerNote({ health }: { health: PublicInfo["health"] }) {
   if (!health) return null;
-  if (health.signer === "turnkey" && health.env === "production") {
+  if (!health.test_signer) {
     return (
       <p className="signer-note"><Icon name="key" size={13} />Wallet keys are held by the Turnkey signing service; Helm stores each key's reference and address.</p>
     );

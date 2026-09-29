@@ -24,9 +24,7 @@ class BotSettings(BaseSettings):
 
 COMMANDS = [
     ("wallets", "Your wallets and balances"), ("launches", "Your launches"), ("launch", "Launch details: /launch <id>"),
-    ("transparency", "Supply held by your wallets"), ("buy", "Buy: /buy <launch> <sol>"),
-    ("sell", "Sell: /sell <launch> <percent>"), ("claim", "Claim creator fees"), ("burn", "Burn tokens"),
-    ("send", "Send tokens (2FA)"), ("withdraw", "Withdraw a wallet's coin (2FA)"), ("status", "Job status"),
+    ("transparency", "Supply held by your wallets"), ("status", "Job status"),
     ("unlink", "Disconnect this Telegram"), ("help", "Help"),
 ]
 

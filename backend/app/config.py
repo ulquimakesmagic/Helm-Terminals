@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./helm.db"  # use postgresql+asyncpg://... in prod
     secret_key: str = "dev-secret-change-me"
     session_ttl_hours: int = 24 * 7
+    # Only trust forwarded client IP headers when the immediate peer belongs to an explicitly verified proxy CIDR.
+    # Empty by default: use the socket peer address until the hosting provider's ranges are confirmed.
+    trusted_proxy_cidrs: str = ""
 
     @field_validator("platform_fee_bps")
     @classmethod
@@ -24,6 +27,13 @@ class Settings(BaseSettings):
     def _share_cap(cls, v: int) -> int:
         if not 0 <= v <= 10_000:
             raise ValueError("referral_share_bps must be between 0 and 10000")
+        return v
+
+    @field_validator("signer")
+    @classmethod
+    def _signer_kind(cls, v: str) -> str:
+        if v not in {"local", "turnkey"}:
+            raise ValueError("signer must be local or turnkey")
         return v
 
     @field_validator("database_url")
@@ -103,12 +113,12 @@ class Settings(BaseSettings):
     # Share of a Clanker token's LP rewards paid to PLATFORM_FEE_WALLET_EVM, in bps (1000 = 10%, max 2000).
     # 0 = all rewards to the creator. Always shown in the deploy preview.
     clanker_platform_reward_bps: int = 0
-    # Optional pin for the admin dashboard's superadmin: the user ID of the account registered with the superadmin
-    # email. When set, only that account can ever be bound as superadmin (Helm doesn't verify email addresses).
+    # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
     referral_share_bps: int = 2500
     referral_code_max_uses: int = 1000
+    referral_max_codes_per_user: int = Field(default=10, ge=1, le=100)
 
     # Transparency panel: warn when user-controlled wallets hold more than this share of supply.
     controlled_supply_warn_pct: float = 20.0
@@ -122,6 +132,7 @@ class Settings(BaseSettings):
     telegram_bot_username: str = ""
     bot_session_ttl_minutes: int = 30
     link_code_ttl_minutes: int = 10
+    telegram_allowed_user_ids: str = ""  # comma-separated Telegram numeric IDs; empty disables all bot sessions
     bot_daily_buy_limit_sol: float = 5.0  # cap on buys placed through the bot in any rolling 24 hours
 
     # Finite scheduled buys. The worker uses row locks so multiple API instances do not claim one run twice.

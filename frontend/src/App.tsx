@@ -34,13 +34,11 @@ const TITLES: Record<string, string> = {
 function Shell({ children }: { children: React.ReactNode }) {
   const nav = useNavigate();
   const loc = useLocation();
-  const { me, health, healthChecked, tg } = useSession();
+  const { me, health, healthChecked, testSigner, tg } = useSession();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [loc.pathname]);
 
   const seg = loc.pathname.split("/")[1] ?? "";
-  const testSigner = health && (health.signer !== "turnkey" || health.env !== "production");
-
   return (
     <div className={`app ${open ? "open" : ""}`}>
       <a href="#main" className="skip-link">Skip to content</a>

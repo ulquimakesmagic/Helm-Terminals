@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..chains.evm import EVM_CHAINS
 from ..db import get_db
 from ..deps import get_executor, valid_address
-from ..models import (AccountStatus, AdminAudit, AdminRole, Automation, Job, Launch, PlatformSetting, Profile,
+from ..models import (AccountStatus, AdminAudit, AdminRole, Automation, FeeRecord, Job, Launch, PlatformSetting, Profile,
                       ReferralLink, RevenueEvent, Session, TreasuryAddress, User, Wallet, utcnow)
 from ..services import platform_config as pc
 from ..services.admin import StepUp, any_admin, audit, role_of, step_up, superadmin
@@ -31,7 +31,7 @@ EXPLORERS = {"solana": "https://solscan.io/account/", "base": "https://basescan.
              "bsc": "https://bscscan.com/address/", "ethereum": "https://etherscan.io/address/",
              "robinhood": "https://robinhoodchain.blockscout.com/address/"}
 SOURCES = ("trade_fee", "dex_trade_fee", "route_fee", "creator_share", "partner")
-STATUSES = ("received", "pending", "claimable")
+STATUSES = ("received", "pending", "claimable", "failed")
 
 
 def iso(dt: datetime | None) -> str | None:
@@ -81,6 +81,30 @@ async def admin_me(user: User = Depends(any_admin)):
             "can_change": user.admin_role == "superadmin"}  # type: ignore[attr-defined]
 
 
+@router.get("/config")
+async def config_diagnostics(user: User = Depends(any_admin)):
+    """Non-secret operational diagnostics. Never return endpoint URLs, keys, recipient values or credentials."""
+    from ..config import get_settings
+
+    s = get_settings()
+    return {
+        "signer": s.signer,
+        "superadmin_id_configured": bool(s.superadmin_user_id.strip()),
+        "trusted_proxy_ranges_configured": bool(s.trusted_proxy_cidrs.strip()),
+        "rpc_configured": {
+            "solana": bool(s.solana_rpc_url),
+            **{name: bool(getattr(s, f"evm_rpc_{name}", "")) for name in EVM_CHAINS},
+            "tron": bool(s.tron_rpc_url), "near": bool(s.near_rpc_url),
+            "arc": bool(s.arc_rpc_url), "ton": bool(s.ton_rpc_url),
+        },
+        "external_provider_keys_configured": {
+            "turnkey": bool(s.turnkey_org_id and s.turnkey_api_public_key and s.turnkey_api_private_key),
+            "tron_grid": bool(s.trongrid_api_key), "toncenter": bool(s.toncenter_api_key),
+            "bags": bool(s.bags_api_key), "jupiter": bool(s.jupiter_api_key),
+        },
+    }
+
+
 # --- revenue -------------------------------------------------------------------------------------------
 
 
@@ -119,20 +143,27 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
                RevenueEvent.status, (RevenueEvent.reconciled_at.is_(None)).label("unreconciled"),
                func.count(), func.sum(RevenueEvent.amount_raw),
                func.sum(case((RevenueEvent.estimated, 1), else_=0)),
-               func.sum(case((RevenueEvent.amount_raw.is_(None), 1), else_=0)))
+               func.sum(case((RevenueEvent.amount_raw.is_(None), 1), else_=0)),
+               func.sum(case((RevenueEvent.estimated, RevenueEvent.amount_raw), else_=0)))
     q = _revenue_filters(q, start, end, network, asset, source, None)
     q = q.group_by(RevenueEvent.network, RevenueEvent.asset, RevenueEvent.decimals, RevenueEvent.source,
                    RevenueEvent.status, "unreconciled")
     buckets: dict[tuple, dict] = {}
     by_source: dict[str, dict] = {}
-    for net, a, dec, src, st, unrec, n, total, n_est, n_unknown in (await db.execute(q)).all():
+    for net, a, dec, src, st, unrec, n, total, n_est, n_unknown, estimate_total in (await db.execute(q)).all():
         key = (net, a, dec)
         b = buckets.setdefault(key, {"network": net, "asset": a, "decimals": dec, "received": 0, "pending": 0,
-                                     "claimable": 0, "unreconciled": 0, "entries": 0, "estimated_entries": 0,
-                                     "unknown_amount_entries": 0})
-        b[st] = b.get(st, 0) + int(total or 0)
+                                     "claimable": 0, "failed": 0, "estimated": 0, "unreconciled": 0,
+                                     "entries": 0, "estimated_entries": 0,
+                                     "unknown_amount_entries": 0,
+                                     "estimated_by_status": {"received": 0, "pending": 0, "claimable": 0, "failed": 0}})
+        estimate_raw = int(estimate_total or 0)
+        measured_raw = int(total or 0) - estimate_raw
+        b[st] = b.get(st, 0) + measured_raw
+        b["estimated"] += estimate_raw
+        b["estimated_by_status"][st] = b["estimated_by_status"].get(st, 0) + estimate_raw
         if unrec:
-            b["unreconciled"] += int(total or 0)
+            b["unreconciled"] += measured_raw
         b["entries"] += n
         b["estimated_entries"] += int(n_est or 0)
         b["unknown_amount_entries"] += int(n_unknown or 0)
@@ -140,13 +171,24 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
         s["entries"] += n
         k = f"{a} on {net}"
         s["by_asset"].setdefault(k, {"network": net, "asset": a, "decimals": dec, "received": 0, "pending": 0,
-                                     "claimable": 0})
-        s["by_asset"][k][st] += int(total or 0)
+                                     "claimable": 0, "failed": 0, "estimated": 0,
+                                     "estimated_by_status": {"received": 0, "pending": 0, "claimable": 0, "failed": 0}})
+        s["by_asset"][k][st] += measured_raw
+        s["by_asset"][k]["estimated"] += estimate_raw
+        s["by_asset"][k]["estimated_by_status"][st] += estimate_raw
     for s in by_source.values():
         s["by_asset"] = list(s["by_asset"].values())
+    owed_rows = (await db.execute(select(FeeRecord.network, func.sum(FeeRecord.referral_lamports), func.count())
+                                  .where(FeeRecord.status == "confirmed", FeeRecord.referral_status == "owed",
+                                         FeeRecord.referral_lamports > 0)
+                                  .group_by(FeeRecord.network))).all()
     return {
         "totals": sorted(buckets.values(), key=lambda b: (b["network"], b["asset"])),
         "by_source": [by_source.get(src, {"source": src, "entries": 0, "by_asset": []}) for src in SOURCES],
+        "referral_liabilities": [{"network": net, "asset": "SOL" if net == "solana" else net.upper(),
+                                  "amount_raw": str(int(total or 0)),
+                                  "decimals": 9 if net == "solana" else 18, "entries": n}
+                                 for net, total, n in owed_rows],
         "valuation": {"method": "none: amounts are shown in their original asset and network, never converted or "
                                 "added across assets",
                       "as_of": iso(utcnow())},
@@ -155,8 +197,10 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
             "pending": "In a transaction that hadn't confirmed when it was recorded.",
             "claimable": "Held by a provider (Relay, a launchpad fee locker, Bags, Flap) until claimed. Not received "
                          "treasury funds.",
+            "failed": "The signed transaction reached a terminal failed outcome; this amount was not received.",
+            "referral_liabilities": "Confirmed referral shares held in Helm's treasury and owed to referrers; excluded from Helm revenue.",
             "unreconciled": "Not yet matched by an admin against the treasury's on-chain history.",
-            "estimated": "Computed from a quote rather than read on-chain.",
+            "estimated": "Computed from a quote rather than read on-chain. Estimated amounts are excluded from the status totals.",
             "unknown_amount": "The provider doesn't report the amount to Helm (e.g. creator-reward shares); check the "
                               "provider's claim page.",
         },
@@ -166,6 +210,10 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
 
 def _warnings() -> list[str]:
     out = []
+    for key, (lo, hi) in pc.BOUNDS.items():
+        effective = pc.bps(key)
+        if not lo <= effective <= hi:
+            out.append(f"{key} is configured at {effective} bps, outside the admin policy range of {lo}–{hi} bps; review the owner-approved configuration.")
     for p in pc.FEE_PATHS:
         if not p["supported"]:
             out.append(f"{p['label']}: {p['how']}")
@@ -185,6 +233,8 @@ async def revenue_ledger(start: str | None = None, end: str | None = None, netwo
                          asset: str | None = None, source: str | None = None, status: str | None = None,
                          page: int = Query(1, ge=1), size: int = Query(50, ge=1, le=200),
                          user: User = Depends(any_admin), db: AsyncSession = Depends(get_db)):
+    if status and status not in (*STATUSES, "unreconciled"):
+        raise HTTPException(400, "unknown revenue status")
     base = _revenue_filters(select(RevenueEvent), start, end, network, asset, source, status)
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(base.order_by(RevenueEvent.created_at.desc())
@@ -483,10 +533,13 @@ async def users(request: Request, q: str | None = Query(None, max_length=120), s
             "wallets": n_wal, "two_factor": u.totp_enabled,
             "flags": ([{"flag": "suspended", "reason": reason, "at": iso(changed)}] if st == "suspended" else []),
         })
-    if q:  # searches are audited (who searched and how many matched; not the search text, which may be an email)
+    if q:  # Searches are audited without storing the query text, which may be an email.
         await audit(db, user, "users.searched", changes={"results": total, "query_chars": len(q.strip())},
                     request=request)
-        await db.commit()
+    else:
+        await audit(db, user, "users.listed", changes={"page": page, "size": size, "results": total},
+                    request=request)
+    await db.commit()
     return {"total": total, "page": page, "size": size, "items": items, "timezone": "UTC"}
 
 

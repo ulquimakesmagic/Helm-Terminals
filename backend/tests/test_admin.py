@@ -22,6 +22,8 @@ EVM_TREASURY = "0x52908400098527886E0F7030069857D2E4169EE7"  # a valid EIP-55 ch
 async def boss(client):
     """The designated superadmin, signed in with 2FA on. Returns (headers, 2FA secret)."""
     h = await signup(client, SUPERADMIN_EMAIL, main=False)
+    get_settings().superadmin_user_id = await uid_of(SUPERADMIN_EMAIL)
+    await client.get("/auth/me", headers=h)  # bind only after the test's configured user ID is in place
     secret = await enable_2fa(client, h)
     return h, secret
 
@@ -35,22 +37,44 @@ async def uid_of(email):
         return (await db.execute(select(User.id).where(User.email == email))).scalar_one()
 
 
-ADMIN_GETS = ["/admin/me", "/admin/revenue/summary", "/admin/revenue/ledger", "/admin/treasury", "/admin/settings",
+ADMIN_GETS = ["/admin/me", "/admin/config", "/admin/revenue/summary", "/admin/revenue/ledger", "/admin/treasury", "/admin/settings",
               "/admin/users", "/admin/roles", "/admin/audit", "/admin/metrics"]
 
 
 # --- superadmin identity ---------------------------------------------------------------------------------
 
 
-async def test_only_the_designated_email_is_superadmin_and_it_needs_2fa(client):
+async def test_superadmin_needs_a_configured_user_id_and_2fa(client):
     h = await signup(client, "  MalikSucess@Gmail.com ".strip(), main=False)  # stored lowercased
     assert (await client.get("/admin/me", headers=h)).status_code == 403  # no 2FA yet
+    uid = await uid_of(SUPERADMIN_EMAIL)
+    get_settings().superadmin_user_id = uid
     await enable_2fa(client, h)
     r = await client.get("/admin/me", headers=h)
     assert r.status_code == 200 and r.json()["role"] == "superadmin"
     assert (await client.get("/auth/me", headers=h)).json()["admin_role"] == "superadmin"
     async with get_sessionmaker()() as db:
         assert (await db.execute(select(AdminAudit).where(AdminAudit.action == "superadmin.bound"))).scalar_one()
+
+
+async def test_admin_configuration_diagnostics_return_presence_only(client):
+    h, _ = await boss(client)
+    response = await client.get("/admin/config", headers=h)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["superadmin_id_configured"] is True
+    assert "solana" in data["rpc_configured"]
+    assert "turnkey_api_private_key" not in response.text
+    assert "https://" not in response.text
+
+
+async def test_designated_email_cannot_bind_superadmin_without_a_pin(client):
+    h = await signup(client, SUPERADMIN_EMAIL, main=False)
+    await enable_2fa(client, h)
+    assert (await client.get("/admin/me", headers=h)).status_code == 403
+    assert (await client.get("/auth/me", headers=h)).json()["admin_role"] is None
+    async with get_sessionmaker()() as db:
+        assert (await db.execute(select(AdminRole).where(AdminRole.role == "superadmin"))).scalar_one_or_none() is None
 
 
 async def test_nobody_else_can_reach_any_admin_route(client):
@@ -78,7 +102,7 @@ async def test_the_role_stays_with_the_original_account_id(client):
     await enable_2fa(client, h2)
     assert (await client.get("/admin/me", headers=h2)).status_code == 403
     r = await client.get("/admin/me", headers=h)
-    assert r.status_code == 200 and r.json()["id"] == first and r.json()["role"] == "superadmin"
+    assert r.status_code == 200 and r.json()["id"] == first and r.json()["role"] == "superadmin", r.text
 
 
 async def test_a_pinned_user_id_must_match(client, monkeypatch):
@@ -250,6 +274,8 @@ async def test_trade_fee_goes_to_the_admin_treasury_and_only_helms_part_is_reven
     summary = (await client.get("/admin/revenue/summary", headers=hb)).json()
     sol = next(t for t in summary["totals"] if t["asset"] == "SOL")
     assert sol["received"] == 7_500_000 and sol["claimable"] == 0 and sol["unreconciled"] == 7_500_000
+    assert summary["referral_liabilities"] == [{"network": "solana", "asset": "SOL", "amount_raw": "2500000",
+                                                 "decimals": 9, "entries": 1}]
     led = (await client.get("/admin/revenue/ledger", headers=hb)).json()
     assert led["total"] == 1 and led["items"][0]["launch"]["symbol"] and led["items"][0]["reference"]
     r = await client.post("/admin/revenue/reconcile", json={"ids": [e.id], "note": "matched on solscan"}, headers=hb)
@@ -280,6 +306,37 @@ def test_an_unconfirmed_fee_is_pending_not_received():
     assert trade_fee_event(fee, "T", None).status == "received"
 
 
+async def test_failed_trade_fee_is_visible_separately_in_admin_ledger(client):
+    hb, _ = await boss(client)
+    async with get_sessionmaker()() as db:
+        db.add(RevenueEvent(source="trade_fee", network="solana", asset="SOL", amount_raw=5_000,
+                            decimals=9, estimated=False, status="failed", note="test failed fee"))
+        await db.commit()
+    summary = (await client.get("/admin/revenue/summary", headers=hb)).json()
+    bucket = next(b for b in summary["totals"] if b["network"] == "solana" and b["asset"] == "SOL")
+    assert bucket["failed"] == 5_000 and bucket["received"] == 0
+    rows = (await client.get("/admin/revenue/ledger?status=failed", headers=hb)).json()
+    assert rows["total"] == 1 and rows["items"][0]["status"] == "failed"
+
+
+async def test_estimated_revenue_is_separate_from_measured_status_totals(client):
+    hb, _ = await boss(client)
+    async with get_sessionmaker()() as db:
+        db.add_all([
+            RevenueEvent(source="dex_fee", network="base", asset="ETH", amount_raw=200, decimals=18,
+                         estimated=False, status="received", note="receipt measured"),
+            RevenueEvent(source="dex_fee", network="base", asset="ETH", amount_raw=100, decimals=18,
+                         estimated=True, status="received", note="quote estimate"),
+            RevenueEvent(source="dex_fee", network="base", asset="ETH", amount_raw=25, decimals=18,
+                         estimated=True, status="claimable", note="provider estimate"),
+        ])
+        await db.commit()
+    summary = (await client.get("/admin/revenue/summary", headers=hb)).json()
+    bucket = next(b for b in summary["totals"] if b["network"] == "base" and b["asset"] == "ETH")
+    assert bucket["received"] == 200 and bucket["claimable"] == 0 and bucket["estimated"] == 125
+    assert bucket["estimated_by_status"] == {"received": 100, "pending": 0, "claimable": 25, "failed": 0}
+
+
 async def test_relay_route_fees_are_claimable_never_received(client):
     from app.services.revenue import route_fee_event
 
@@ -293,7 +350,8 @@ async def test_relay_route_fees_are_claimable_never_received(client):
         await db.commit()
     t = (await client.get("/admin/revenue/summary", headers=hb)).json()
     usdc = next(x for x in t["totals"] if x["asset"] == "USDC")
-    assert usdc["claimable"] == 250000 and usdc["received"] == 0 and usdc["network"] == "base"
+    assert usdc["claimable"] == 0 and usdc["received"] == 0 and usdc["estimated"] == 250000
+    assert usdc["estimated_by_status"]["claimable"] == 250000 and usdc["network"] == "base"
     assert any("Relay" in w and "claimed" in w for w in t["warnings"])
 
 
@@ -427,6 +485,8 @@ async def test_user_list_and_detail_expose_no_secrets(client, fake_rpc):
     page = (await client.get("/admin/users?size=1&page=2&sort=email&order=asc", headers=hb)).json()
     assert page["total"] == 2 and len(page["items"]) == 1
     assert (await client.get("/admin/users?sort=password_hash", headers=hb)).status_code == 400
+    actions = [item["action"] for item in (await client.get("/admin/audit", headers=hb)).json()["items"]]
+    assert "users.listed" in actions and "users.searched" in actions
 
 
 async def test_suspending_needs_a_reason_ends_sessions_and_is_audited(client):
@@ -590,6 +650,16 @@ async def test_relay_verification_confirms_or_zeroes_route_fees():
     assert evs["paid"].reconciled_at and evs["paid"].amount_raw == 3000 and evs["paid"].status == "claimable"
     assert evs["zero"].amount_raw == 0 and evs["refund"].amount_raw == 0  # never counted as revenue
     assert evs["wait"].reconciled_at is None and evs["missing"].reconciled_at is None
+
+
+async def test_relay_receipt_without_raw_amount_does_not_reuse_the_quote_amount():
+    from app.services.revenue import verify_route_fee
+
+    relay = FakeRelay({"paid": {"status": "success", "data": {"paidAppFees": [
+        {"recipient": EVM_TREASURY, "amountUsd": "0.003"}]}}})
+    event = _route_ev("paid")
+    assert await verify_route_fee(relay, event) == "confirmed"
+    assert event.amount_raw is None and event.estimated is False and event.reconciled_at
 
 
 async def test_relay_balance_is_read_from_relay(client, monkeypatch):

@@ -9,6 +9,7 @@ email can't cheaply lock them out.
 """
 
 import time
+import ipaddress
 from datetime import timedelta
 
 import pyotp
@@ -38,21 +39,63 @@ async def ensure_not_locked(db: AsyncSession, key: str, limit: int) -> None:
         raise HTTPException(429, "too many attempts; wait 15 minutes and try again")
 
 
-async def record_failure(db: AsyncSession, *keys: str) -> None:
-    """Record and commit at once, so the count survives the error response that follows. Callers use this only
-    before they have staged anything of their own (a failed check is always followed by an error response)."""
+async def record_attempt(db: AsyncSession, *keys: str) -> None:
+    """Record and commit throttled attempts at once so the count survives the response."""
     for key in keys:
         db.add(AuthFailure(key=key))
     await db.execute(delete(AuthFailure).where(AuthFailure.created_at < utcnow() - WINDOW * 4))
     await db.commit()
 
 
+record_failure = record_attempt
+
+
+SIGNUP_LIMIT = 5  # registration attempts per client address per 15-minute window
+
+
 def client_address(request) -> str:
-    """The caller's address: the last X-Forwarded-For entry (the one the platform's proxy adds), else the socket."""
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff.strip():
-        return xff.split(",")[-1].strip()[:64]
-    return request.client.host if request.client else "unknown"
+    """Return a client IP only from the socket or a chain received through configured trusted proxies.
+
+    The setting must contain provider-verified CIDRs. With no trusted ranges, forwarding headers are ignored.
+    Walking from the socket toward the client selects the nearest untrusted hop, so a client-supplied prefix
+    cannot replace the address appended by a trusted proxy.
+    """
+    peer_text = request.client.host if request.client else "unknown"
+    try:
+        peer = ipaddress.ip_address(peer_text)
+    except ValueError:
+        return "unknown"
+
+    networks = []
+    from ..config import get_settings
+
+    for value in get_settings().trusted_proxy_cidrs.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            # A malformed proxy configuration must never broaden who is trusted.
+            return str(peer)
+
+    def trusted(address):
+        return any(address.version == network.version and address in network for network in networks)
+
+    if not networks or not trusted(peer):
+        return str(peer)
+    parts = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    # Reject oversized or malformed chains and use the verified socket peer instead.
+    if not parts or len(parts) > 20:
+        return str(peer)
+    try:
+        chain = [ipaddress.ip_address(part) for part in parts]
+    except ValueError:
+        return str(peer)
+    for address in reversed([*chain, peer]):
+        if not trusted(address):
+            return str(address)
+    return str(peer)
 
 
 def _matching_step(secret: str, code: str) -> int | None:

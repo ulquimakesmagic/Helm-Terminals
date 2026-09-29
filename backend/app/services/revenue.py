@@ -89,11 +89,24 @@ async def verify_route_fee(relay, ev: RevenueEvent) -> str:
 
     dest = (ev.destination or "").lower()
     paid = [p for p in ((req.get("data") or {}).get("paidAppFees") or [])
-            if (p.get("recipient") or "").lower() == dest and str(p.get("amount") or "0") not in ("0", "")]
+            if (p.get("recipient") or "").lower() == dest
+            and (p.get("amount") is None or str(p.get("amount")) not in ("0", ""))]
     if status == "success" and paid:
-        usd = sum(float(p.get("amountUsd") or 0) for p in paid)
+        # `amount` is the provider-reported base-unit receipt. Never leave the quote amount in place and call it
+        # collected; if Relay omits an amount, keep the receipt claimable but mark the amount unknown.
+        actual = []
+        for item in paid:
+            raw = str(item.get("amount") or "")
+            if raw.isdigit():
+                actual.append(int(raw))
+        ev.amount_raw = sum(actual) if len(actual) == len(paid) else None
+        ev.estimated = False
         ev.reconciled_at = utcnow()
-        ev.note = f"Relay confirmed ${usd:.4f} collected for the treasury; claim at relay.link/claim-app-fees"[:200]
+        if ev.amount_raw is None:
+            ev.note = "Relay confirmed a fee for the treasury; raw amount unavailable, verify at relay.link/claim-app-fees"
+        else:
+            ev.note = f"Relay confirmed {ev.amount_raw} raw {ev.asset} units for the treasury; claim at relay.link/claim-app-fees"
+        ev.note = ev.note[:200]
         return "confirmed"
     ev.amount_raw = 0
     ev.reconciled_at = utcnow()

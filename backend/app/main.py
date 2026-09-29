@@ -9,9 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .chains.base import AdapterError
-from .chains.solana import RPCError, RPCUnavailable, shared_rpc
-from .chains.evm import EVM_CHAINS, EvmRPCUnavailable
-from .keyring import parse_list
+from .chains.solana import RPCError, RPCUnavailable
+from .chains.evm import EvmRPCUnavailable
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
@@ -21,58 +20,94 @@ from .signing import get_signer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    check_production_config(get_settings())
+    settings = get_settings()
+    check_production_config(settings)
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
-    await create_all()
-    try:  # ledger rows for trading fees recorded before the revenue ledger existed (idempotent)
-        from .db import get_sessionmaker
-        from .services.revenue import backfill_trade_fees
-
-        async with get_sessionmaker()() as db:
-            await backfill_trade_fees(db)
-    except Exception:
-        logging.getLogger("helm").warning("revenue backfill skipped", exc_info=True)
     worker = None
-    if get_settings().automation_worker_enabled:
-        from .services.automation_runner import automation_worker
-
-        worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
+    replica_lock = None
     try:
+        replica_lock = await _acquire_single_replica_lock(settings)
+        await create_all()
+        try:  # ledger rows for trading fees recorded before the revenue ledger existed (idempotent)
+            from .db import get_sessionmaker
+            from .services.revenue import backfill_trade_fees
+
+            async with get_sessionmaker()() as db:
+                await backfill_trade_fees(db)
+        except Exception:
+            logging.getLogger("helm").warning("revenue backfill skipped", exc_info=True)
+        if settings.automation_worker_enabled:
+            from .services.automation_runner import automation_worker
+
+            worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
         yield
     finally:
         if worker:
             worker.cancel()
             with suppress(asyncio.CancelledError):
                 await worker
+        if replica_lock is not None:
+            await _release_single_replica_lock(replica_lock)
+
+
+_REPLICA_LOCK_KEY = 0x48454C4D  # stable PostgreSQL advisory-lock key identifying the Helm API singleton
+
+
+async def _acquire_single_replica_lock(settings):
+    """Hold a PostgreSQL session lock so a second API process fails fast instead of duplicating local workers.
+
+    SQLite is used only for local development/tests and has no multi-process production worker support.
+    """
+    if not settings.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
+        return None
+    from sqlalchemy import text
+
+    from .db import get_engine
+
+    conn = await get_engine().connect()
+    try:
+        acquired = await conn.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": _REPLICA_LOCK_KEY})
+    except Exception as exc:
+        await conn.close()
+        raise RuntimeError("could not verify the Helm single-replica PostgreSQL lock") from exc
+    if not acquired:
+        await conn.close()
+        raise RuntimeError("another Helm API replica already holds the PostgreSQL singleton lock")
+    return conn
+
+
+async def _release_single_replica_lock(conn) -> None:
+    from sqlalchemy import text
+
+    try:
+        await conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _REPLICA_LOCK_KEY})
+    except Exception:
+        logging.getLogger("helm.runtime").warning("could not explicitly release the PostgreSQL singleton lock",
+                                                   exc_info=True)
+    finally:
+        await conn.close()
 
 
 DEFAULT_SECRET = "dev-secret-change-me"
 
 
-def _extra_health(s) -> dict:
-    """Which of TRON, NEAR and Arc are enabled, and whether each uses its own endpoint (never the URL itself)."""
-    from .chains.networks import EXTRA_NETWORKS, extra_enabled
-
-    on = set(extra_enabled())
-    return {n: {"enabled": n in on,
-                "custom_rpc": bool(getattr(s, f"{n.replace('-', '_')}_rpc_url", ""))}
-            for n, net in EXTRA_NETWORKS.items()}
-
-
 def check_production_config(s) -> None:
     """Refuse to start a production deployment on development defaults. SECRET_KEY encrypts 2FA secrets (and local
     signer keys), so the public default would make them readable to anyone with the database."""
+    if s.env == "test" and getattr(s, "signer", "local") == "local":
+        raise RuntimeError("ENV=test cannot use SIGNER=local; use an isolated fake signer")
     if s.env != "production":
         return
     # Only the public default (or nothing) is refused. A short but real key is left alone: changing SECRET_KEY makes
     # existing 2FA secrets unreadable, so that must be a planned migration, not something a deploy forces.
     if not s.secret_key or s.secret_key == DEFAULT_SECRET:
         raise RuntimeError("ENV=production needs SECRET_KEY set to a long random value, not the default")
+    if getattr(s, "signer", "local") != "turnkey":
+        raise RuntimeError("ENV=production requires SIGNER=turnkey; the local signer stores encrypted keys in the database")
     if not (getattr(s, "superadmin_user_id", "") or "").strip():
-        # Not fatal (the owner may not have signed up yet), but without the pin the superadmin role goes to whichever
-        # account first signs in with the designated email, and emails aren't verified.
+        # Access fails closed in role_of until the owner ID is configured.
         logging.getLogger("helm.security").warning(
-            "SUPERADMIN_USER_ID is not set: pin the owner's user ID so the admin role can't be claimed by email")
+            "SUPERADMIN_USER_ID is not set: superadmin access is disabled until the owner's user ID is configured")
 
 
 def create_app() -> FastAPI:
@@ -150,16 +185,26 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
+        return {"ok": True}
+
+    @app.get("/public-info")
+    async def public_info():
+        # A deliberately small, user-facing custody statement; detailed configuration stays private.
+        return {"test_signer": s.env != "production" or s.signer != "turnkey"}
+
+    @app.get("/health/ready")
+    async def readiness():
+        from sqlalchemy import text
+        from .db import get_engine
+
         try:
-            rpc = shared_rpc(s.solana_rpc_url).ring.summary()
-        except ValueError:
-            rpc = {"count": 0, "resting": 0}
-        return {"ok": True, "env": s.env, "signer": s.signer, "automations_enabled": s.automation_worker_enabled,
-                "rpc_endpoints": rpc["count"], "rpc_resting": rpc["resting"],
-                "bags_keys": len(parse_list(s.bags_api_key)),
-                "evm_rpc": {n: {"endpoints": len(parse_list(getattr(s, f"evm_rpc_{n}", ""))) or 0,
-                                "public_fallback": not parse_list(getattr(s, f"evm_rpc_{n}", ""))} for n in EVM_CHAINS},
-                "extra_networks": _extra_health(s)}
+            async with get_engine().connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            get_signer()
+        except Exception:
+            logging.getLogger("helm.health").exception("readiness check failed")
+            return JSONResponse(status_code=503, content={"ready": False})
+        return {"ready": True}
 
     return app
 

@@ -6,6 +6,7 @@ Keys stay in the signer: Helm computes the transaction hash and asks the signer 
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from eth_account._utils.legacy_transactions import encode_transaction, serializable_unsigned_transaction_from_dict
@@ -92,7 +93,8 @@ class EvmSender:
         y, r, s = await self.signer.sign_digest(signer_ref, unsigned.hash())
         return encode_transaction(unsigned, (y + 35 + 2 * self.rpc.chain_id, r, s))
 
-    async def send(self, address: str, signer_ref: str, call: EvmCall) -> EvmResult:
+    async def send(self, address: str, signer_ref: str, call: EvmCall,
+                   on_signed: Callable[[str], Awaitable[None]] | None = None) -> EvmResult:
         key = (self.rpc.chain_id, address.lower())
         lock = _locks.setdefault(key, asyncio.Lock())
         async with lock:  # one transaction at a time per wallet, so nonces never collide
@@ -107,6 +109,15 @@ class EvmSender:
                 raw = await self.sign(tx, signer_ref)
             except SigningError as e:
                 return EvmResult(None, "failed", f"signing: {e}")
+            from eth_utils import keccak
+
+            signed_hash = "0x" + keccak(raw).hex()
+            if on_signed is not None:
+                try:
+                    # Save the deterministic transaction hash before handing the raw transaction to an RPC.
+                    await on_signed(signed_hash)
+                except Exception as e:
+                    return EvmResult(None, "failed", f"couldn't persist transaction tracking before send ({type(e).__name__})")
             try:
                 tx_hash = await self.rpc.send_raw("0x" + raw.hex())
             except EvmRPCError as e:
@@ -115,11 +126,11 @@ class EvmSender:
                 # No answer: it may have been broadcast. Track it by its hash (computable from the signed bytes)
                 # rather than calling it failed, and reserve the nonce so nothing else reuses it.
                 _next_nonce[key] = nonce + 1
-                from eth_utils import keccak
-
-                return await self.wait("0x" + keccak(raw).hex())
+                return await self.wait(signed_hash)
             _next_nonce[key] = nonce + 1
-        return await self.wait(tx_hash)
+        if not isinstance(tx_hash, str) or tx_hash.lower() != signed_hash.lower():
+            return EvmResult(signed_hash, "timeout", "RPC returned a different transaction hash; check the explorer")
+        return await self.wait(signed_hash)
 
     async def wait(self, tx_hash: str) -> EvmResult:
         loop = asyncio.get_running_loop()

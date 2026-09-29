@@ -131,15 +131,59 @@ async def test_token_images_must_really_be_images(client):
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
 
 
+async def test_registration_attempts_are_rate_limited_by_client_address(client):
+    body = {"email": "signup-limit@example.com", "password": PW}
+    assert (await client.post("/auth/register", json=body)).status_code == 201
+    for _ in range(4):
+        assert (await client.post("/auth/register", json=body)).status_code == 409
+    assert (await client.post("/auth/register", json=body)).status_code == 429
+
+
+async def test_readiness_checks_database_without_exposing_configuration(client):
+    response = await client.get("/health/ready")
+    assert response.status_code == 200 and response.json() == {"ready": True}
+    assert (await client.get("/health")).json() == {"ok": True}
+
+
 def test_production_refuses_the_default_secret_key():
     class S:
-        env, secret_key = "production", "dev-secret-change-me"
+        env, secret_key, signer, superadmin_user_id = "production", "dev-secret-change-me", "turnkey", ""
     with pytest.raises(RuntimeError):
         check_production_config(S())
     S.secret_key = "x" * 40
     check_production_config(S())
+    S.signer = "local"
+    with pytest.raises(RuntimeError, match="SIGNER=turnkey"):
+        check_production_config(S())
     S.env, S.secret_key = "development", "dev-secret-change-me"
     check_production_config(S())
+
+
+def test_test_environment_refuses_local_signer():
+    class S:
+        env, signer = "test", "local"
+    with pytest.raises(RuntimeError, match="ENV=test"):
+        check_production_config(S())
+
+
+def test_forwarded_ip_is_ignored_unless_peer_is_trusted(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.config import get_settings
+    from app.services.guard import client_address
+
+    request = SimpleNamespace(client=SimpleNamespace(host="198.51.100.20"), headers={"x-forwarded-for": "1.2.3.4"})
+    monkeypatch.setattr(get_settings(), "trusted_proxy_cidrs", "")
+    assert client_address(request) == "198.51.100.20"
+
+    request.client.host = "10.10.0.2"
+    request.headers["x-forwarded-for"] = "203.0.113.55"
+    monkeypatch.setattr(get_settings(), "trusted_proxy_cidrs", "10.10.0.0/24")
+    assert client_address(request) == "203.0.113.55"
+
+    # A spoofed value before the proxy-appended client IP cannot win the right-to-left chain walk.
+    request.headers["x-forwarded-for"] = "1.2.3.4, 203.0.113.55"
+    assert client_address(request) == "203.0.113.55"
 
 
 async def test_metadata_fetch_refuses_internal_addresses(monkeypatch):
@@ -150,6 +194,22 @@ async def test_metadata_fetch_refuses_internal_addresses(monkeypatch):
         assert await _public_host("https://example.com/x.json") is False
     monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
     assert await _public_host("https://example.com/x.json") is True
+
+
+async def test_metadata_transport_uses_only_the_validated_dns_answer():
+    import socket
+
+    import pytest
+
+    from app.services.token_meta import _PinnedResolver
+
+    resolver = _PinnedResolver("metadata.example", [("93.184.216.34", socket.AF_INET)])
+    result = await resolver.resolve("metadata.example", 443, socket.AF_UNSPEC)
+    assert [item["host"] for item in result] == ["93.184.216.34"]
+    with pytest.raises(OSError):
+        await resolver.resolve("attacker.example", 443, socket.AF_UNSPEC)
+    with pytest.raises(OSError):
+        await resolver.resolve("metadata.example", 80, socket.AF_UNSPEC)
 
 
 async def test_a_timed_out_transaction_is_unconfirmed_not_failed():

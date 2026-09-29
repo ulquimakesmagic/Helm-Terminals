@@ -68,7 +68,7 @@ class FakeRPC:
         self.sent.append(tx)
         payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])
         self.balances[payer] = self.balances.get(payer, 5 * SOL) + self.next_delta
-        return f"sig{len(self.sent)}"
+        return str(VersionedTransaction.from_bytes(tx).signatures[0])
 
     async def confirm(self, sig, timeout_s=60, poll_s=1.0, **_):
         return "confirmed", None
@@ -119,7 +119,8 @@ async def client(fake_rpc):
     await dbmod.create_all()
 
     settings = get_settings()
-    saved = (settings.platform_fee_bps, settings.platform_fee_wallet)
+    saved = (settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id)
+    settings.superadmin_user_id = ""
     registry._cache["pumpfun"] = FakeAdapter()
     app.dependency_overrides[get_rpc] = lambda: fake_rpc
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer())
@@ -127,7 +128,7 @@ async def client(fake_rpc):
         yield c
     app.dependency_overrides.clear()
     registry._cache.pop("pumpfun", None)
-    settings.platform_fee_bps, settings.platform_fee_wallet = saved
+    settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id = saved
 
 
 async def signup(client, email="a@example.com", password="correct-horse-battery", main=True):

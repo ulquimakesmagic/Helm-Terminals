@@ -1,4 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
+import { TableWrap } from "./ui";
 
 export interface Candle { t: number; o: number; h: number; l: number; c: number; v: number }
 
@@ -91,13 +92,14 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
     + `Latest close ${fmtPrice(last.c)} USD. Range ${fmtPrice(lo)} to ${fmtPrice(hi)} USD. Use left and right arrow keys to inspect candles.`;
 
   return (
-    <div className="chart candle-chart" ref={ref} tabIndex={0} role="img" aria-label={summary} onKeyDown={onKey}
-      // Pointer events so a touch's trailing compatibility "mouseleave" doesn't hide the tooltip it just opened;
-      // on touch the tooltip stays until the chart loses focus.
-      onPointerMove={(e) => e.pointerType !== "touch" && pick(e.clientX)}
-      onPointerLeave={(e) => e.pointerType !== "touch" && setHover(null)} onBlur={() => setHover(null)}
-      onTouchStart={(e) => pick(e.touches[0].clientX)} onTouchMove={(e) => pick(e.touches[0].clientX)}>
-      <svg viewBox={`0 0 ${w} ${height}`} height={height} preserveAspectRatio="none" aria-hidden="true">
+    <div className="chart candle-chart" tabIndex={0} role="group" aria-label={`Interactive price chart. ${summary}`} onKeyDown={onKey} onBlur={() => setHover(null)}>
+      <div className="chart-canvas" ref={ref}
+        // Pointer events so a touch's trailing compatibility "mouseleave" doesn't hide the tooltip it just opened;
+        // on touch the tooltip stays until the chart loses focus.
+        onPointerMove={(e) => e.pointerType !== "touch" && pick(e.clientX)}
+        onPointerLeave={(e) => e.pointerType !== "touch" && setHover(null)}
+        onTouchStart={(e) => pick(e.touches[0].clientX)} onTouchMove={(e) => pick(e.touches[0].clientX)}>
+        <svg viewBox={`0 0 ${w} ${height}`} height={height} preserveAspectRatio="none" aria-hidden="true">
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={w - padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="3 4" />
@@ -125,9 +127,9 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
         {n > 1 && x(0) < w - padR - 200 && <text x={lead ? x(0) - step / 2 : padL} y={height - 6} className="axis">{when(candles[0].t, !!daily)}</text>}
         <text x={w - padR} y={height - 6} textAnchor="end" className="axis">{when(last.t, !!daily)}</text>
         {hc && <line x1={x(hover!)} x2={x(hover!)} y1={padT} y2={volTop + volH} stroke="var(--line-3)" />}
-      </svg>
-      {hc && (
-        <div className="tip candle-tip" style={{ left: `${Math.min(84, Math.max(16, (x(hover!) / w) * 100))}%`, top: 8 }} role="status">
+        </svg>
+        {hc && (
+          <div className="tip candle-tip" style={{ left: `${Math.min(84, Math.max(16, (x(hover!) / w) * 100))}%`, top: 8 }} role="status">
           <div className="d">{when(hc.t, !!daily)}</div>
           <div className="ohlc num">
             <span>O</span><b>{fmtPrice(hc.o)}</b><span>H</span><b>{fmtPrice(hc.h)}</b>
@@ -137,8 +139,30 @@ export default function CandleChart({ candles: all, height = 300, daily, label }
             <span className={hc.c >= hc.o ? "good" : "bad"}>{hc.c >= hc.o ? "▲ +" : "▼ "}{hc.o ? (((hc.c - hc.o) / hc.o) * 100).toFixed(2) : "0.00"}%</span>
             <span className="muted"> · vol {fmtUsdCompact(hc.v)}</span>
           </div>
+          </div>
+        )}
+      </div>
+      <details className="chart-data-disclosure">
+        <summary>Text summary and candle data</summary>
+        <p className="small muted">{summary}</p>
+        <div className="chart-data-scroll" role="region" aria-label="Displayed candle values" tabIndex={0}>
+          <TableWrap label="Displayed chart candle data">
+            <table className="rtable">
+              <caption>{label}. Displayed candles; OHLC prices and pool volume in USD.</caption>
+              <thead><tr><th>Time</th><th className="r">Open</th><th className="r">High</th><th className="r">Low</th><th className="r">Close</th><th className="r">Volume USD</th></tr></thead>
+              <tbody>{candles.map((c) => (
+                <tr key={c.t}>
+                  <td data-label="Time">{when(c.t, !!daily)}</td>
+                  <td className="r mono" data-label="Open">${fmtPrice(c.o)}</td>
+                  <td className="r mono" data-label="High">${fmtPrice(c.h)}</td>
+                  <td className="r mono" data-label="Low">${fmtPrice(c.l)}</td>
+                  <td className="r mono" data-label="Close">${fmtPrice(c.c)}</td>
+                  <td className="r mono" data-label="Volume USD">{fmtUsdCompact(c.v)}</td>
+                </tr>))}</tbody>
+            </table>
+          </TableWrap>
         </div>
-      )}
+      </details>
     </div>
   );
 }

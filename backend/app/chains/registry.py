@@ -70,6 +70,15 @@ def is_evm(adapter) -> bool:
     return getattr(adapter, "kind", "solana") == "evm"
 
 
+def is_evm_network(network: str) -> bool:
+    """Whether a network key belongs to one of the EVM JSON-RPC chains."""
+    from .evm import EVM_CHAINS
+    from .networks import EXTRA_NETWORKS
+
+    extra = EXTRA_NETWORKS.get(network)
+    return network in EVM_CHAINS or getattr(extra, "family", None) == "evm"
+
+
 def needs_setup(launchpad_id: str) -> str | None:
     """Why an implemented launchpad can't be used on this server yet, or None if it can."""
     if launchpad_id == "bags" and not get_settings().bags_api_key:

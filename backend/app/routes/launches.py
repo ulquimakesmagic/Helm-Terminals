@@ -12,8 +12,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
-from ..chains.evm import EVM_CHAINS, WEI, EvmRPCUnavailable
-from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, is_extra, list_launchpads, needs_setup
+from ..chains.evm import EVM_CHAINS, WEI, EvmRPCUnavailable, shared_evm
+from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, is_evm_network, is_extra, list_launchpads, needs_setup
 from ..chains.solana import (
     LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
     token_transfer_checked_ix,
@@ -24,7 +24,7 @@ from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
     two_fa_warnings, valid_address, valid_address_for,
 )
-from ..models import Automation, Job, Launch, LaunchWallet, Transaction, User, Wallet, utcnow
+from ..models import Automation, FeeRecord, Job, Launch, LaunchWallet, RevenueEvent, Transaction, User, Wallet, utcnow
 from ..services.executor import Executor, run_built, run_evm_plan, run_evm_trade, run_single, run_trade
 from ..services.auto_fund import detail as funding_detail
 from ..services.auto_fund import plan_funding, run_funding, usd_value
@@ -480,6 +480,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     if created:
         prior_status = l.status
         l.status = "deploying"
+        l.launchpad_params = {k: v for k, v in (l.launchpad_params or {}).items()
+                              if k not in ("deploy_started_at", "unconfirmed_since")}
+        l.launchpad_params = {**l.launchpad_params, "deploy_started_at": utcnow().isoformat()}
         await db.commit()
         slippage = (l.launchpad_params or {}).get("slippage_pct", 10.0)
 
@@ -498,6 +501,11 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                 launch.status = "failed"
                 await session.commit()
                 return
+            # Persist the address before any signature can be broadcast. A restart after sending can then be
+            # reconciled by checking this mint's supply, even if the worker never returned from run_built().
+            if built.mint:
+                launch.mint_address = built.mint
+                await session.commit()
             res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", built.mint, utcnow()
@@ -660,14 +668,14 @@ async def _balances(rpc: SolanaRPC, addresses: list[str]) -> list[int]:
 @router.post("/launches/{launch_id}/recheck")
 async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
                          rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
-    """For a Solana deploy that was sent but not confirmed in time: look for the token on-chain."""
+    """For a deploy that was sent but not confirmed in time: reconcile its saved transaction on-chain."""
     l = await _owned_launch(db, user, launch_id)
     if l.launchpad in IMPLEMENTED and is_extra(get_adapter(l.launchpad)):
         from ..services import extra_launch
 
         await extra_launch.recheck(l, db, ex, get_adapter(l.launchpad))
         return _launch_out(l)
-    if l.status == "deploying" and (l.launchpad_params or {}).get("evm_deploy_tx"):
+    if l.status == "deploying" and is_evm_network(l.network):
         await _recheck_evm_deploy(l, db, ex, user)
         return _launch_out(l)
     if l.status != "deploying" or not l.mint_address or l.network != "solana":
@@ -676,7 +684,8 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
         await rpc.get_token_supply(l.mint_address)
     except RPCError as e:
         missing = "could not find account" in str(e).lower()  # the node's answer for a mint that doesn't exist
-        since = (l.launchpad_params or {}).get("unconfirmed_since")
+        since = ((l.launchpad_params or {}).get("unconfirmed_since")
+                 or (l.launchpad_params or {}).get("deploy_started_at"))
         if missing and since and utcnow() - datetime.fromisoformat(since) > timedelta(minutes=10):
             # a create transaction's blockhash expires in about a minute; ten minutes on, it can't land any more
             l.status, l.mint_address = "failed", None
@@ -691,7 +700,7 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
 # Token resolvers of EVM deploys that timed out, kept in this process so a late receipt can still name the token.
 _EVM_RESOLVERS: dict = {}
 DEPLOY_TRACKING = ("evm_deploy_tx", "unconfirmed_since", "predicted_token", "deploy_error", "deploy_note",
-                   "archived_while_deploying")
+                   "archived_while_deploying", "deploy_started_at")
 
 
 async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: User) -> None:
@@ -699,7 +708,19 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
     it failed. With no receipt it stays deploying: a transaction one node doesn't know can still be mined from another
     node's mempool, so "not found" is never treated as failure."""
     params = l.launchpad_params or {}
-    h = params["evm_deploy_tx"]
+    h = params.get("evm_deploy_tx")
+    if not h:
+        tx = (await db.execute(select(Transaction).join(Job, Job.id == Transaction.job_id).where(
+            Job.launch_id == l.id, Transaction.kind == "deploy", Transaction.signature.is_not(None)
+        ).order_by(Transaction.created_at.desc()).limit(1))).scalars().first()
+        h = tx.signature if tx else None
+        if h:
+            params = {**params, "evm_deploy_tx": h,
+                      "unconfirmed_since": params.get("unconfirmed_since") or utcnow().isoformat()}
+            l.launchpad_params = params
+            await db.commit()
+    if not h:
+        return
     try:
         receipt = await ex.evm(l.network).rpc.receipt(h)
     except Exception:
@@ -961,7 +982,8 @@ STALE_JOB = timedelta(minutes=15)  # far beyond any confirmation or route wait
 AWAITING_WALLET = {"external_transfer", "ton_transfer"}  # jobs waiting on the user's own wallet, not on Helm
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                  rpc: SolanaRPC = Depends(get_rpc)):
     j = await db.get(Job, job_id)
     if not j or j.user_id != user.id:
         raise HTTPException(404, "job not found")
@@ -981,6 +1003,60 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
     if not network and txs and txs[0].wallet_id:
         tw = await db.get(Wallet, txs[0].wallet_id)
         network = tw.network if tw else None
+    if not network and j.launch_id:
+        launch = await db.get(Launch, j.launch_id)
+        network = launch.network if launch else None
+
+    # A process restart can happen after broadcast but before the worker writes the confirmation result. Solana
+    # signatures are saved before broadcast; check those signatures on demand and reconcile any associated fee rows.
+    if (network == "solana" or (network and is_evm_network(network))) and j.status == "unconfirmed":
+        changed = False
+        for tx in txs:
+            if tx.status not in ("pending", "timeout") or not tx.signature:
+                continue
+            try:
+                if network == "solana":
+                    status, error = await rpc.confirm(tx.signature, timeout_s=0)
+                else:
+                    receipt = await shared_evm(network).receipt(tx.signature)
+                    if not receipt:
+                        continue
+                    raw_status = receipt.get("status")
+                    receipt_status = int(raw_status, 16) if isinstance(raw_status, str) else int(raw_status or 0)
+                    if receipt_status not in (0, 1):
+                        continue
+                    status, error = ("confirmed", None) if receipt_status == 1 else ("failed", "transaction reverted on-chain")
+            except Exception:
+                # Provider outages/rate limits are not a transaction outcome; keep the row pending for another check.
+                continue
+            if status not in ("confirmed", "failed"):
+                continue
+            tx.status, tx.error = status, error
+            changed = True
+            fees = (await db.execute(select(FeeRecord).where(FeeRecord.signature == tx.signature))).scalars().all()
+            for fee in fees:
+                fee.status = status
+                event = (await db.execute(select(RevenueEvent).where(RevenueEvent.fee_record_id == fee.id)))\
+                    .scalars().first()
+                if event:
+                    event.status = "received" if status == "confirmed" else "failed"
+
+        # Platform-fee transfers do not decide whether the user's trade job succeeded.
+        primary_txs = [tx for tx in txs if tx.kind != "platform_fee"]
+        if primary_txs and all(tx.status in ("confirmed", "failed") for tx in primary_txs):
+            if all(tx.status == "confirmed" for tx in primary_txs):
+                j.status = "confirmed"
+            elif any(tx.status == "confirmed" for tx in primary_txs):
+                j.status = "partial"
+            else:
+                j.status = "failed"
+            if (j.params or {}).get("lost_track"):
+                j.params = {k: v for k, v in j.params.items() if k not in ("lost_track", "error")}
+            j.updated_at = utcnow()
+            changed = True
+        if changed:
+            await db.commit()
+
     return {"id": j.id, "kind": j.kind, "status": j.status, "error": (j.params or {}).get("error"), "network": network,
             "transactions": [{"id": t.id, "kind": t.kind, "status": t.status, "signature": t.signature,
                               "error": t.error} for t in txs]}
@@ -1049,7 +1125,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         prior_status = l.status
         l.status = "deploying"
         # a new attempt: forget the previous attempt's hash, timers and errors so a recheck can't act on them
-        l.launchpad_params = {k: v for k, v in (l.launchpad_params or {}).items() if k not in DEPLOY_TRACKING}
+        l.launchpad_params = {**{k: v for k, v in (l.launchpad_params or {}).items() if k not in DEPLOY_TRACKING},
+                              "deploy_started_at": utcnow().isoformat()}
         _EVM_RESOLVERS.pop(l.id, None)
         await db.commit()
 
@@ -1075,6 +1152,9 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 launch.status = "failed"
                 await session.commit()
                 return
+            if plan.token:
+                launch.launchpad_params = {**(launch.launchpad_params or {}), "predicted_token": plan.token}
+                await session.commit()
             res = await run_evm_plan(session, ex, j, dev, "deploy", plan)
             token = plan.token
             if res.status == "confirmed" and plan.resolve_token:

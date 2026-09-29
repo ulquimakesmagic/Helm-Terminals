@@ -149,6 +149,11 @@ async def begin_spend(
     db: AsyncSession, user: User, body: SpendConfirm, pf: dict, kind: str, launch_id: str | None, params: dict
 ) -> tuple[Job, bool]:
     """Validate a confirmation and create (or find) the Job. Returns (job, created)."""
+    # Telegram sessions currently share the web spend API. Keep them read-only until every action has an
+    # independently reviewed per-action cap and provider-built transactions are validated before signing.
+    # Enforce this at the API boundary so a modified or stale bot client cannot bypass the UI restriction.
+    if getattr(user, "channel", "web") != "web":
+        raise HTTPException(403, "Telegram is temporarily read-only; use the Helm web app to confirm transactions")
     if body.preflight_hash != pf["preflight_hash"]:
         raise HTTPException(409, "preflight_changed: review the new preflight and confirm again")
     if not body.idempotency_key:

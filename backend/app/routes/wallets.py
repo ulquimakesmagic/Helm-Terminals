@@ -14,7 +14,7 @@ from ..deps import (
     two_fa_warnings, valid_address, valid_address_for,
 )
 from ..models import Folder, Funder, Job, Transaction, User, Wallet
-from ..services.executor import Executor, _finish, _record, run_single
+from ..services.executor import Executor, _finish, _record, run_single, send_evm_tracked, submit_tracked
 from ..services import portfolio
 from ..services.chain_balances import STABLE_DECIMALS, native_coin, stable_for
 from ..services.preflight import build_preflight
@@ -532,7 +532,7 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
                     [sol_transfer_ix(Pubkey.from_string(w.address), Pubkey.from_string(body.destination), lam)],
                     blockhash,
                 )
-                res = await ex.submit(raw, {w.address: w.signer_ref or ""})
+                res = await submit_tracked(ex, j, w, "withdraw", raw, {w.address: w.signer_ref or ""})
                 await _record(session, j, w, "withdraw", res, None)
                 results.append(res)
             _finish(j, results)
@@ -573,7 +573,7 @@ async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, 
             await session.commit()
             results = []
             for w, v in wei:
-                res = await sender.send(src.address, src.signer_ref or "", EvmCall(to=w.address, value=v))
+                res = await send_evm_tracked(sender, j, src, "fund", EvmCall(to=w.address, value=v))
                 await _record(session, j, src, "fund", res, None)
                 results.append(res)
                 await session.commit()
@@ -610,7 +610,7 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
         async def work(session, j):
             results = []
             for w, amt, _ in plan:
-                res = await sender.send(w.address, w.signer_ref or "", EvmCall(to=body.destination, value=amt))
+                res = await send_evm_tracked(sender, j, w, "withdraw", EvmCall(to=body.destination, value=amt))
                 await _record(session, j, w, "withdraw", res, None)
                 results.append(res)
             _finish(j, results)

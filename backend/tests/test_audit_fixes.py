@@ -3,16 +3,19 @@
 import base64
 
 import httpx
+import pytest
 from sqlalchemy import select
+from solders.pubkey import Pubkey
+from solders.transaction import VersionedTransaction
 
 from app.chains import registry
 from app.chains.flap import FlapAdapter
 from app.db import get_sessionmaker
 from app.deps import get_executor, run_job
 from app.main import app
-from app.models import AdminAudit, Job, Launch, RevenueEvent, Transaction, User
+from app.models import AdminAudit, FeeRecord, Job, Launch, RevenueEvent, Transaction, User, Wallet
 from app.services import extra_chains as xc
-from app.services.executor import Executor
+from app.services.executor import Executor, run_single
 from app.signing import get_signer
 
 from .conftest import enable_2fa, signup
@@ -68,6 +71,148 @@ async def test_a_job_that_crashes_after_sending_is_unconfirmed(client):
     b = (await client.get(f"/jobs/{ids[1]}", headers=h)).json()
     assert a["status"] == "unconfirmed" and "check the explorer" in a["error"]
     assert b["status"] == "failed" and b["error"] == "quote failed"
+
+
+async def test_single_step_signature_is_committed_before_broadcast(client, fake_rpc, monkeypatch):
+    """A worker crash inside send must leave a durable signature the job endpoint can recheck."""
+    from solders.hash import Hash
+
+    from app.chains.solana import build_unsigned, sol_transfer_ix
+    from app.signing import get_signer
+
+    h = await signup(client)
+    async with get_sessionmaker()() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        wallet = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().first()
+        job = Job(user_id=user.id, kind="burn", params={"network": "solana"})
+        db.add(job)
+        await db.commit()
+        job_id, wallet_id = job.id, wallet.id
+        payer = Pubkey.from_string(wallet.address)
+        raw = build_unsigned(payer, [sol_transfer_ix(payer, payer, 1)], str(Hash.default()))
+
+    async def crash_after_the_node_receives(tx_bytes):
+        signature = str(VersionedTransaction.from_bytes(tx_bytes).signatures[0])
+        async with get_sessionmaker()() as check_db:
+            row = (await check_db.execute(select(Transaction).where(Transaction.signature == signature)))\
+                .scalars().first()
+            assert row and row.job_id == job_id and row.status == "pending"
+        raise RuntimeError("simulated worker interruption after broadcast")
+
+    monkeypatch.setattr(fake_rpc, "send", crash_after_the_node_receives)
+    async with get_sessionmaker()() as db:
+        job = await db.get(Job, job_id)
+        wallet = await db.get(Wallet, wallet_id)
+        with pytest.raises(RuntimeError, match="simulated worker interruption"):
+            await run_single(db, Executor(fake_rpc, get_signer()), job, wallet, "burn", raw,
+                             {wallet.address: wallet.signer_ref or ""})
+
+    async with get_sessionmaker()() as db:
+        tx = (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).scalars().one()
+        assert tx.signature and tx.status == "pending"
+
+
+@pytest.mark.parametrize(("chain_status", "job_status", "event_status"), [
+    ("confirmed", "confirmed", "received"),
+    ("failed", "failed", "failed"),
+    ("timeout", "unconfirmed", "pending"),
+])
+async def test_job_recheck_resolves_solana_signature_and_fee_ledger(
+    client, fake_rpc, monkeypatch, chain_status, job_status, event_status
+):
+    h = await signup(client)
+    async with get_sessionmaker()() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        wallet = (await db.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().first()
+        job = Job(user_id=user.id, kind="trade", status="unconfirmed", params={"network": "solana"})
+        db.add(job)
+        await db.flush()
+        db.add(Transaction(job_id=job.id, wallet_id=wallet.id, kind="buy", signature="resume-this-signature",
+                           status="timeout"))
+        fee = FeeRecord(job_id=job.id, payer_user_id=user.id, wallet_id=wallet.id, side="buy",
+                        basis_lamports=1_000_000, platform_lamports=10_000, status="pending",
+                        signature="resume-this-signature")
+        db.add(fee)
+        await db.flush()
+        from app.services.revenue import trade_fee_event
+
+        db.add(trade_fee_event(fee, "treasury", None))
+        job_id = job.id
+        await db.commit()
+
+    async def confirm(signature, **_):
+        assert signature == "resume-this-signature"
+        return chain_status, "execution error" if chain_status == "failed" else None
+
+    monkeypatch.setattr(fake_rpc, "confirm", confirm)
+    response = await client.get(f"/jobs/{job_id}", headers=h)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == job_status
+    async with get_sessionmaker()() as db:
+        tx = (await db.execute(select(Transaction).where(Transaction.job_id == job_id))).scalars().one()
+        fee = (await db.execute(select(FeeRecord).where(FeeRecord.job_id == job_id))).scalars().one()
+        event = (await db.execute(select(RevenueEvent).where(RevenueEvent.fee_record_id == fee.id))).scalars().one()
+        assert tx.status == chain_status
+        assert fee.status == ("pending" if chain_status == "timeout" else chain_status)
+        assert event.status == event_status
+
+
+async def test_unconfirmed_evm_job_rechecks_its_saved_receipt(client, fake_rpc, monkeypatch):
+    h = await signup(client)
+    async with get_sessionmaker()() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        job = Job(user_id=user.id, kind="trade", status="unconfirmed", params={"network": "bsc"})
+        db.add(job)
+        await db.flush()
+        db.add(Transaction(job_id=job.id, kind="buy", signature="0x" + "ab" * 32, status="timeout"))
+        job_id = job.id
+        await db.commit()
+
+    class ReceiptNode:
+        async def receipt(self, signature):
+            assert signature == "0x" + "ab" * 32
+            return {"status": "0x1"}
+
+    from app.routes import launches as launches_route
+
+    monkeypatch.setattr(launches_route, "shared_evm", lambda network: ReceiptNode())
+    response = await client.get(f"/jobs/{job_id}", headers=h)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "confirmed"
+    assert response.json()["transactions"][0]["status"] == "confirmed"
+
+
+async def test_deploy_recheck_recovers_hash_saved_before_worker_restart(client, fake_rpc):
+    from app.deps import get_executor
+    from app.signing import get_signer
+
+    h = await signup(client)
+    async with get_sessionmaker()() as db:
+        user = (await db.execute(select(User))).scalars().first()
+        launch = Launch(user_id=user.id, network="bsc", launchpad="pumpfun", status="deploying",
+                        name="Restarted", symbol="RST", launchpad_params={})
+        db.add(launch)
+        await db.flush()
+        job = Job(user_id=user.id, launch_id=launch.id, kind="deploy", status="unconfirmed", params={})
+        db.add(job)
+        await db.flush()
+        db.add(Transaction(job_id=job.id, kind="deploy", signature="0x" + "cd" * 32, status="pending"))
+        launch_id = launch.id
+        await db.commit()
+
+    class ReceiptNode:
+        async def receipt(self, signature):
+            assert signature == "0x" + "cd" * 32
+            return {"status": "0x1", "logs": [], "contractAddress": "0x" + "ef" * 20}
+
+    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"bsc": ReceiptNode()})
+    try:
+        response = await client.post(f"/launches/{launch_id}/recheck", headers=h)
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "live"
+        assert response.json()["mint_address"] == "0x" + "ef" * 20
+    finally:
+        app.dependency_overrides.pop(get_executor, None)
 
 
 # --- PRD-1 / REL-2: an EVM deploy that times out can't be deployed twice ----------------------------------------

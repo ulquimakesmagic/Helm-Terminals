@@ -186,7 +186,9 @@ async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
     ha = await signup(client, "kol@example.com")
     code = (await client.post("/referrals", json={}, headers=ha)).json()["code"]
     payout = str(_Kp().pubkey())
-    assert (await client.put("/referrals/payout", json={"address": payout}, headers=ha)).status_code == 200
+    secret = await enable_2fa(client, ha)
+    assert (await client.put("/referrals/payout", json={"address": payout, "password": "correct-horse-battery",
+                                                         "totp": await totp_code(secret)}, headers=ha)).status_code == 200
 
     r = await client.post("/auth/register", json={"email": "fan@example.com", "password": "correct-horse-battery",
                                                   "referral_code": code.lower()})
@@ -238,6 +240,39 @@ async def test_bad_referral_code_is_rejected(client):
     r = await client.post("/auth/register", json={"email": "x@example.com", "password": "correct-horse-battery",
                                                   "referral_code": "NOPE1234"})
     assert r.status_code == 400
+
+
+async def test_referral_codes_are_capped_per_user(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "referral_max_codes_per_user", 1)
+    h = await signup(client, "referral-cap@example.com", main=False)
+    assert (await client.post("/referrals", json={}, headers=h)).status_code == 201
+    assert (await client.post("/referrals", json={}, headers=h)).status_code == 429
+
+
+async def test_referral_payout_cannot_target_a_known_referred_wallet(client):
+    from app.models import AdminAudit, User, Wallet
+
+    referrer = await signup(client, "referrer@example.com", main=False)
+    code = (await client.post("/referrals", json={}, headers=referrer)).json()["code"]
+    created = await client.post("/auth/register", json={"email": "referred@example.com",
+                                                         "password": "correct-horse-battery",
+                                                         "referral_code": code})
+    assert created.status_code == 201
+    secret = await enable_2fa(client, referrer)
+    async with get_sessionmaker()() as db:
+        referred_id = (await db.execute(select(User.id).where(User.email == "referred@example.com"))).scalar_one()
+        referred_wallet = (await db.execute(select(Wallet).where(
+            Wallet.network == "solana", Wallet.user_id == referred_id))).scalars().first()
+        address = referred_wallet.address
+    response = await client.put("/referrals/payout", json={"address": address, "password": "correct-horse-battery",
+                                                            "totp": await totp_code(secret)}, headers=referrer)
+    assert response.status_code == 400 and "referred" in response.json()["detail"]
+    async with get_sessionmaker()() as db:
+        audit_event = (await db.execute(select(AdminAudit).where(
+            AdminAudit.action == "referral.self_referral_suspected"))).scalar_one_or_none()
+        assert audit_event is not None and address not in str(audit_event.changes)
 
 
 async def test_two_factor_policy_only_gates_assets_leaving_the_wallets(client, fake_rpc):
@@ -588,5 +623,6 @@ async def test_evm_watch_wallet_balance_is_in_its_own_coin(client, fake_rpc, mon
 
 async def test_health_reports_rpc_setup_per_chain(client):
     health = (await client.get("/health")).json()
-    assert set(health["evm_rpc"]) == {"base", "bsc", "ethereum", "robinhood"}
-    assert health["evm_rpc"]["robinhood"]["public_fallback"] is True
+    assert health == {"ok": True}
+    assert "evm_rpc" not in health and "signer" not in health and "env" not in health
+    assert (await client.get("/public-info")).json() == {"test_signer": True}

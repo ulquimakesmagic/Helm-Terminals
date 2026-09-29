@@ -1,11 +1,10 @@
 """Admin roles, the superadmin identity, step-up checks and the admin audit log.
 
 The superadmin
-- The only superadmin is the account registered with SUPERADMIN_EMAIL (compared after trimming and lowercasing).
-- The role is bound to that account's user ID the first time it's checked, in the admin_roles table. From then on
-  the binding decides, not the email: nothing in the app lets anyone change their email, and even if a row's email
-  were changed the role would stay with the original user ID. Another account can never pick it up: there is no
-  endpoint that creates, moves or restores a superadmin row.
+- Superadmin access fails closed unless SUPERADMIN_USER_ID is configured to the owner's account ID. The initial
+  binding additionally requires the designated email; an email address alone never grants the role.
+- Once bound, the row stays with that user ID. Another account cannot take it: there is no endpoint that creates,
+  moves or restores a superadmin row. A missing or mismatched pin disables that row.
 - Admin access needs a web session (not the Telegram bot) and 2FA turned on. Sensitive changes (treasury
   addresses, fee settings, suspensions, roles) also need the password and a fresh 2FA code.
 
@@ -36,23 +35,25 @@ def normalize_email(email: str) -> str:
 
 
 async def role_of(db: AsyncSession, user: User) -> str | None:
-    """The user's admin role, binding the superadmin on first sight. None for everyone else."""
+    """The user's admin role. The superadmin fails closed unless its exact user ID is configured."""
     row = (await db.execute(select(AdminRole).where(AdminRole.user_id == user.id))).scalar_one_or_none()
     pinned = get_settings().superadmin_user_id.strip()
     if row:
-        if row.role == "superadmin" and pinned and row.user_id != pinned:
-            return None  # a pin set later overrides an earlier binding
+        if row.role == "superadmin" and (not pinned or row.user_id != pinned):
+            return None  # missing or mismatched pin overrides any historical binding
         return row.role
+    if not pinned:
+        return None
     if normalize_email(user.email) != SUPERADMIN_EMAIL:
         return None
-    if pinned and pinned != user.id:
+    if pinned != user.id:
         return None
     bound = (await db.execute(select(AdminRole).where(AdminRole.role == "superadmin"))).scalar_one_or_none()
     if bound:  # already bound to another user ID: this account can't take it
         return None
     db.add(AdminRole(user_id=user.id, role="superadmin", granted_by="system:email-binding"))
     db.add(AdminAudit(actor_user_id=user.id, action="superadmin.bound", target=user.id,
-                      changes={"role": [None, "superadmin"]}, context={"by": "designated email"}))
+                      changes={"role": [None, "superadmin"]}, context={"by": "configured user ID"}))
     await db.commit()
     return "superadmin"
 

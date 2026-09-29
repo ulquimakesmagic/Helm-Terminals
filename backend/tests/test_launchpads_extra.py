@@ -234,6 +234,7 @@ async def test_meme_cooking_create_deposit_withdraw_and_claim(client, pads, monk
     lid = (await _launch(client, h, "meme-cooking", dev, dev_buy_sol=2,
                          options={"duration_h": 6, "soft_cap_near": 100, "hard_cap_near": 500}))["id"]
     pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
+    assert "preflight" in pf, pf
     p = pf["preflight"]
     assert p["auction_hours"] == 6 and p["soft_cap_near"] == 100 and p["hard_cap_near"] == 500
     assert pins == []  # nothing is uploaded for a preview

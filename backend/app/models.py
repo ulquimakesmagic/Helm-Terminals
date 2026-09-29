@@ -249,7 +249,7 @@ class FeeRecord(Base):
     referral_lamports: Mapped[int] = mapped_column(BigInteger, default=0)
     referral_status: Mapped[str] = mapped_column(String(12), default="none")  # none | paid | owed
     mode: Mapped[str] = mapped_column(String(12), default="in_tx")  # in_tx | follow_up
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # confirmed | failed
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | confirmed | failed
     signature: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -294,8 +294,8 @@ _declare_fk_dependencies()
 
 
 class AuthFailure(Base):
-    """A failed password or 2FA attempt, keyed by what was attacked ("login:<email>", "totp:<user id>"). Used to slow
-    down guessing; rows older than the window are ignored and pruned opportunistically."""
+    """A throttled authentication or registration attempt, keyed by the target/IP bucket. Rows older than the
+    window are ignored and pruned opportunistically."""
     __tablename__ = "auth_failures"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     key: Mapped[str] = mapped_column(String(160), index=True)
@@ -316,8 +316,8 @@ class TotpUse(Base):
 
 
 class AdminRole(Base):
-    """A privileged role bound to a user ID. The superadmin row is created only for the account registered with the
-    designated superadmin email (see services/admin.py), and once bound it never moves to another user ID."""
+    """A privileged role bound to a user ID. Superadmin binding also requires the configured owner ID and designated
+    email (see services/admin.py), and once bound it never moves to another user ID."""
     __tablename__ = "admin_roles"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
@@ -365,6 +365,7 @@ class RevenueEvent(Base):
     received  - moved on-chain to a treasury address in a confirmed transaction Helm sent
     pending   - in a transaction that hasn't confirmed
     claimable - held by a provider (Relay, a launchpad fee locker) until someone claims it
+    failed    - signed fee transaction reached a verified terminal failure; not revenue received
     `reconciled_at` is set when an admin has matched it against the treasury's on-chain inflows."""
     __tablename__ = "revenue_events"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)

@@ -17,6 +17,8 @@ def get_signer() -> Signer:
             api_public_key=s.turnkey_api_public_key,
             api_private_key=s.turnkey_api_private_key,
         )
+    if s.env in {"production", "test"}:
+        raise RuntimeError(f"SIGNER=local is disabled when ENV={s.env}; configure SIGNER=turnkey")
     from .local import LocalDevSigner
 
     key = s.local_key_secret.encode() if s.local_key_secret else derive_fernet_key(s.secret_key)

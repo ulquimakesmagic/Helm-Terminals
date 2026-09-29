@@ -19,8 +19,8 @@ EVM_PREFIX = "local-evm:"
 
 class LocalDevSigner:
     def __init__(self, fernet_key: bytes, env: str) -> None:
-        if env == "production":
-            raise RuntimeError("LocalDevSigner must not be used with ENV=production. Set SIGNER=turnkey.")
+        if env in {"production", "test"}:
+            raise RuntimeError(f"LocalDevSigner must not be used with ENV={env}. Set SIGNER=turnkey.")
         self._f = Fernet(fernet_key)
 
     async def create_wallet(self, user_id: str, network: str, label: str) -> WalletRef:

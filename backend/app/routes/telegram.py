@@ -31,6 +31,19 @@ def require_bot_key(x_bot_key: str | None = Header(default=None)) -> None:
         raise HTTPException(403, "bad bot key")
 
 
+def require_telegram_allowlist(telegram_id: int) -> None:
+    """Bot sessions are disabled until the operator configures an explicit Telegram ID allowlist."""
+    raw = get_settings().telegram_allowed_user_ids
+    if not raw.strip():
+        raise HTTPException(503, "Telegram sessions are disabled until TELEGRAM_ALLOWED_USER_IDS is configured")
+    try:
+        allowed = {int(value.strip()) for value in raw.split(",") if value.strip()}
+    except ValueError:
+        raise HTTPException(503, "TELEGRAM_ALLOWED_USER_IDS contains an invalid numeric ID")
+    if telegram_id not in allowed:
+        raise HTTPException(403, "this Telegram account is not allowlisted")
+
+
 async def _revoke_bot_sessions(db: AsyncSession, user_id: str) -> None:
     await db.execute(update(Session).where(Session.user_id == user_id, Session.channel == "bot",
                                            Session.revoked_at.is_(None)).values(revoked_at=utcnow()))
@@ -42,15 +55,16 @@ async def _revoke_bot_sessions(db: AsyncSession, user_id: str) -> None:
 @router.get("/status")
 async def status(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     link = (await db.execute(select(TelegramLink).where(TelegramLink.user_id == user.id))).scalar_one_or_none()
+    s = get_settings()
     return {"linked": link is not None, "linked_at": link.created_at.isoformat() if link else None,
-            "bot_username": get_settings().telegram_bot_username,
-            "enabled": bool(get_settings().bot_api_key)}
+            "bot_username": s.telegram_bot_username,
+            "enabled": bool(s.bot_api_key and s.telegram_allowed_user_ids.strip())}
 
 
 @router.post("/link-code")
 async def link_code(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     s = get_settings()
-    if not s.bot_api_key:
+    if not s.bot_api_key or not s.telegram_allowed_user_ids.strip():
         raise HTTPException(503, "telegram integration is not configured")
     if (await db.execute(select(TelegramLink).where(TelegramLink.user_id == user.id))).scalar_one_or_none():
         raise HTTPException(409, "a Telegram account is already linked; unlink it first")
@@ -83,6 +97,7 @@ class TgBody(BaseModel):
 
 @router.post("/bot/link", dependencies=[Depends(require_bot_key)])
 async def bot_link(body: LinkBody, db: AsyncSession = Depends(get_db)):
+    require_telegram_allowlist(body.telegram_id)
     row = (await db.execute(select(LinkCode).where(LinkCode.code_hash == token_hash(body.code.strip().upper())))).scalar_one_or_none()
     if not row or row.used_at or row.expires_at < utcnow():
         raise HTTPException(400, "invalid or expired code. Generate a new one in the web app.")
@@ -101,6 +116,7 @@ async def bot_link(body: LinkBody, db: AsyncSession = Depends(get_db)):
 
 @router.post("/bot/session", dependencies=[Depends(require_bot_key)])
 async def bot_session(body: TgBody, db: AsyncSession = Depends(get_db)):
+    require_telegram_allowlist(body.telegram_id)
     link = (await db.execute(select(TelegramLink).where(TelegramLink.telegram_id == body.telegram_id))).scalar_one_or_none()
     if not link:
         raise HTTPException(404, "not_linked")
@@ -115,6 +131,7 @@ async def bot_session(body: TgBody, db: AsyncSession = Depends(get_db)):
 
 @router.post("/bot/unlink", dependencies=[Depends(require_bot_key)])
 async def bot_unlink(body: TgBody, db: AsyncSession = Depends(get_db)):
+    require_telegram_allowlist(body.telegram_id)
     link = (await db.execute(select(TelegramLink).where(TelegramLink.telegram_id == body.telegram_id))).scalar_one_or_none()
     if not link:
         raise HTTPException(404, "not_linked")

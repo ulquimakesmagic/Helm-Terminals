@@ -10,19 +10,22 @@ export interface ReferralSummary {
   payout_address: string | null;
   share_pct: number;
   fee_pct: number;
+  totp_enabled: boolean;
 }
 
 export default function ReferralCard({ data, onChange }: { data: ReferralSummary | null; onChange: () => void }) {
   const toast = useToast();
   const [addr, setAddr] = useState("");
+  const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const link = (code: string) => `${window.location.origin}/login?ref=${code}`;
 
   const savePayout = () => {
     setBusy(true);
-    api("/referrals/payout", { method: "PUT", body: { address: addr.trim() } })
-      .then(() => { toast("good", "Payout address saved"); setEditing(false); setAddr(""); onChange(); })
+    api("/referrals/payout", { method: "PUT", body: { address: addr.trim(), password, totp } })
+      .then(() => { toast("good", "Payout address saved"); setEditing(false); setAddr(""); setPassword(""); setTotp(""); onChange(); })
       .catch((e) => toast("bad", errMsg(e)))
       .finally(() => setBusy(false));
   };
@@ -62,10 +65,18 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
                 {!data.payout_address && data.fee_pct > 0 && (
                   <Callout tone="warn">Add a payout address so your share is paid on-chain with each trade. Until then it's recorded as owed.</Callout>
                 )}
-                <div className="row nowrap">
-                  <input className="mono" aria-label="Referral payout address (Solana)" placeholder="Your Solana wallet address" value={addr} onChange={(e) => setAddr(e.target.value)} />
-                  <button className="btn" disabled={addr.trim().length < 32 || busy} onClick={savePayout}>{busy && <Spinner />}Save</button>
-                </div>
+                {!data.totp_enabled ? (
+                  <Callout tone="warn">Enable two-factor authentication in Settings before setting or changing this payout address.</Callout>
+                ) : (
+                  <div className="stack tight">
+                    <input className="mono" aria-label="Referral payout address (Solana)" placeholder="Your Solana wallet address" value={addr} onChange={(e) => setAddr(e.target.value)} />
+                    <div className="row nowrap">
+                      <input type="password" autoComplete="current-password" aria-label="Confirm password" placeholder="Confirm your password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                      <input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="2FA code" maxLength={8} value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} />
+                      <button className="btn" disabled={addr.trim().length < 32 || !password || totp.length < 6 || busy} onClick={savePayout}>{busy && <Spinner />}Save</button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

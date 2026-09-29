@@ -2,9 +2,7 @@
 
 Safety rules baked in:
 - Private chats only. Nothing here ever runs from a group.
-- Every fund-moving command shows the API's preflight, then needs an explicit Confirm tap by the same Telegram user.
-- The API decides when a 2FA code is required. The code is typed into the chat and the message is flagged for deletion.
-- Confirmations expire after two minutes and can be used once.
+- Linked bot sessions are read-only; transactions must be previewed and confirmed in the Helm web app.
 """
 
 import logging
@@ -17,7 +15,7 @@ import asyncio
 
 from .api import ApiUnavailable, BotApi, detail_of
 from .pending import Pending, PendingStore
-from .render import e, num, render_job, render_launches, render_preflight, render_wallets, render_workspace, sid
+from .render import e, num, render_job, render_launches, render_wallets, render_workspace, sid
 
 log = logging.getLogger("helm_bot")
 
@@ -54,17 +52,10 @@ HELP = """<b>Helm Terminals bot</b>
 /launches  your launches
 /launch &lt;id&gt;  wallets, holdings and P&amp;L
 /transparency &lt;id&gt;  how much supply your wallets hold
-/buy &lt;launch&gt; &lt;sol&gt; [wallets|all]
-/sell &lt;launch&gt; &lt;percent&gt; [wallets|all]
-/claim &lt;launch&gt; &lt;wallet&gt;  claim creator fees
-/burn &lt;launch&gt; &lt;wallet&gt; &lt;percent&gt;
-/send &lt;launch&gt; &lt;wallet&gt; &lt;address&gt; &lt;percent&gt;  🔐
-/withdraw &lt;wallet|all&gt; &lt;address&gt;  🔐
 /status &lt;job id&gt;
 /unlink  disconnect this Telegram account
 
-Ids are the first 6 characters shown in the lists. Every action shows a preview first.
-🔐 needs your 2FA code."""
+The bot is currently read-only. Use the Helm web app to preview and confirm transactions."""
 
 LINK_TEXT = ("This Telegram account isn't linked yet.\n"
              "1. Open Helm Terminals on the web → Settings → Telegram\n"
@@ -163,7 +154,7 @@ class Controller:
             return
         self.link_fails.pop(tg_id, None)
         await send(Reply(f"✅ Linked to {e(data['account'])}. Try /wallets or /launches.\n"
-                         "Withdrawals and token sends will ask for your 2FA code (set it up in the web app first).",
+                         "This bot is read-only. Use the Helm web app to preview and confirm transactions.",
                          delete_incoming=True))
 
     async def cmd_unlink(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
@@ -258,19 +249,7 @@ class Controller:
                                 {"wallet_ids": ids, "destination": args[1], "all": True}, send)
 
     async def _start_spend(self, tg_id: int, title: str, path: str, body: dict, send: Send) -> None:
-        status, data = await self.api.call(tg_id, "POST", path, body)
-        if status == 401 and detail_of(data) == "not_linked":
-            raise NotLinked()
-        if status != 200:
-            raise BotError(detail_of(data))
-        pf, requires_2fa = data["preflight"], bool(data.get("requires_2fa"))
-        text = render_preflight(title, pf, requires_2fa)
-        if pf.get("warnings"):
-            await send(Reply(text + "\n\nI can't send this until the warning above is resolved."))
-            return
-        p = self.pending.add(tg_id, title, path, body, data["preflight_hash"], requires_2fa)
-        await send(Reply(text + "\n\nConfirm within 2 minutes.",
-                         [[Button("✅ Confirm", f"ok:{p.id}"), Button("✖ Cancel", f"no:{p.id}")]]))
+        raise BotError("The Telegram bot is currently read-only. Use the Helm web app to preview and confirm transactions.")
 
     async def _handle_totp(self, tg_id: int, text: str, send: Send) -> None:
         p = self.pending.get(self.awaiting[tg_id], tg_id)

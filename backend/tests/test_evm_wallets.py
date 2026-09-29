@@ -99,8 +99,18 @@ async def test_sender_signs_type2_and_legacy_and_blocks_reverts():
     for net, eip in (("base", True), ("bsc", False)):
         node = FakeEvm(net, eip)
         node.balances[ref.address.lower()] = ETH
-        res = await EvmSender(node, signer, poll_s=0).send(ref.address, ref.signer_ref, EvmCall(to="0x" + "11" * 20, value=10**15))
+        saved = []
+
+        async def save_before_broadcast(signature):
+            assert not node.sent
+            saved.append(signature)
+
+        res = await EvmSender(node, signer, poll_s=0).send(
+            ref.address, ref.signer_ref, EvmCall(to="0x" + "11" * 20, value=10**15),
+            on_signed=save_before_broadcast,
+        )
         assert res.status == "confirmed" and node.sent[-1]["type"] == (2 if eip else 0)
+        assert saved == [res.signature]
         node.revert = True
         res = await EvmSender(node, signer, poll_s=0).send(ref.address, ref.signer_ref, EvmCall(to="0x" + "11" * 20, value=1))
         assert res.status == "failed" and "simulation failed" in res.error and len(node.sent) == 1

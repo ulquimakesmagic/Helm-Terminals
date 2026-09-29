@@ -2,7 +2,7 @@ import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,8 +11,10 @@ from ..db import get_db
 from ..config import get_settings
 from ..deps import current_user, get_executor, log_activity, valid_address_for, web_user
 from ..models import (
-    Activity, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Wallet, Watch, utcnow,
+    Activity, AdminAudit, FeeRecord, Job, Launch, PayoutAddress, Referral, ReferralLink, Transaction, User, Wallet,
+    Watch, utcnow,
 )
+from ..services.guard import check_password, check_totp_once
 from ..services.executor import Executor
 from ..services.portfolio import build_portfolio, daily_prices
 
@@ -92,6 +94,9 @@ async def portfolio(fresh: bool = False, user: User = Depends(current_user), db:
 
 @router.post("/referrals", status_code=201)
 async def create_referral(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    existing = (await db.execute(select(func.count(Referral.id)).where(Referral.owner_user_id == user.id))).scalar_one()
+    if existing >= get_settings().referral_max_codes_per_user:
+        raise HTTPException(429, "you have reached the referral-code limit")
     r = Referral(owner_user_id=user.id, code=secrets.token_hex(4).upper(), max_uses=get_settings().referral_code_max_uses)
     db.add(r)
     await db.commit()
@@ -121,6 +126,7 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
         "payout_address": payout.address if payout else None,
         "share_pct": s.referral_share_bps / 100 if fee_bps else 0,
         "fee_pct": fee_bps / 100,
+        "totp_enabled": user.totp_enabled,
     }
 
 
@@ -132,13 +138,29 @@ async def referrals(user: User = Depends(current_user), db: AsyncSession = Depen
 class PayoutBody(BaseModel):
     address: str
     network: str = "solana"
+    password: SecretStr
+    totp: str
 
 
 @router.put("/referrals/payout")
 async def set_payout(body: PayoutBody, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
-    """Web only: a stolen chat session must not be able to redirect someone's earnings."""
+    """Changing referral earnings destination requires password re-entry and a fresh 2FA code."""
     if body.network != "solana" or not valid_address_for("solana", body.address):
         raise HTTPException(400, "invalid solana address")
+    if not user.totp_enabled:
+        raise HTTPException(403, "enable 2FA before setting a referral payout address")
+    if not await check_password(db, user, body.password.get_secret_value()):
+        raise HTTPException(400, "wrong password")
+    if not await check_totp_once(db, user, body.totp):
+        raise HTTPException(401, "totp_required: provide a fresh 2FA code")
+    referred_ids = select(ReferralLink.referred_user_id).where(ReferralLink.referrer_user_id == user.id)
+    linked_wallet = (await db.execute(select(Wallet.id).where(
+        Wallet.user_id.in_(referred_ids), Wallet.address == body.address).limit(1))).scalar_one_or_none()
+    if linked_wallet:
+        db.add(AdminAudit(actor_user_id=None, action="referral.self_referral_suspected", target=user.id,
+                          changes={"flag": [None, "payout address belongs to a referred account"]}, context={}))
+        await db.commit()
+        raise HTTPException(400, "this payout address belongs to an account you referred")
     row = (await db.execute(select(PayoutAddress).where(
         PayoutAddress.user_id == user.id, PayoutAddress.network == body.network))).scalar_one_or_none()
     if row:
