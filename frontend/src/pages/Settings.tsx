@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { api, errMsg } from "../api";
 import { Callout, Card, CopyButton, Empty, Icon, Loading, LoadError, PageHeader, Spinner, parseDate, relTime, useToast } from "../components/ui";
 import { useSession } from "../session";
+import WalletSettings from "../components/WalletSettings";
 
 interface S { id: string; ip: string | null; user_agent: string | null; created_at: string; expires_at: string }
 interface Code { code: string; expires_in_minutes: number; bot_username: string }
@@ -164,7 +165,7 @@ export default function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" sub="Account security, the Telegram terminal, and where you're signed in." />
+      <PageHeader title="Settings" sub="Account security, wallets on TRON, NEAR, Arc and TON, the Telegram terminal, and where you're signed in." />
 
       <Card>
         <div className="row" style={{ gap: 16 }}>
@@ -180,6 +181,10 @@ export default function Settings() {
         <TwoFactor />
         <Telegram />
       </div>
+
+      <Card title="Wallets on TRON, NEAR, Arc and TON" icon="wallet" sub="Link your own wallet or add a Helm-managed one, rename, unlink, and see balances and network costs">
+        <WalletSettings />
+      </Card>
 
       <Card title="Active sessions" icon="monitor" sub={sessions ? `${sessions.length} signed in · revoke any you don't recognise` : "Revoke any you don't recognise"} flush>
         {sessErr && !sessions ? <LoadError what="Sessions" error={sessErr} onRetry={load} /> : !sessions ? <Loading /> : sessions.length === 0 ? <Empty icon="monitor" title="No active sessions" /> : (

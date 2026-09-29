@@ -245,3 +245,37 @@ async def sign_and_send_result(client: NearClient, signer, signer_ref: str, sign
         return h, "timeout", f"the result is unknown ({text[:120]}); check the explorer before retrying", {}
     status, err = outcome_status(result)
     return h, status, err, result
+
+
+# --- NEP-413 signed messages (wallet ownership proofs) --------------------------------------------------------
+
+NEP413_TAG = 2**31 + 413
+
+
+def nep413_hash(message: str, nonce32: bytes, recipient: str, callback_url: str | None = None) -> bytes:
+    """sha256(borsh(u32 tag) + borsh(Payload{message, nonce, recipient, callbackUrl?})) as NEP-413 specifies."""
+    if len(nonce32) != 32:
+        raise ValueError("the NEP-413 nonce is 32 bytes")
+    payload = _string(message) + nonce32 + _string(recipient)
+    payload += (bytes([1]) + _string(callback_url)) if callback_url is not None else bytes([0])
+    return hashlib.sha256(struct.pack("<I", NEP413_TAG) + payload).digest()
+
+
+def verify_nep413(message: str, nonce32: bytes, recipient: str, public_key: str, signature_b64: str) -> bytes:
+    """Raises ValueError unless the signature verifies; returns the 32-byte ed25519 public key."""
+    from solders.pubkey import Pubkey
+    from solders.signature import Signature
+
+    if not public_key.startswith("ed25519:"):
+        raise ValueError("only ed25519 keys can sign NEAR messages")
+    try:
+        pk = _b58d(public_key.split(":", 1)[1])
+        # NEP-413 says base64; some wallets return "ed25519:<base58>" instead
+        sig = _b58d(signature_b64.split(":", 1)[1]) if signature_b64.startswith("ed25519:") else base64.b64decode(signature_b64)
+    except ValueError:
+        raise ValueError("the key or signature is malformed")
+    if len(pk) != 32 or len(sig) != 64:
+        raise ValueError("the key or signature is malformed")
+    if not Signature(sig).verify(Pubkey(pk), nep413_hash(message, nonce32, recipient)):
+        raise ValueError("the wallet's signature doesn't verify")
+    return pk

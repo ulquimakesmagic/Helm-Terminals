@@ -412,6 +412,18 @@ async def signed(network: str, job_id: str, body: SignedBody, user: User = Depen
     return {"job_id": j.id, "status": j.status, "message_hash": msg_hash}
 
 
+@router.post("/chains/{network}/ton/jobs/{job_id}/unknown")
+async def unknown(network: str, job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """The wallet errored after approval: it may have sent the transfer. Never "failed", which would invite a resend."""
+    j = await _ton_job(db, user, network, job_id)
+    if j.status == "pending":
+        j.status = "unconfirmed"
+        j.params = {**j.params, "error": "The wallet reported an error after you approved, so the transfer may have "
+                                         "been sent. Check the wallet's history before sending again."}
+        await db.commit()
+    return {"job_id": j.id, "status": j.status}
+
+
 @router.post("/chains/{network}/ton/jobs/{job_id}/declined")
 async def declined(network: str, job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     j = await _ton_job(db, user, network, job_id)

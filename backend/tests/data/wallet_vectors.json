@@ -1,0 +1,26 @@
+{
+ "message": "helmterminals.xyz wants you to link this wallet to your Helm Terminals account.\n\nNonce: abc\nLinking a wallet doesn't authorize any transaction.",
+ "tron": {
+  "address": "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ",
+  "signature": "0xfd8cfff33ef0f15c0cc165527b30caec71bc566cfbb7101a7c0c56e6a2db9c704d3f7b65db90adb0f7716debb0421c10c597b32cba02911554ba48c3171ed2e51c"
+ },
+ "evm": {
+  "address": "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A",
+  "signature": "0x72de2f907ca38f4e0c09db7ee3b835d4e506c60a275004c58b74d844c341890d48bda751abdea5e4b0fb25debf3546c3de6b3670d3578073674432e43413b6171b"
+ },
+ "near": {
+  "public_key": "ed25519:GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+  "signature": "++uxmWCsi2WOLm1N0XlD2NfC/nOpovno1XO4vnWAP389vq4JuOrQA12bzjevn4Vtuulz05kqHJksDFyaiW8WCw==",
+  "nonce": "0909090909090909090909090909090909090909090909090909090909090909",
+  "recipient": "helmterminals.xyz"
+ },
+ "tron_tx": {
+  "txID": "ea1407496c807277ecb22e190a32b347e0fb7121b8f7db8c1bef03e2c25e7846",
+  "raw_data_hex": "0a021a2b220801020304050607084080b08fe6b2775a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a15415cbdd86a2fa8dc4bddd8a8f69dba48572eec07fb121541ea51342dabbb928ae1e576bd39eff8aaf070a8c61887ad4b70a0db8be6b277",
+  "signature": [
+   "5a906e255132d7afa23e8149f2a2090d82e24a277b0a454d60c526d53aad7080375bfa7210577d32ebaa6549986b50919ce147235a6f63701de519ba9874c9a61C"
+  ],
+  "signer": "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ"
+ },
+ "_source": "TronWeb 6 (signMessageV2, utils.crypto.signTransaction), ethers 6 (signMessage), @near-js/signers 2.5.1 (signNep413Message); private key 0x11*32, ed25519 seed 0x07*32"
+}

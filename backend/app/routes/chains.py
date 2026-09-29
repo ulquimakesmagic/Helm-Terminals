@@ -325,11 +325,14 @@ async def _tron_plan(network: str, w: Wallet, to: str, token: str | None, amount
                                          "it; it will need TRX before it can move these tokens.")
         symbol, decimals = meta["symbol"], meta["decimals"]
 
-        async def execute(ex):
+        async def unsigned():
             tx = await c.build_trc20_transfer(w.address, token, to, raw, fee_limit)
             tron.check_transaction(tx, owner=w.address, token=token, token_to=to, token_amount=raw,
                                    max_fee_limit=fee_limit)
-            return await _tron_send(ex, c, w, tx)
+            return tx
+
+        async def execute(ex):
+            return await _tron_send(ex, c, w, await unsigned())
     else:
         raw = _raw_amount(amount, 6)
         tx = await c.build_trx_transfer(w.address, to, raw)  # read-only: sizes the transaction for the estimate
@@ -352,13 +355,16 @@ async def _tron_plan(network: str, w: Wallet, to: str, token: str | None, amount
                             f"{xc.human(fee, 6)} TRX in fees.")
         symbol, decimals = "TRX", 6
 
-        async def execute(ex):
+        async def unsigned():
             fresh = await c.build_trx_transfer(w.address, to, raw)
             tron.check_transaction(fresh, owner=w.address, to=to, amount=raw)
-            return await _tron_send(ex, c, w, fresh)
+            return fresh
+
+        async def execute(ex):
+            return await _tron_send(ex, c, w, await unsigned())
     display["finality"] = "Final once the solidity node returns the receipt (about a minute)."
     return {"symbol": symbol, "decimals": decimals, "raw": raw, "amount": xc.human(raw, decimals),
-            "warnings": warnings, "display": display, "execute": execute}
+            "warnings": warnings, "display": display, "execute": execute, "unsigned": unsigned}
 
 
 async def _tron_send(ex, c, w: Wallet, tx: dict) -> SubmitResult:
@@ -369,6 +375,12 @@ async def _tron_send(ex, c, w: Wallet, tx: dict) -> SubmitResult:
     except Exception as e:
         return SubmitResult(None, "failed", f"signing or sending failed: {_why(e)}")
     return SubmitResult(txid, status, err)
+
+
+def _fc(method: str, args: dict, gas: int, deposit: int) -> dict:
+    """A FunctionCall in the action format NEAR wallets accept (near-connect / wallet-selector)."""
+    return {"type": "FunctionCall", "params": {"methodName": method, "args": args, "gas": str(gas),
+                                               "deposit": str(deposit)}}
 
 
 async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount: str) -> dict:
@@ -398,14 +410,18 @@ async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount
             warnings.append(f"The wallet holds {xc.human(held, meta['decimals'])} {meta['symbol']}, less than {amount}.")
         registered = await c.view(token, "storage_balance_of", {"account_id": to})
         actions, deposit, storage = [], 1, 0
+        wallet_actions: list[dict] = []
         if registered is None:
             bounds = await c.view(token, "storage_balance_bounds", {}) or {}
             storage = int((bounds.get("min") if isinstance(bounds, dict) else None) or 1_250_000_000_000_000_000_000)
+            wallet_actions.append(_fc("storage_deposit", {"account_id": to, "registration_only": True},
+                                      near.STORAGE_DEPOSIT_GAS, storage))
             actions.append(near.function_call_action("storage_deposit", {"account_id": to, "registration_only": True},
                                                      near.STORAGE_DEPOSIT_GAS, storage))
             deposit += storage
             display["storage_deposit_near"] = xc.human(storage, 24)
             display["recipient_note"] = "The recipient isn't registered with this token; the deposit registers it."
+        wallet_actions.append(_fc("ft_transfer", {"receiver_id": to, "amount": str(raw)}, near.FT_TRANSFER_GAS, 1))
         actions.append(near.function_call_action("ft_transfer", {"receiver_id": to, "amount": str(raw)},
                                                  near.FT_TRANSFER_GAS, 1))
         gas = near.FT_TRANSFER_GAS + (near.STORAGE_DEPOSIT_GAS if registered is None else 0)
@@ -417,6 +433,7 @@ async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount
     else:
         raw = _raw_amount(amount, 24)
         actions = [near.transfer_action(raw)]
+        wallet_actions = [{"type": "Transfer", "params": {"deposit": str(raw)}}]
         fee_max = near.TRANSFER_GAS * price
         if raw + fee_max > avail:
             warnings.append(f"The wallet has {xc.human(avail, 24)} NEAR available (after storage), less than {amount} "
@@ -426,11 +443,9 @@ async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount
             display["recipient_note"] = "This implicit account doesn't exist yet; the transfer creates it."
     display.update({"gas_fee_near_max": xc.human(fee_max, 24),
                     "finality": "Helm waits for FINAL execution of every receipt."})
-    pubkey = bytes.fromhex(w.address)
-
-    async def execute(ex):
+    async def execute(ex):  # Helm-managed NEAR wallets are implicit accounts: the address is the public key
         try:
-            h, status, err = await near.sign_and_send(c, ex.signer, w.signer_ref or "", w.address, pubkey,
+            h, status, err = await near.sign_and_send(c, ex.signer, w.signer_ref or "", w.address, bytes.fromhex(w.address),
                                                       receiver_id, actions)
         except Exception as e:
             return SubmitResult(None, "failed", f"signing or sending failed: {_why(e)}")
@@ -438,6 +453,7 @@ async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount
 
     return {"symbol": symbol, "decimals": decimals, "raw": raw, "amount": xc.human(raw, decimals),
             "warnings": warnings, "display": display, "execute": execute,
+            "wallet_tx": {"receiver_id": receiver_id, "actions": wallet_actions},
             "hashed": {"storage_deposit_yocto": str(storage)} if token else {}}
 
 
@@ -479,5 +495,7 @@ async def _arc_plan(ex, network: str, w: Wallet, to: str, token: str | None, amo
         r = await ex.evm(network).send(w.address, w.signer_ref or "", call)
         return SubmitResult(r.signature, r.status, r.error)
 
+    wallet_tx = {"from": to_checksum_address(w.address), "to": call.to, "data": "0x" + call.data.hex(),
+                 "value": hex(call.value), "chain_id": EXTRA_NETWORKS[network].chain_id}
     return {"symbol": symbol, "decimals": decimals, "raw": raw, "amount": xc.human(raw, decimals),
-            "warnings": warnings, "display": display, "execute": execute}
+            "warnings": warnings, "display": display, "execute": execute, "wallet_tx": wallet_tx}

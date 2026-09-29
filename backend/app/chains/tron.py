@@ -376,6 +376,14 @@ async def sign_and_send(client: TronClient, signer, signer_ref: str, tx: dict, c
     txid = tx["txID"]
     y, r, s = await signer.sign_digest(signer_ref, bytes.fromhex(txid))
     signed = {**tx, "signature": [r.to_bytes(32, "big").hex() + s.to_bytes(32, "big").hex() + bytes([y % 27 if y >= 27 else y]).hex()]}
+    return await submit_signed(client, signed, confirm_timeout_s, poll_s)
+
+
+async def submit_signed(client: TronClient, signed: dict, confirm_timeout_s: float = 120,
+                        poll_s: float = 3.0) -> tuple[str | None, str, str | None, dict]:
+    """Broadcast an already signed transaction (by Helm's signer or the user's own wallet) and wait until the
+    solidity node reports it final."""
+    txid = signed["txID"]
     try:
         res = await client.broadcast(signed)
     except AdapterError as e:
@@ -404,3 +412,39 @@ async def sign_and_send(client: TronClient, signer, signer_ref: str, tx: dict, c
                 return txid, "failed", f"failed on-chain: {receipt.get('result') or _readable(info.get('resMessage', ''))}", info
             return txid, "confirmed", None, info
     return txid, "timeout", f"{unsure}not solidified yet; check the explorer before retrying", {}
+
+
+# --- signatures from the user's own wallet (TronLink) ---------------------------------------------------------
+
+TRON_MESSAGE_PREFIX = b"\x19TRON Signed Message:\n"
+
+
+def message_hash_v2(message: str) -> bytes:
+    """TronWeb's signMessageV2 digest: keccak256(prefix + byte length + message), like EIP-191 with TRON's prefix."""
+    m = message.encode()
+    return keccak(TRON_MESSAGE_PREFIX + str(len(m)).encode() + m)
+
+
+def recover_address(digest: bytes, signature_hex: str) -> str:
+    """The TRON address whose key made this 65-byte r||s||v signature over `digest` (v 0/1 or 27/28)."""
+    from eth_keys import keys
+
+    sig = bytes.fromhex(signature_hex.removeprefix("0x"))
+    if len(sig) != 65:
+        raise AdapterError("the signature isn't 65 bytes")
+    v = sig[64] - 27 if sig[64] >= 27 else sig[64]
+    if v not in (0, 1):
+        raise AdapterError("the signature's recovery id is invalid")
+    try:
+        pub = keys.Signature(sig[:64] + bytes([v])).recover_public_key_from_msg_hash(digest)
+    except Exception:
+        raise AdapterError("the signature doesn't recover to a key")
+    return address_from_pubkey(pub.to_bytes())
+
+
+def signer_of(signed: dict) -> str:
+    """Who signed a transaction: the address recovered from its first signature over its txID."""
+    sigs = signed.get("signature") or []
+    if len(sigs) != 1:
+        raise AdapterError("expected exactly one signature")
+    return recover_address(bytes.fromhex(signed["txID"]), sigs[0])

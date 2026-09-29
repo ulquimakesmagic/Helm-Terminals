@@ -15,7 +15,7 @@ from .keyring import parse_list
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import admin, allocations, auth, automations, chains, bridge, ton as ton_routes, distribute, launches, market, misc, profile, telegram, wallets
+from .routes import admin, allocations, auth, automations, chains, bridge, ton as ton_routes, external_wallets, distribute, launches, market, misc, profile, telegram, wallets
 from .signing import get_signer
 
 
@@ -110,7 +110,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
-    for r in (admin.router, allocations.router, auth.router, chains.router, ton_routes.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+    for r in (admin.router, allocations.router, auth.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
 

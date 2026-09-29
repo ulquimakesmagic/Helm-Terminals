@@ -147,10 +147,18 @@ export function TonSendDialog({ net, wallet, tokens, onClose, onDone }: {
         network: req.network, from: req.from, messages: req.messages });
       boc = r.boc;
     } catch (e) {
-      await api(`/chains/${net.id}/ton/jobs/${job.job_id}/declined`, { body: {} }).catch(() => undefined);
-      key.current = `ton-${Date.now()}-${Math.random().toString(36).slice(2)}`;  // a new attempt is a new transfer
-      setPhase("review");
-      setErr(e instanceof UserRejectsError ? "You declined in your wallet. Nothing was sent." : `The wallet didn't send it: ${errMsg(e)}`);
+      if (e instanceof UserRejectsError) {
+        await api(`/chains/${net.id}/ton/jobs/${job.job_id}/declined`, { body: {} }).catch(() => undefined);
+        key.current = `ton-${Date.now()}-${Math.random().toString(36).slice(2)}`;  // a new attempt is a new transfer
+        setPhase("review");
+        setErr("You declined in your wallet. Nothing was sent.");
+        return;
+      }
+      // any other wallet error may come after it broadcast: leave it for a look, and keep the key so it isn't resent
+      await api(`/chains/${net.id}/ton/jobs/${job.job_id}/unknown`, { body: {} }).catch(() => undefined);
+      setJob(await api(`/jobs/${job.job_id}`).catch(() => null));
+      setErr(`The wallet reported an error (${errMsg(e)}), so the transfer may have been sent. Check the wallet's history before sending again.`);
+      setPhase("done");
       return;
     }
     setPhase("following");

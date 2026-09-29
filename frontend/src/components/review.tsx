@@ -29,7 +29,7 @@ export function summarize(pre: any, network: string): ReviewSummary | null {
   const gas = num(pre.max_gas_each) ?? num(pre.max_gas) ?? num(pre.network_fees_max);
   const gasCell: [string, ReactNode][] = gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`]] : [];
 
-  if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "ton_transfer"].includes(pre.kind)) return extraTransfer(pre);
+  if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "ton_transfer", "external_transfer"].includes(pre.kind)) return extraTransfer(pre);
 
   switch (pre.kind) {
     case "deploy": {

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { chainOf, ExtraChainId } from "../chains";
 import { ChainLabel, ChainMark } from "../components/marks";
@@ -9,6 +9,7 @@ import { Address, Callout, Card, Empty, Field, Icon, Loading, Modal, PageHeader,
 // TON Connect is only loaded when a TON network is opened.
 const TonConnectBox = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonConnectBox })));
 const TonSendDialog = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonSendDialog })));
+const ExternalSendDialog = lazy(() => import("../components/WalletSettings").then((m) => ({ default: m.ExternalSendDialog })));
 
 /** Exact decimal string of a base-unit integer (no floats). */
 function fmtRaw(raw: string, decimals: number): string {
@@ -103,13 +104,13 @@ function NetworkPanel({ net }: { net: Net }) {
       <Card title={`${net.name} wallets`} icon="wallet" flush
         actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
         {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}
-        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={net.family === "ton" ? "Connect your own TON wallet to use it here." : "Create one to hold funds on this network."} /> : (
+        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={net.family === "ton" ? "Connect your own TON wallet to use it here." : <>Create one, or <Link to="/settings">link your own wallet in Settings</Link>.</>} /> : (
           <div className="table-wrap"><table className="rtable">
             <caption className="sr-only">{net.name} wallets</caption>
             <thead><tr><th>Wallet</th><th>Address</th><th className="r">Balance</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{wallets.map((w) => (
               <tr key={w.id}>
-                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind === "connected" ? <span className="badge info">your wallet · TON Connect</span> : w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
+                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind === "connected" ? <span className="badge info">{net.family === "ton" ? "your wallet · TON Connect" : "your wallet"}</span> : w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
                 <td data-label="Address"><Address address={w.address} network={net.id} /></td>
                 <td className="r mono" data-label="Balance">{w.balance_native != null ? `${w.balance_native} ${net.native}` : <span className="muted">unavailable</span>}</td>
                 <td className="r act"><button className="btn sm ghost" onClick={() => setOpenId(openId === w.id ? null : w.id)}>{openId === w.id ? "Close" : "Open"}</button></td>
@@ -168,7 +169,12 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
         )}
       </Card>
       {send && net.family === "ton" && <Suspense fallback={null}><TonSendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
-      {send && net.family !== "ton" && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
+      {send && net.family !== "ton" && wallet.kind === "connected" && <Suspense fallback={null}><ExternalSendDialog
+        w={{ id: wallet.id, network: net.id, family: net.family, network_name: net.name, testnet: net.testnet, enabled: true, address: wallet.address,
+          kind: wallet.kind, label: wallet.label, explorer: net.explorer.account + wallet.address, native: { asset: net.native, amount: bal?.native?.amount ?? "" },
+          tokens: (bal?.tokens ?? []).map((t: any) => ({ symbol: t.symbol, address: t.address, amount: t.amount })), fees: null, error: null, can_send: true, signer: "Your wallet" }}
+        onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
+      {send && net.family !== "ton" && wallet.kind !== "connected" && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
     </div>
   );
 }
