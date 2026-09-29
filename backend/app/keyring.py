@@ -52,6 +52,9 @@ class KeyRing:
         resting = sorted((i for i in rotated if i not in ready), key=lambda i: self._rest_until[i])
         return ready + resting
 
+    def ready(self, item: str) -> bool:
+        return self._rest_until.get(item, 0) <= time.monotonic()
+
     def ok(self, item: str) -> None:
         self._rest_until.pop(item, None)
         if item in self.stats:

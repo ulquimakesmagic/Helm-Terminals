@@ -127,6 +127,8 @@ class EvmRPC:
         """Return a problem description if this endpoint isn't the chain it's configured for."""
         r = await self._post(url, "eth_chainId", [])
         if r.status_code != 200:
+            if r.status_code == 429:
+                self.ring.fail(url, retry_after(r.headers, 30))
             return f"HTTP {r.status_code}"
         got = int(r.json().get("result", "0x0"), 16)
         if got != self.chain_id:
@@ -137,6 +139,8 @@ class EvmRPC:
     async def call(self, method: str, params: list | None = None):
         params = params or []
         problems: list[str] = []
+        # Never probe a cooling endpoint for every wallet in a portfolio refresh. The ring also tracks the
+        # public fallback's cooldown, even though it isn't a configured item.
         order = self.ring.order()
         for url in order + self._last_resort:
             last_resort = url not in order
@@ -146,11 +150,15 @@ class EvmRPC:
             if method in self._unsupported.get(url, ()):
                 problems.append(f"{name}: {method} not on its plan")
                 continue
+            if not self.ring.ready(url):
+                problems.append(f"{name}: temporarily cooling down after a failed request")
+                continue
             try:
                 if url not in self._verified:
                     bad = await self._verify(url)
                     if bad:
-                        self.ring.fail(url, 3600 if "wrong chain" in bad else 30)
+                        if self.ring.ready(url):
+                            self.ring.fail(url, 3600 if "wrong chain" in bad else 30)
                         problems.append(f"{name}: {bad}")
                         continue
                 r = await self._post(url, method, params)

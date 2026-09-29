@@ -159,3 +159,49 @@ async def test_endpoint_whose_plan_refuses_a_method_is_skipped_for_that_method_o
     only_free._last_resort = ["https://public.test"]
     assert await only_free.erc20_balance(token, owner) == 7 * 10**6
     assert evm_mod._plan_limited(paid) and not evm_mod._plan_limited({"code": 3, "message": "execution reverted"})
+
+
+async def test_rate_limited_endpoint_is_not_retried_for_each_wallet():
+    hits = []
+    limited = True
+
+    def handler(req):
+        import json
+
+        method = json.loads(req.content)["method"]
+        hits.append(method)
+        if method == "eth_chainId":
+            return httpx.Response(200, json={"result": hex(4663)})
+        return httpx.Response(429, headers={"retry-after": "90"}) if limited else httpx.Response(200, json={"result": "0x7"})
+
+    rpc = EvmRPC("robinhood", "https://limited.test", client=client(handler))
+    for _ in range(7):
+        with pytest.raises(EvmRPCUnavailable):
+            await rpc.get_balance("0x" + "11" * 20)
+    assert hits == ["eth_chainId", "eth_getBalance"]
+    limited = False
+    rpc.ring._rest_until["https://limited.test"] = 0  # Retry-After has elapsed
+    assert await rpc.get_balance("0x" + "11" * 20) == 7
+
+
+async def test_public_fallback_also_obeys_cooldown():
+    hits = []
+
+    def handler(req):
+        import json
+
+        method, host = json.loads(req.content)["method"], req.url.host
+        hits.append((host, method))
+        if method == "eth_chainId":
+            return httpx.Response(200, json={"result": hex(4663)})
+        if host == "free.test":
+            return httpx.Response(200, json={"error": {"code": -32601, "message": "method not supported"}})
+        return httpx.Response(429)
+
+    rpc = EvmRPC("robinhood", "https://free.test", client=client(handler))
+    rpc._last_resort = ["https://public.test"]
+    for _ in range(4):
+        with pytest.raises(EvmRPCUnavailable):
+            await rpc.eth_call("0x" + "11" * 20, "0x")
+    assert hits.count(("free.test", "eth_call")) == 1
+    assert hits.count(("public.test", "eth_call")) == 1

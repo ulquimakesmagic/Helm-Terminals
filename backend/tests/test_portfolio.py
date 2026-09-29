@@ -1,6 +1,7 @@
 from app.deps import get_executor
 from app.main import app
 from app.services import portfolio as pf_mod
+from app.services.portfolio import coin_prices as load_coin_prices
 from app.services.executor import Executor
 from app.signing import get_signer
 
@@ -83,6 +84,7 @@ async def test_portfolio_marks_unreadable_and_partial_chains(client, fake_rpc, m
         assert p["complete"] is False and set(p["incomplete_chains"]) == {"base", "ethereum"} and p["checked_at"]
         # Nothing readable at all is "unavailable".
         eth.get_balance = no_native
+        pf_mod._cache.clear()  # simulate the next refresh window after the provider changes
         e = {c["network"]: c for c in (await client.get("/portfolio?fresh=true", headers=h)).json()["chains"]}["ethereum"]
         assert e["status"] == "unavailable" and e["wallets_read"] == 0 and "ETH unread" in e["error"]
     finally:
@@ -118,3 +120,157 @@ async def test_net_flow_is_valued_in_usd_at_each_days_price(client, fake_rpc, mo
     s = d["series"]
     assert [p["daily_usd"] for p in s] == [-200.0, 450.0] and s[-1]["cumulative_usd"] == 250.0
     assert d["net_usd_flow"] == 250.0 and d["net_sol_flow"] == 1.0 and d["usd_priced"] is True
+
+
+def wallet(network, ident=None, kind="managed"):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=ident or network, network=network, address=f"address-{ident or network}",
+                           kind=kind, label=network)
+
+
+async def test_new_chains_are_counted_and_arc_usdc_is_not_double_counted(monkeypatch):
+    async def raw(ex, network, address):
+        return {"near": 2 * 10**24, "tron": 3 * 10**6, "arc": 4 * 10**18, "ton": 5 * 10**9}[network]
+
+    async def prices():
+        return {"NEAR": 5, "TRX": 0.25, "TON": 2}
+
+    monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
+    monkeypatch.setattr(pf_mod, "coin_prices", prices)
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near", "tron", "arc", "ton"])
+    p = await pf_mod.build_portfolio(None, "new-chains", [wallet(n) for n in ("near", "tron", "arc", "ton")]
+                                   + [wallet("ton", "connected", "external"), wallet("near", "watch", "watch")], True)
+    chains = {c["network"]: c for c in p["chains"]}
+    assert p["wallets"] == 4 and p["complete"]
+    assert chains["near"]["native"] == 2 and chains["tron"]["native"] == 3 and chains["ton"]["native"] == 5
+    assert chains["arc"]["usd"] == 4 and chains["arc"]["native_is_stable"]
+    assert chains["arc"]["stable_tracked"] is False
+    assert p["totals"] == {"usd": 24.75, "stable_usd": 4, "native_usd": 20.75}
+
+
+async def test_disabled_and_unknown_chains_remain_counted_without_being_read(monkeypatch):
+    async def forbidden(*args):
+        raise AssertionError("disabled chains must not be queried")
+
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: [])
+    monkeypatch.setattr(pf_mod.extra_chains, "native_balance", forbidden)
+    p = await pf_mod.build_portfolio(None, "disabled-chains", [wallet("near"), wallet("future-chain")], True)
+    rows = {c["network"]: c for c in p["chains"]}
+    assert p["wallets"] == 2 and not p["complete"]
+    assert set(p["incomplete_chains"]) == {"near", "future-chain"}
+    assert p["totals"]["usd"] is None and p["totals"]["native_usd"] is None
+    assert rows["near"]["native"] is None and "disabled" in rows["near"]["message"]
+    assert "not supported" in rows["future-chain"]["message"]
+
+
+async def test_missing_prices_and_failed_reads_do_not_become_zero(monkeypatch):
+    async def raw(ex, network, address):
+        if network == "tron":
+            raise RuntimeError("HTTP 429")
+        return 2 * 10**24
+
+    monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near", "tron"])
+    p = await pf_mod.build_portfolio(None, "missing-prices", [wallet("near"), wallet("tron")], True)
+    rows = {c["network"]: c for c in p["chains"]}
+    assert not p["complete"] and not p["native_complete"] and not p["priced"]
+    assert rows["near"]["native"] == 2 and rows["near"]["usd"] is None
+    assert rows["near"]["top"][0]["stable"] is None
+    assert rows["tron"]["native"] is None and "provider is busy" in rows["tron"]["message"]
+    assert "429" not in rows["tron"]["message"]
+    assert p["totals"]["usd"] is None
+
+
+async def test_partial_stablecoin_totals_and_scan_limit_are_explicit(monkeypatch):
+    async def native(ex, network, address):
+        return 0.0
+
+    async def stable(ex, network, token, address):
+        raise RuntimeError("eth_call not on its plan")
+
+    monkeypatch.setattr(pf_mod, "native_balance", native)
+    monkeypatch.setattr(pf_mod, "token_balance_raw", stable)
+    monkeypatch.setattr(pf_mod, "MAX_WALLETS", 1)
+    p = await pf_mod.build_portfolio(None, "scan-limit", [wallet("robinhood", "one"), wallet("robinhood", "two")], True)
+    rh = next(c for c in p["chains"] if c["network"] == "robinhood")
+    assert p["wallets"] == 2 and rh["wallets"] == 2 and rh["native_read"] == 1
+    assert not p["stable_complete"] and not p["native_complete"] and not p["complete"]
+    assert p["totals"]["stable_usd"] is None
+    assert p["totals"]["usd"] == 0 and rh["status"] == "partial"
+    assert "scan limit" in rh["message"]
+
+
+async def test_refreshes_share_work_and_new_wallets_invalidate_the_cache(monkeypatch):
+    import asyncio
+
+    calls = []
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def raw(ex, network, address):
+        calls.append(address)
+        started.set()
+        await release.wait()
+        return 0
+
+    monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near"])
+    ws = [wallet("near")]
+    first = asyncio.create_task(pf_mod.build_portfolio(None, "shared-refresh", ws, True))
+    await started.wait()
+    second = asyncio.create_task(pf_mod.build_portfolio(None, "shared-refresh", ws, True))
+    release.set()
+    a, b = await asyncio.gather(first, second)
+    assert a == b and len(calls) == 1
+    await pf_mod.build_portfolio(None, "shared-refresh", ws, True)
+    assert len(calls) == 1  # rapid manual refresh is cached too
+    p = await pf_mod.build_portfolio(None, "shared-refresh", ws + [wallet("near", "second")], True)
+    assert p["wallets"] == 2 and len(calls) == 3
+
+
+async def test_slow_token_read_preserves_native_balance_and_does_not_hold_up_other_chains(monkeypatch):
+    import asyncio
+
+    cancelled = asyncio.Event()
+
+    async def native(ex, network, address):
+        return 1.0
+
+    async def stable(ex, network, token, address):
+        if network == "robinhood":
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return 0
+
+    monkeypatch.setattr(pf_mod, "native_balance", native)
+    monkeypatch.setattr(pf_mod, "token_balance_raw", stable)
+    monkeypatch.setattr(pf_mod, "CHAIN_TIMEOUT_S", 0.02)
+    p = await pf_mod.build_portfolio(None, "slow-chain", [wallet("robinhood"), wallet("base")], True)
+    rows = {c["network"]: c for c in p["chains"]}
+    assert rows["base"]["status"] == "ok"
+    assert rows["robinhood"]["native"] == 1 and rows["robinhood"]["stable"] is None
+    assert rows["robinhood"]["status"] == "partial" and "timed out" in rows["robinhood"]["message"]
+    assert cancelled.is_set() and not p["complete"]
+
+
+async def test_price_provider_failure_does_not_reuse_old_quotes(monkeypatch):
+    import httpx
+    import time
+
+    monkeypatch.setattr(pf_mod, "_price_cache", (time.monotonic() - 61, {"NEAR": 99}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(429))) as client:
+        assert await load_coin_prices(client) == {}
+
+
+async def test_only_fresh_valid_price_quotes_are_used(monkeypatch):
+    import httpx
+    import time
+
+    coins = {"coingecko:near": {"price": 5, "timestamp": time.time()},
+             "coingecko:tron": {"price": 0.25, "timestamp": time.time() - 3600},
+             "coingecko:the-open-network": {"price": -1, "timestamp": time.time()}}
+    monkeypatch.setattr(pf_mod, "_price_cache", (0, {}))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"coins": coins}))) as client:
+        assert await load_coin_prices(client) == {"NEAR": 5}

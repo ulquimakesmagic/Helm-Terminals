@@ -587,6 +587,9 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .chain-row .usd { font: 500 var(--fs-sm) var(--mono); text-align: right; }
 .chain-row.empty-row { color: var(--muted); }
 .chain-row.empty-row .amt, .chain-row.empty-row .usd { color: var(--faint); }
+.chain-row .portfolio-scope { margin-top: 4px; line-height: 1.5; }
+.chain-row .balance-partial { display: block; font: var(--fs-2xs) var(--font); color: var(--warn); }
+.chain-row .note > .muted { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 
 /* status pipeline for a launch */
 .pipeline { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }

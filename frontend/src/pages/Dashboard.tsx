@@ -5,7 +5,7 @@ import AreaChart from "../components/Chart";
 import ReferralCard from "../components/Referrals";
 import SpendDialog from "../components/SpendDialog";
 import type { SpendRequest } from "../components/Distribute";
-import { ALL_CHAIN_ORDER, CHAINS, chainOf, Pad, padName } from "../chains";
+import { ALL_CHAIN_ORDER, chainOf, Pad, padName } from "../chains";
 import { coverage } from "../components/Launchpads";
 import { ChainMark, PadLabel, PadMark } from "../components/marks";
 import { ActivityRow, FeedItem, groupRepeats, isRoutine } from "../components/feed";
@@ -103,9 +103,13 @@ export default function Dashboard() {
   const setupDone = setupChecks.filter(Boolean).length;
 
   const chains = (folio?.chains ?? []) as any[];
-  const total = folio?.totals?.usd ?? 0;
+  const total = folio?.totals?.usd;
   const funded = chains.filter((c) => c.usd > 0);
   const incomplete = chains.filter((c) => ["partial", "unavailable"].includes(statusOf(c)));
+  const unpriced = folio?.unpriced_chains?.length ?? 0;
+  const totalComplete = folio?.complete !== false && incomplete.length === 0 && !unpriced;
+  const stableComplete = folio?.stable_complete ?? incomplete.length === 0;
+  const nativeComplete = folio?.native_complete ?? (incomplete.length === 0 && folio?.priced);
   const checkedAt = folio?.checked_at ? parseDate(folio.checked_at) : null;
   const stale = !!checkedAt && Date.now() - checkedAt.getTime() > STALE_MS;
   const noWallets = !!wallets.data && managed.length === 0;
@@ -117,19 +121,21 @@ export default function Dashboard() {
       <section className="command" aria-label="Portfolio summary">
         <div style={{ minWidth: 0 }}>
           <div className="row" style={{ gap: 10 }}>
-            <span className="eyebrow">Portfolio · all chains</span>
-            {folio && !folioErr && folio.wallets > 0 && (incomplete.length ? (
-              <span className="state partial"><Icon name="alert" size={12} />Incomplete · {incomplete.length} chain{incomplete.length === 1 ? "" : "s"} not fully read</span>
-            ) : <span className="state none"><Icon name="checkcircle" size={12} />All chains read</span>)}
+            <span className="eyebrow">Portfolio · managed wallets</span>
+            {folio && !folioErr && folio.wallets > 0 && (!totalComplete ? (
+              <span className="state partial"><Icon name="alert" size={12} />{incomplete.length
+                ? `Incomplete · ${incomplete.length} chain${incomplete.length === 1 ? "" : "s"} not fully read`
+                : "Incomplete · some coin prices unavailable"}</span>
+            ) : <span className="state none"><Icon name="checkcircle" size={12} />Tracked balances read</span>)}
           </div>
           {folio ? (
             folio.wallets === 0 ? <div className="figure figure-text muted">No wallets yet</div>
-              : <div className="figure" aria-live="polite">{usd(total)}{incomplete.length > 0 && <small>at least</small>}</div>
+              : <div className="figure" aria-live="polite">{total == null ? "Unavailable" : usd(total)}{total != null && !totalComplete && <small>at least</small>}</div>
           ) : folioErr ? <div className="figure figure-text muted">Unavailable</div> : <Skeleton h={34} w={220} style={{ marginTop: 10 }} />}
           <p className="sub">
             {folioErr ? <>Balances couldn't be read: {folioErr}</>
               : folio && folio.wallets === 0 ? <>Create a managed wallet on any chain, fund it, and its balances show up here.</>
-              : folio ? <>{usd(folio.totals.stable_usd)} in stablecoins · {folio.wallets} managed wallet{folio.wallets === 1 ? "" : "s"}{!folio.priced && " · coin prices unavailable, stablecoins only"}</>
+              : folio ? <>{folio.wallets} managed wallet{folio.wallets === 1 ? "" : "s"} · {totalComplete ? "Tracked assets valued below" : "Known balances only; unread amounts are excluded"}</>
               : "Reading balances across chains…"}
           </p>
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
@@ -148,10 +154,10 @@ export default function Dashboard() {
       {error && <Callout tone="err">Dashboard figures couldn't be loaded: {error}</Callout>}
 
       <Metrics label="Key figures" items={[
-        { label: "Stablecoins", value: folio?.wallets > 0 ? usd(folio.totals.stable_usd) : folioErr ? "Unavailable" : "—", hint: folio?.wallets === 0 ? "no wallets yet" : "USDC, USDG on Robinhood" },
-        { label: "Network coins", value: folio?.wallets > 0 ? (folio.priced ? usd(folio.totals.native_usd) : "Unpriced") : folioErr ? "Unavailable" : "—", hint: folio?.wallets === 0 ? "no wallets yet" : "SOL, ETH, BNB at market" },
+        { label: "Tracked stablecoins", value: folio?.wallets > 0 ? <PortfolioValue value={folio.totals.stable_usd} complete={stableComplete} /> : folioErr ? "Unavailable" : "—", tone: folio && !stableComplete ? "warn" : undefined, hint: folio?.wallets === 0 ? "no wallets yet" : "USDC / USDG · valued at $1" },
+        { label: "Network coins", value: folio?.wallets > 0 ? <PortfolioValue value={folio.totals.native_usd} complete={nativeComplete} /> : folioErr ? "Unavailable" : "—", tone: folio && !nativeComplete ? "warn" : undefined, hint: folio?.wallets === 0 ? "no wallets yet" : "Priced native balances only" },
         { label: "Launches", value: launches.data ? String(launches.data.length) : launches.error ? "Unavailable" : "—", hint: launches.data ? `${live.length} live` : " " },
-        { label: "Wallets", value: wallets.data ? String(managed.length) : wallets.error ? "Unavailable" : "—", hint: wallets.data ? `${wallets.data.length - managed.length} watch-only` : " " },
+        { label: "Managed wallets", value: wallets.data ? String(managed.length) : wallets.error ? "Unavailable" : "—", hint: wallets.data ? `${wallets.data.length - managed.length} connected / watch-only excluded` : " " },
       ]} />
 
       {(decisions.length > 0 || setup.length > 0) && (
@@ -176,17 +182,17 @@ export default function Dashboard() {
       <div className="grid g-main">
         <div className="col">
           <Card title="Balances by chain" icon="globe" sub="Coins and stablecoins in your managed wallets"
-            foot={folio && <>{folio.note}{incomplete.length > 0 && " Totals only count balances that were read."}</>} flush>
+            foot={folio && <>{folio.note}{!totalComplete && " Totals only include amounts that could be read and valued."}</>} flush>
             {folioErr ? <LoadError what="Balances" error={folioErr} onRetry={() => loadFolio(true)} busy={folioBusy} /> : !folio ? <Loading rows={5} />
               : folio.wallets === 0 ? <Empty icon="wallet" title="No managed wallets yet" text="Balances appear per chain once you create and fund a wallet. Use Create wallets above." /> : (
               <>
                 {total > 0 && (
                   <div className="stack tight" style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
                     <div className="alloc" role="img" aria-label={`Allocation of balances that were read: ${funded.map((c) => `${c.name} ${fmt((c.usd / total) * 100, 1)}%`).join(", ")}`}>
-                      {funded.map((c) => <span key={c.network} style={{ width: `${(c.usd / total) * 100}%`, background: CHAINS[c.network as keyof typeof CHAINS]?.color }} />)}
+                      {funded.map((c) => <span key={c.network} style={{ width: `${(c.usd / total) * 100}%`, background: chainOf(c.network).color }} />)}
                     </div>
                     <div className="legend" aria-hidden="true">
-                      {funded.map((c) => <span key={c.network}><i style={{ background: CHAINS[c.network as keyof typeof CHAINS]?.color }} />{c.name} <b className="num">{fmt((c.usd / total) * 100, 1)}%</b></span>)}
+                      {funded.map((c) => <span key={c.network}><i style={{ background: chainOf(c.network).color }} />{c.name} <b className="num">{fmt((c.usd / total) * 100, 1)}%</b></span>)}
                     </div>
                   </div>
                 )}
@@ -196,7 +202,7 @@ export default function Dashboard() {
                     <span role="columnheader" style={{ textAlign: "right" }}>Coin</span><span role="columnheader" style={{ textAlign: "right" }}>Stablecoin</span>
                     <span role="columnheader" style={{ textAlign: "right" }}>Value</span>
                   </div>
-                  {chains.map((c) => <ChainRow key={c.network} c={c} launches={data?.by_chain?.[c.network]?.launches ?? 0} priced={folio.priced}
+                  {chains.map((c) => <ChainRow key={c.network} c={c} launches={data?.by_chain?.[c.network]?.launches ?? 0}
                     onRetry={() => loadFolio(true)} busy={folioBusy} />)}
                 </div>
               </>
@@ -302,15 +308,19 @@ function NextRow({ a }: { a: NextAction }) {
   );
 }
 
-/** What wasn't read on a chain, and why. Newer responses name the coin or stablecoin that failed and the RPC's reason. */
+function PortfolioValue({ value, complete }: { value: number | null; complete: boolean }) {
+  return value == null ? <>Unavailable</> : <>{usd(value)}{!complete && <small>partial</small>}</>;
+}
+
+/** Keep provider diagnostics out of the main balance table, including with an older API response. */
 function noteText(c: any, st: ChainStatus): string {
-  const err = typeof c.error === "string" ? c.error.replace(`${c.name}: `, "") : "";
-  if (c.native_read != null) return st === "partial" ? `${err}. Figures cover what was read.` : err;
-  return st === "partial" && c.wallets_read != null ? `${c.wallets_read} of ${c.wallets} wallets read; figures cover those only.` : err;
+  if (c.message) return c.message;
+  return st === "partial" ? "Some balances are unavailable. Amounts shown cover successful reads only."
+    : "The balance provider is temporarily unavailable. Try again shortly.";
 }
 
 /** One chain's balances. Unread data is never shown as a number: unavailable chains say so and offer a retry. */
-function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: number; priced: boolean; onRetry: () => void; busy: boolean }) {
+function ChainRow({ c, launches, onRetry, busy }: { c: any; launches: number; onRetry: () => void; busy: boolean }) {
   const st = statusOf(c);
   const meta = `${c.wallets} wallet${c.wallets === 1 ? "" : "s"}${launches ? ` · ${launches} launch${launches === 1 ? "" : "es"}` : ""}`;
   const cls = st === "unavailable" ? "unavail" : st === "partial" ? "partial" : st === "no_wallets" ? "empty-row" : "";
@@ -320,11 +330,12 @@ function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: nu
       <div style={{ minWidth: 0 }} role="cell">
         <div style={{ fontWeight: 600 }}>{c.name}</div>
         <div className="muted small">{st === "no_wallets" ? "No wallets on this chain" : meta}</div>
+        {c.wallets > 0 && c.scope && <div className="muted small portfolio-scope">{c.scope}</div>}
       </div>
       {st === "unavailable" ? (
         <>
           <div className="amt c-native" role="cell"><span className="unknown">not read</span></div>
-          <div className="amt c-stable hide-sm" role="cell"><span className="unknown">not read</span></div>
+          <div className="amt c-stable" role="cell"><span className="unknown">{c.stable_tracked === false ? "Not tracked" : "not read"}</span></div>
           <div className="usd" role="cell"><span className="unknown">unknown</span></div>
         </>
       ) : st === "no_wallets" ? (
@@ -335,9 +346,9 @@ function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: nu
         </>
       ) : (
         <>
-          <div className="amt c-native" role="cell">{c.native_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.native, 4)}<small>{c.coin}</small></>}</div>
-          <div className="amt c-stable" role="cell">{c.stable_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.stable, 2)}<small>{c.stable_symbol}</small></>}</div>
-          <div className="usd" role="cell">{priced || c.stable ? usd(c.usd) : "—"}{st === "partial" && <div className="muted small" style={{ fontFamily: "var(--font)" }}>at least</div>}</div>
+          <div className="amt c-native" role="cell">{c.native_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.native, 4)}<small>{c.coin}</small>{c.native_read < c.wallets && <span className="balance-partial">partial</span>}</>}</div>
+          <div className="amt c-stable" role="cell">{c.native_is_stable ? <span className="unknown">Included in coin</span> : c.stable_tracked === false ? <span className="unknown">Not tracked</span> : c.stable_read === 0 ? <span className="unknown">not read</span> : <>{fmt(c.stable, 2)}<small>{c.stable_symbol}</small>{c.stable_read < c.wallets && <span className="balance-partial">partial</span>}</>}</div>
+          <div className="usd" role="cell">{c.usd == null ? <span className="unknown">unpriced</span> : usd(c.usd)}{c.usd != null && (c.value_complete === false || st === "partial") && <div className="muted small" style={{ fontFamily: "var(--font)" }}>at least</div>}</div>
         </>
       )}
       {(st === "unavailable" || st === "partial") && (
@@ -347,6 +358,7 @@ function ChainRow({ c, launches, priced, onRetry, busy }: { c: any; launches: nu
           <button className="btn sm ghost" onClick={onRetry} disabled={busy} style={{ height: 26 }}>{busy ? <Spinner /> : <Icon name="refresh" size={12} />}Retry</button>
         </div>
       )}
+      {c.wallets > 0 && c.price_complete === false && <div className="note muted" role="cell">{c.coin} price unavailable; unpriced amounts are excluded from the total.</div>}
     </div>
   );
 }
