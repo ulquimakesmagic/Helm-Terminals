@@ -169,6 +169,9 @@ async def _connect(client, h, **over):
 async def test_ton_is_off_unless_listed_and_helm_never_creates_ton_keys(client, monkeypatch):
     h = await signup(client, main=False)
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
+    assert listed["ton"]["enabled"] and not listed["ton-testnet"]["enabled"]  # TON mainnet on by default
+    monkeypatch.setattr(get_settings(), "extra_networks", "")
+    listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
     assert not listed["ton"]["enabled"] and not listed["ton-testnet"]["enabled"]
     assert listed["ton"]["capabilities"]["launches"].startswith("no")
     assert (await client.post("/chains/ton-testnet/ton/proof-payload", headers=h)).status_code == 409

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     evm_rpc_ethereum: str = ""
     evm_rpc_robinhood: str = ""
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
-    extra_networks: str = "tron,near,arc"  # mainnets; testnets: "tron-nile,near-testnet,arc-testnet"; "" turns all off
+    extra_networks: str = "tron,near,arc,ton"  # mainnets; testnets: "tron-nile,near-testnet,arc-testnet,ton-testnet"; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
     tron_rpc_url: str = ""  # TronGrid full-node HTTP API (default https://api.trongrid.io)
     tron_nile_rpc_url: str = ""  # default https://nile.trongrid.io
