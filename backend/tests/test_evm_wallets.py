@@ -149,6 +149,6 @@ async def test_evm_rules(client, fake_rpc):
     assert r.status_code == 400 and "network" in r.json()["detail"]
     r = await client.post("/wallets/withdraw", json={"wallet_ids": [b["id"]], "destination": "So11111111111111111111111111111111111111112"}, headers=h)
     assert r.status_code == 400 and "destination" in r.json()["detail"]
-    assert (await client.post("/wallets", json={"network": "tron", "count": 1}, headers=h)).status_code == 400
+    assert (await client.post("/wallets", json={"network": "dogechain", "count": 1}, headers=h)).status_code == 400
     listed = (await client.get("/wallets", headers=h)).json()
     assert all("signer_ref" not in w for w in listed)

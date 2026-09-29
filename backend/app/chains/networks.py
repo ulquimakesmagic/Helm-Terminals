@@ -1,8 +1,8 @@
 """TRON, NEAR and Arc: network registry and capability matrix.
 
 These networks sit beside Helm's original chains (Solana, Base, BNB Chain, Ethereum, Robinhood Chain) and are
-off unless listed in EXTRA_NETWORKS. Mainnets additionally need ALLOW_MAINNET_EXTRA_NETWORKS=true, so no one lands on
-a real-money network without the operator deciding it. Testnets and mainnets are separate network ids.
+enabled by EXTRA_NETWORKS (default: the three mainnets). ALLOW_MAINNET_EXTRA_NETWORKS=false switches every mainnet
+off at once. Testnets and mainnets are separate network ids, and users still pick a network explicitly.
 
 Every value here comes from the official documentation listed in SOURCES (consulted 2026-09-28).
 """

@@ -260,6 +260,9 @@ async def test_new_networks_are_off_unless_enabled_and_mainnets_need_an_opt_in(c
     r = await client.post("/wallets", json={"network": "tron-nile", "count": 1}, headers=h)
     assert r.status_code == 400
     s = get_settings()
+    default = {n["id"] for n in (await client.get("/chains")).json()["extra"] if n["enabled"]}
+    assert default == {"tron", "near", "arc"}  # mainnets by default; testnets only when listed
+    monkeypatch.setattr(s, "allow_mainnet_extra_networks", False)
     monkeypatch.setattr(s, "extra_networks", "tron,near,arc,tron-nile")
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
     assert listed["tron-nile"]["enabled"] and not listed["tron"]["enabled"] and not listed["arc"]["enabled"]

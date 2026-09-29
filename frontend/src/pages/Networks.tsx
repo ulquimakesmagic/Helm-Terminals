@@ -66,7 +66,7 @@ export default function Networks() {
             <span className="small muted">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
           </div>))}</div>
       </details>
-      {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator enables them with EXTRA_NETWORKS (testnets) and, for mainnets, ALLOW_MAINNET_EXTRA_NETWORKS." /> : (
+      {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS; mainnets also need ALLOW_MAINNET_EXTRA_NETWORKS to be true." /> : (
         <Card title="Use a network" icon="globe" sub="Pick one explicitly. Testnet and mainnet are separate networks with separate wallets.">
           <div className="chips">{enabled.map((n) => (
             <button key={n.id} type="button" className={`chip ${current?.id === n.id ? "on" : ""}`} onClick={() => setSearch({ network: n.id })}>

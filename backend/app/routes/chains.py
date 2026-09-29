@@ -45,8 +45,8 @@ async def chains():
         {"id": k, "name": v["name"], "family": "evm", "testnet": False, "enabled": True, "chain_id": v["chain_id"],
          "capabilities": "full: wallets, launches, trading, market data"} for k, v in EVM_CHAINS.items()]
     return {"core": core, "extra": [_net_out(n) for n in EXTRA_NETWORKS.values()],
-            "note": "Extra networks are off unless the server lists them in EXTRA_NETWORKS; mainnets also need "
-                    "ALLOW_MAINNET_EXTRA_NETWORKS=true."}
+            "note": "Enabled networks are the ones the server lists in EXTRA_NETWORKS (mainnets by default; "
+                    "ALLOW_MAINNET_EXTRA_NETWORKS=false turns every mainnet off)."}
 
 
 @router.get("/chains/{network}/health")
