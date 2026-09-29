@@ -237,6 +237,25 @@ def _raw_amount(amount: str, decimals: int) -> int:
         return int(d.scaleb(decimals))
 
 
+async def _lock_warnings(db: AsyncSession, user: User, network: str, w: Wallet, token: str, plan: dict, ex) -> list[str]:
+    from sqlalchemy import func
+
+    from ..models import Launch
+    from ..services.allocations import lock_warning
+
+    launch = (await db.execute(select(Launch).where(
+        Launch.user_id == user.id, Launch.network == network,
+        func.lower(Launch.mint_address) == token.lower()))).scalars().first()
+    if not launch:
+        return []
+    try:
+        bal = await xc.token_balance(ex, network, token, w.address)
+    except Exception:
+        return ["The token balance couldn't be read to check your allocation locks; try again in a moment."]
+    msg = await lock_warning(db, launch, w, bal, int(plan["raw"]), int(plan["decimals"]))
+    return [msg] if msg else []
+
+
 @router.post("/chains/{network}/transfer")
 async def transfer(network: str, body: TransferBody, user: User = Depends(current_user),
                    db: AsyncSession = Depends(get_db), ex: Executor = Depends(get_executor)):
@@ -261,6 +280,8 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
             plan = await _arc_plan(ex, network, w, to, token, body.amount)
     except AdapterError as e:
         raise HTTPException(502, str(e))
+    if token:  # a token of one of the user's own launches: its allocation locks apply here too
+        plan["warnings"] = list(plan["warnings"]) + await _lock_warnings(db, user, network, w, token, plan, ex)
     kind = "send_tokens" if token else "withdraw"
     summary = {"network": network, "chain": net.name, "from": w.address, "to": to,
                "asset": plan["symbol"], "token": token, "amount": plan["amount"], "amount_raw": str(plan["raw"]),

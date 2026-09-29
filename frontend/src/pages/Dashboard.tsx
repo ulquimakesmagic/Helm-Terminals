@@ -5,12 +5,12 @@ import AreaChart from "../components/Chart";
 import ReferralCard from "../components/Referrals";
 import SpendDialog from "../components/SpendDialog";
 import type { SpendRequest } from "../components/Distribute";
-import { CHAIN_ORDER, CHAINS, Pad, padName } from "../chains";
+import { ALL_CHAIN_ORDER, CHAINS, chainOf, Pad, padName } from "../chains";
 import { coverage } from "../components/Launchpads";
 import { ChainMark, PadLabel, PadMark } from "../components/marks";
 import { ActivityRow, FeedItem, groupRepeats, isRoutine } from "../components/feed";
 import {
-  Callout, Card, Empty, Icon, IconName, Loading, LoadError, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, parseDate, relTime,
+  Callout, Card, Empty, Icon, IconName, LoadError, Loading, Metrics, parseDate, relTime, Seg, Skeleton, Spinner, StatusBadge, TableWrap, TokenImage,
 } from "../components/ui";
 import { useSession } from "../session";
 
@@ -113,6 +113,7 @@ export default function Dashboard() {
 
   return (
     <>
+      <h1 className="sr-only">Dashboard</h1>
       <section className="command" aria-label="Portfolio summary">
         <div style={{ minWidth: 0 }}>
           <div className="row" style={{ gap: 10 }}>
@@ -122,9 +123,9 @@ export default function Dashboard() {
             ) : <span className="state none"><Icon name="checkcircle" size={12} />All chains read</span>)}
           </div>
           {folio ? (
-            folio.wallets === 0 ? <div className="figure muted">No wallets yet</div>
+            folio.wallets === 0 ? <div className="figure figure-text muted">No wallets yet</div>
               : <div className="figure" aria-live="polite">{usd(total)}{incomplete.length > 0 && <small>at least</small>}</div>
-          ) : folioErr ? <div className="figure muted">Unavailable</div> : <Skeleton h={34} w={220} style={{ marginTop: 10 }} />}
+          ) : folioErr ? <div className="figure figure-text muted">Unavailable</div> : <Skeleton h={34} w={220} style={{ marginTop: 10 }} />}
           <p className="sub">
             {folioErr ? <>Balances couldn't be read: {folioErr}</>
               : folio && folio.wallets === 0 ? <>Create a managed wallet on any chain, fund it, and its balances show up here.</>
@@ -208,7 +209,7 @@ export default function Dashboard() {
               : !launches.data ? <Loading /> : launches.data.length === 0 ? (
                 <Empty icon="rocket" title="No launches yet" text={noWallets ? "Create a managed wallet first; it signs the launch." : "Create a token on any supported chain and launchpad, or import one you already hold."} />
               ) : (
-                <div className="table-wrap"><table className="rtable">
+                <TableWrap><table className="rtable">
                   <caption className="sr-only">Your most recent launches</caption>
                   <thead><tr><th>Token</th><th>Launchpad</th><th>Status</th><th className="hide-sm">Created</th><th><span className="sr-only">Action</span></th></tr></thead>
                   <tbody>
@@ -230,7 +231,7 @@ export default function Dashboard() {
                       </tr>
                     ))}
                   </tbody>
-                </table></div>
+                </table></TableWrap>
               )}
           </Card>
 
@@ -255,12 +256,12 @@ export default function Dashboard() {
             actions={<Link to="/launches" className="btn sm ghost">Launchpads<Icon name="arrowright" size={13} /></Link>}>
             {!pads.length ? <Loading rows={3} /> : (
               <div className="stack">
-                {CHAIN_ORDER.map((c) => {
+                {ALL_CHAIN_ORDER.map((c) => {
                   const list = pads.filter((p) => p.network === c);
                   if (!list.length) return null;
                   return (
                     <div key={c} className="stack tight">
-                      <div className="row" style={{ gap: 8 }}><ChainMark network={c} size={18} /><b style={{ fontSize: 13 }}>{CHAINS[c].name}</b>
+                      <div className="row" style={{ gap: 8 }}><ChainMark network={c} size={18} /><b className="small-strong">{chainOf(c).name}</b>
                         <span className="muted small">{list.filter((p) => p.status === "available").length} of {list.length} live</span></div>
                       <ul className="pad-chips" style={{ margin: 0, padding: 0, listStyle: "none" }}>
                         {list.map((p) => {

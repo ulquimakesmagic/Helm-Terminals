@@ -1,3 +1,4 @@
+import logging
 import asyncio
 from functools import lru_cache
 
@@ -184,10 +185,17 @@ async def run_job(job_id: str, fn) -> None:
             try:
                 await fn(db, job)
             except Exception as e:  # never leave a job stuck in "submitted"
+                logging.getLogger("helm.jobs").exception("job %s (%s) raised", job_id, getattr(job, "kind", "?"))
                 await db.rollback()
                 job = await db.get(Job, job_id)
-                job.status = "failed"
-                job.params = {**job.params, "error": str(e)[:300]}
+                from .models import Transaction
+
+                sent = (await db.execute(select(Transaction.id).where(
+                    Transaction.job_id == job_id, Transaction.signature.is_not(None)).limit(1))).first()
+                # Once something was sent, "failed" would invite a retry of money that may already have moved.
+                job.status = "unconfirmed" if sent else "failed"
+                job.params = {**job.params, "error": (str(e)[:240] + (
+                    " Something was already sent: check the explorer before trying again." if sent else ""))}
                 await db.commit()
 
     if get_settings().run_jobs_inline:

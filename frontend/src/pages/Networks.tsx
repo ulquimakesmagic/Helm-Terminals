@@ -4,7 +4,9 @@ import { api, errMsg, short } from "../api";
 import { chainOf, ExtraChainId } from "../chains";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
-import { Address, Callout, Card, Empty, Field, Icon, Loading, Modal, PageHeader, Spinner, useToast } from "../components/ui";
+import {
+  Address, Callout, Card, Empty, Field, Icon, Loading, Modal, PageHeader, Spinner, TableWrap, useToast,
+} from "../components/ui";
 
 // TON Connect is only loaded when a TON network is opened.
 const TonConnectBox = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonConnectBox })));
@@ -49,7 +51,7 @@ export default function Networks() {
     <>
       <PageHeader title="Networks" sub="What Helm supports on TRON, NEAR, Arc and TON. Wallets, balances and transfers only: no launches, swaps or market data there yet." />
       <Card title="Capability matrix" icon="layers" flush sub={data.note}>
-        <div className="table-wrap"><table className="rtable">
+        <TableWrap><table className="rtable">
           <caption className="sr-only">What Helm supports on each network</caption>
           <thead><tr><th>Network</th>{Object.values(CAP_LABEL).map((l) => <th key={l}>{l}</th>)}<th>Status</th></tr></thead>
           <tbody>{data.extra.map((n) => (
@@ -60,7 +62,7 @@ export default function Networks() {
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
             </tr>))}</tbody>
-        </table></div>
+        </table></TableWrap>
       </Card>
       <details className="card" style={{ padding: 14 }}>
         <summary style={{ cursor: "pointer" }}><b>Why each feature is or isn't available, and the documentation used</b></summary>
@@ -105,7 +107,7 @@ function NetworkPanel({ net }: { net: Net }) {
         actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
         {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}
         {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={net.family === "ton" ? "Connect your own TON wallet to use it here." : <>Create one, or <Link to="/settings">link your own wallet in Settings</Link>.</>} /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">{net.name} wallets</caption>
             <thead><tr><th>Wallet</th><th>Address</th><th className="r">Balance</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{wallets.map((w) => (
@@ -115,7 +117,7 @@ function NetworkPanel({ net }: { net: Net }) {
                 <td className="r mono" data-label="Balance">{w.balance_native != null ? `${w.balance_native} ${net.native}` : <span className="muted">unavailable</span>}</td>
                 <td className="r act"><button className="btn sm ghost" onClick={() => setOpenId(openId === w.id ? null : w.id)}>{openId === w.id ? "Close" : "Open"}</button></td>
               </tr>))}</tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
       {openId && wallets && <WalletDetail net={net} wallet={wallets.find((w) => w.id === openId)} onChanged={load} />}

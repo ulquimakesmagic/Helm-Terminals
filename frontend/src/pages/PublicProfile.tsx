@@ -4,7 +4,9 @@ import { api, ApiError, errMsg, hasToken } from "../api";
 import { chainOf } from "../chains";
 import { PadLabel } from "../components/marks";
 import { PadBars, PadRow, ProfileAvatar } from "../components/profile";
-import { Address, Callout, Card, Empty, Icon, Loading, Logo, Stat, StatusBadge, parseDate } from "../components/ui";
+import {
+  Address, Callout, Card, Empty, Icon, Loading, Logo, parseDate, Stat, StatusBadge, TableWrap,
+} from "../components/ui";
 import { ProfileLinks } from "./Profile";
 
 interface PublicData {
@@ -74,7 +76,7 @@ export default function PublicProfile() {
 
             <Card title="Launch history" icon="rocket" sub="Every token this creator deployed through Helm, newest first. Check any of them on the chain's explorer." flush>
               {d.launches.length === 0 ? <Empty icon="rocket" title="No tokens deployed yet" /> : (
-                <div className="table-wrap"><table>
+                <TableWrap><table>
                   <thead><tr><th>Token</th><th>Launchpad</th><th>Status</th><th>Mint</th><th className="hide-sm">Deployed</th></tr></thead>
                   <tbody>
                     {d.launches.map((l) => (
@@ -88,7 +90,7 @@ export default function PublicProfile() {
                       </tr>
                     ))}
                   </tbody>
-                </table></div>
+                </table></TableWrap>
               )}
             </Card>
 

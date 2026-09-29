@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { CHAIN_ORDER, CHAINS, ChainId } from "../chains";
+import { ALL_CHAIN_ORDER, chainOf } from "../chains";
 import { ChainLabel } from "../components/marks";
-import { Address, Card, Empty, Icon, Loading, LoadError, PageHeader, SearchInput, Seg, useToast } from "../components/ui";
+import {
+  Address, Card, Empty, Icon, LoadError, Loading, PageHeader, SearchInput, Seg, TableWrap, useToast,
+} from "../components/ui";
 
 interface Item { id: string; address: string; label: string; bookmarked: boolean; network: string }
 
@@ -11,7 +13,7 @@ export default function Tracker() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
-  const [network, setNetwork] = useState<ChainId>("solana");
+  const [network, setNetwork] = useState<string>("solana");
   const [filter, setFilter] = useState<"all" | "starred">("all");
   const [q, setQ] = useState("");
 
@@ -26,7 +28,15 @@ export default function Tracker() {
   }
 
   const addr = address.trim();
-  const valid = network === "solana" ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) : /^0x[0-9a-fA-F]{40}$/.test(addr);
+  // Quick format hints per chain; the server does the full check (checksums, NEAR account rules, TON forms).
+  const FORMAT: Record<string, [RegExp, string, string]> = {
+    solana: [/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Solana address", "That doesn't look like a Solana address."],
+    tron: [/^T[1-9A-HJ-NP-Za-km-z]{33}$/, "T… TRON address", "TRON addresses start with T and have 34 characters."],
+    near: [/^([a-z0-9._-]{2,64}|[0-9a-f]{64})$/, "alice.near or a 64-character account", "NEAR accounts are lowercase names like alice.near, or 64 hex characters."],
+    ton: [/^([A-Za-z0-9_+/-]{48}|-?[01]:[0-9a-fA-F]{64})$/, "EQ… / UQ… TON address", "TON addresses are 48 characters (EQ… or UQ…) or the raw 0:… form."],
+  };
+  const fmtFor = FORMAT[network] ?? [/^0x[0-9a-fA-F]{40}$/, "0x… address", `${chainOf(network).name} addresses start with 0x and have 40 hex characters.`];
+  const valid = fmtFor[0].test(addr);
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     return (items ?? [])
@@ -41,14 +51,14 @@ export default function Tracker() {
 
       <Card title="Track an address" icon="radar">
         <form className="row" onSubmit={add} style={{ alignItems: "stretch" }}>
-          <select value={network} onChange={(e) => setNetwork(e.target.value as ChainId)} style={{ flex: "0 0 150px" }} aria-label="Chain">
-            {CHAIN_ORDER.map((c) => <option key={c} value={c}>{CHAINS[c].name}</option>)}
+          <select value={network} onChange={(e) => setNetwork(e.target.value)} style={{ flex: "0 0 150px" }} aria-label="Chain">
+            {ALL_CHAIN_ORDER.map((c) => <option key={c} value={c}>{chainOf(c).name}</option>)}
           </select>
-          <input className="mono" aria-label="Address to track" aria-invalid={!!addr && !valid} placeholder={network === "solana" ? "Solana address" : "0x… address"} value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} spellCheck={false} autoComplete="off" />
+          <input className="mono" aria-label="Address to track" aria-invalid={!!addr && !valid} placeholder={fmtFor[1]} value={address} onChange={(e) => setAddress(e.target.value)} style={{ flex: "2 1 280px" }} spellCheck={false} autoComplete="off" />
           <input aria-label="Label" placeholder="Label, e.g. Dev of $CAT" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: "1 1 180px" }} />
           <button className="btn" disabled={!valid}><Icon name="plus" size={15} />Track</button>
         </form>
-        {addr && !valid && <p className="warn-t small" style={{ marginTop: 8 }} role="status">{network === "solana" ? "That doesn't look like a Solana address." : `${CHAINS[network].name} addresses start with 0x and have 40 hex characters.`}</p>}
+        {addr && !valid && <p className="warn-t small" style={{ marginTop: 8 }} role="status">{fmtFor[2]}</p>}
       </Card>
 
       <Card flush title={`Tracked addresses`} icon="eye" sub={items ? `${items.length} total · ${items.filter((i) => i.bookmarked).length} starred` : undefined}
@@ -59,7 +69,7 @@ export default function Tracker() {
         {loadErr && !items ? <LoadError what="Tracked addresses" error={loadErr} onRetry={load} /> : !items ? <Loading /> : items.length === 0 ? (
           <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana or EVM address (Base, BNB Chain, Robinhood Chain, Ethereum) above to start watching it." />
         ) : shown.length === 0 ? <Empty icon="search" title="No matches" /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <thead><tr><th style={{ width: 44 }}><span className="sr-only">Starred</span></th><th>Label</th><th>Chain</th><th>Address</th><th className="r"><span className="sr-only">Remove</span></th></tr></thead>
             <tbody>
               {shown.map((i) => (
@@ -81,7 +91,7 @@ export default function Tracker() {
                 </tr>
               ))}
             </tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
     </>

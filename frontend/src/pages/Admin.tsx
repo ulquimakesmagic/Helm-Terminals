@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errMsg } from "../api";
-import { Callout, Card, CopyButton, Empty, Icon, LoadError, Loading, Metrics, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, useToast } from "../components/ui";
+import {
+  Callout, Card, CopyButton, Empty, Icon, LoadError, Loading, Metrics, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TableWrap, useToast,
+} from "../components/ui";
 
 /* Admin dashboard. The server checks the admin role on every request; this page only decides what to show. */
 
@@ -156,7 +158,7 @@ function Revenue({ me }: { me: AdminMe }) {
         <>
           <Card title="Totals by asset" icon="coins" sub={`Shown in each asset's own units, never converted or added across assets · as of ${utc(sum.valuation.as_of)}`} flush>
             {sum.totals.length === 0 ? <Empty icon="coins" title="No revenue recorded yet" text="Entries appear here as fees are earned." /> : (
-              <div className="table-wrap"><table className="rtable">
+              <TableWrap><table className="rtable">
                 <caption className="sr-only">Revenue totals by asset and chain</caption>
                 <thead><tr><th>Asset</th><th className="r">Received</th><th className="r">Pending</th><th className="r">Claimable</th><th className="r">Unreconciled</th><th className="r hide-sm">Entries</th></tr></thead>
                 <tbody>{sum.totals.map((b) => (
@@ -170,7 +172,7 @@ function Revenue({ me }: { me: AdminMe }) {
                     <td className="r mono" data-label="Unreconciled">{units(b.unreconciled, b.decimals)}</td>
                     <td className="r hide-sm muted">{b.entries}</td>
                   </tr>))}</tbody>
-              </table></div>
+              </table></TableWrap>
             )}
           </Card>
           <Callout tone="info">
@@ -206,7 +208,7 @@ function Revenue({ me }: { me: AdminMe }) {
           <span className="muted small">Page {page} of {Math.ceil(led.total / 50)}</span>
           <button className="btn sm ghost" disabled={page * 50 >= led.total} onClick={() => setPage(page + 1)}>Next</button></div> : undefined}>
         {!led ? <Loading /> : led.items.length === 0 ? <Empty icon="layers" title="No entries match" /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">Revenue ledger</caption>
             <thead><tr>{me.can_change && <th><span className="sr-only">Select</span></th>}<th>When (UTC)</th><th>Source</th><th>Launch</th><th className="r">Amount</th><th>Status</th><th className="hide-sm">Destination</th><th className="hide-sm">Reference</th></tr></thead>
             <tbody>{led.items.map((r) => (
@@ -223,7 +225,7 @@ function Revenue({ me }: { me: AdminMe }) {
                 <td className="hide-sm mono small">{r.destination ? <span className="row nowrap">{r.destination.slice(0, 6)}…{r.destination.slice(-4)}<CopyButton text={r.destination} /></span> : "—"}</td>
                 <td className="hide-sm mono small">{r.reference ? <span className="row nowrap">{r.reference.slice(0, 8)}…<CopyButton text={r.reference} /></span> : "—"}</td>
               </tr>))}</tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
     </div>
@@ -315,7 +317,7 @@ function Fees({ me }: { me: AdminMe }) {
     <div className="stack">
       <Callout tone="warn" icon="alert">Rate changes apply to new previews only. Existing launches keep the reward split they were created with. A fee can't be turned on until its treasury address is set and the provider supports it.</Callout>
       <Card title="Rates" icon="coins" flush>
-        <div className="table-wrap"><table className="rtable">
+        <TableWrap><table className="rtable">
           <caption className="sr-only">Fee settings</caption>
           <thead><tr><th>Setting</th><th className="r">Rate</th><th>Allowed</th><th>Pays to</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{data.settings.map((s) => (
@@ -326,7 +328,7 @@ function Fees({ me }: { me: AdminMe }) {
               <td className="small" data-label="Pays to">{s.key === "creator_share_bps" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
               <td className="r act">{me.can_change && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: String(s.bps) })}>Change…</button>}</td>
             </tr>))}</tbody>
-        </table></div>
+        </table></TableWrap>
       </Card>
       <Card title="Creator-reward share by launchpad" icon="rocket">
         <div className="stack tight">{Object.entries(data.creator_share_launchpads).map(([lp, c]) => (
@@ -334,7 +336,7 @@ function Fees({ me }: { me: AdminMe }) {
           <span className="muted small">Other launchpads (pump.fun, LetsBonk, Meteora DBC, Four.meme, Flap, Pons, Uniswap v2): not available. Helm doesn't set up their reward splits.</span></div>
       </Card>
       <Card title="Supported revenue paths" icon="layers" flush>
-        <div className="table-wrap"><table className="rtable">
+        <TableWrap><table className="rtable">
           <caption className="sr-only">Revenue paths</caption>
           <thead><tr><th>Path</th><th>Status</th><th>Lands as</th><th className="hide-sm">How it works</th></tr></thead>
           <tbody>{data.paths.map((p) => (
@@ -344,7 +346,7 @@ function Fees({ me }: { me: AdminMe }) {
               <td data-label="Lands as">{p.lands ?? "—"}</td>
               <td className="hide-sm muted small">{p.how}</td>
             </tr>))}</tbody>
-        </table></div>
+        </table></TableWrap>
       </Card>
       {edit && (
         <StepUpDialog title={SETTING_LABEL[edit.key] ?? edit.key}
@@ -405,7 +407,7 @@ function Users({ me }: { me: AdminMe }) {
           <span className="muted small">Page {page} of {Math.ceil(data.total / 25)}</span>
           <button className="btn sm ghost" disabled={page * 25 >= data.total} onClick={() => setPage(page + 1)}>Next</button></div> : undefined}>
         {err && !data ? <LoadError what="Users" error={err} onRetry={load} /> : !data ? <Loading /> : data.items.length === 0 ? <Empty icon="user" title="No users match" /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">Users</caption>
             <thead><tr>{th("email", "Account")}{th("created_at", "Registered")}{th("last_login", "Last sign-in", "hide-sm")}<th>Status</th>{th("launches", "Launches", "r")}{th("trades", "Trades", "r hide-sm")}<th className="r hide-sm">Automations</th>{th("wallets", "Wallets", "r")}<th className="hide-sm">Referral</th></tr></thead>
             <tbody>{data.items.map((u) => (
@@ -422,7 +424,7 @@ function Users({ me }: { me: AdminMe }) {
                 <td className="r" data-label="Wallets">{u.wallets}</td>
                 <td className="hide-sm muted small">{u.referred_by_code ?? "—"}</td>
               </tr>))}</tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
       <span className="muted small">Helm has no plans or subscriptions, so there's no plan column.</span>
@@ -496,7 +498,7 @@ function Audit() {
       foot={data && data.total > 50 ? <div className="row between"><button className="btn sm ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
         <span className="muted small">Page {page}</span><button className="btn sm ghost" disabled={page * 50 >= data.total} onClick={() => setPage(page + 1)}>Next</button></div> : undefined}>
       {err && !data ? <LoadError what="Audit log" error={err} onRetry={load} /> : !data ? <Loading /> : data.items.length === 0 ? <Empty icon="shield" title="Nothing recorded yet" /> : (
-        <div className="table-wrap"><table className="rtable">
+        <TableWrap><table className="rtable">
           <caption className="sr-only">Audit log</caption>
           <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Changes</th><th className="hide-sm">Actor · IP</th></tr></thead>
           <tbody>{data.items.map((e) => (
@@ -507,7 +509,7 @@ function Audit() {
               <td className="small span">{Object.entries(e.changes ?? {}).map(([k, v]: any) => <div key={k}><span className="muted">{k}:</span> {String(v?.[0] ?? "—")} → {String(v?.[1] ?? "—")}</div>)}</td>
               <td className="hide-sm mono small muted">{e.actor?.slice(0, 8)} · {e.context?.ip ?? "—"}</td>
             </tr>))}</tbody>
-        </table></div>
+        </table></TableWrap>
       )}
     </Card>
   );

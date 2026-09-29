@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { CHAIN_ORDER, CHAINS, Pad } from "../chains";
+import { ALL_CHAIN_ORDER, CHAIN_ORDER, chainOf, Pad } from "../chains";
 import { ChainMark } from "./marks";
 import { Icon, IconName, Logo } from "./ui";
 
@@ -26,7 +26,7 @@ export function usePublicInfo(): PublicInfo {
 
 /** Chains that have at least one launchpad listed, in display order (all chains until the list loads). */
 export function chainsIn(pads: Pad[]) {
-  return pads.length ? CHAIN_ORDER.filter((c) => pads.some((p) => p.network === c)) : CHAIN_ORDER;
+  return pads.length ? ALL_CHAIN_ORDER.filter((c) => pads.some((p) => p.network === c)) : CHAIN_ORDER;
 }
 
 export function Brand({ compact }: { compact?: boolean }) {
@@ -72,7 +72,7 @@ export function ChainStrip({ pads, counts = true }: { pads: Pad[]; counts?: bool
         return (
           <li key={c}>
             <ChainMark network={c} size={18} />
-            <span>{CHAINS[c].name}</span>
+            <span>{chainOf(c).name}</span>
             {counts && n > 0 && <span className="muted mono" title={`${n} launchpad${n === 1 ? "" : "s"}`}>{n}<span className="sr-only"> launchpad{n === 1 ? "" : "s"}</span></span>}
           </li>
         );

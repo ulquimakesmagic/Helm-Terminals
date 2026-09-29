@@ -21,7 +21,7 @@ from .render import e, num, render_job, render_launches, render_preflight, rende
 
 log = logging.getLogger("helm_bot")
 
-TERMINAL = ("confirmed", "failed", "partial")
+TERMINAL = ("confirmed", "failed", "partial", "unconfirmed")  # unconfirmed: final for Helm, check the explorer
 MAX_LINK_FAILS, LINK_FAIL_WINDOW_S = 5, 600
 
 
@@ -254,7 +254,7 @@ class Controller:
         ids = [w["id"] for w in wallets] if args[0].lower() == "all" else [await self._wallet_id(tg_id, args[0])]
         if not ids:
             raise BotError("You have no wallets that can sign.")
-        await self._start_spend(tg_id, "Withdraw SOL", "/wallets/withdraw",
+        await self._start_spend(tg_id, "Withdraw", "/wallets/withdraw",
                                 {"wallet_ids": ids, "destination": args[1], "all": True}, send)
 
     async def _start_spend(self, tg_id: int, title: str, path: str, body: dict, send: Send) -> None:

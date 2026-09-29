@@ -23,7 +23,7 @@ export function LaunchpadDirectory({ pads, onPick, picked }: { pads: Pad[]; onPi
                   disabled={!live || !onPick} style={!onPick && live ? { cursor: "default" } : undefined} aria-pressed={onPick ? picked === p.id : undefined}
                   title={p.reason ?? (live ? undefined : "Coming soon")} onClick={() => onPick?.(p)}>
                   <PadMark pad={p.id} network={p.network} size={24} />
-                  <span className="grow" style={{ fontWeight: 600, overflowWrap: "anywhere", lineHeight: 1.25 }}>{padName(p.id)}</span>
+                  <span className="grow" style={{ fontWeight: 600, overflowWrap: "break-word", lineHeight: 1.25 }}>{padName(p.id)}</span>
                   <span className={`badge ${live ? "good" : setup ? "warn" : ""}`}><span className="dot" />{live ? "Live" : setup ? "Needs setup" : "Soon"}</span>
                 </button>
               );

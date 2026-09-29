@@ -75,13 +75,15 @@ async def verify_route_fee(relay, ev: RevenueEvent) -> str:
     """Check one Relay route-fee entry against what Relay says it actually collected, and update it:
     "confirmed" - Relay collected a fee for Helm's treasury: marked reconciled, still claimable (held by Relay)
     "not_collected" - the route finished but Relay took no fee (e.g. below its minimum): amount set to 0
-    "pending" - Relay hasn't settled the request yet; left as is
+    "pending" - Relay hasn't settled the request yet (any non-final status); left as is
     "unknown" - Relay doesn't know the reference; left as is"""
     req = await relay.request(ev.reference) if ev.reference else None
     if not req:
         return "unknown"
     status = req.get("status")
-    if status in ("pending", "waiting", "depositing"):
+    # Only a final outcome may change the entry. "delayed", "submitted" and statuses Relay adds later are still in
+    # flight: zeroing on them would erase a fee Relay may yet collect.
+    if status not in ("success", "failure", "refund", "refunded"):
         return "pending"
     from ..models import utcnow
 

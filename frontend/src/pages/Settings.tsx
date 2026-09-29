@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { api, errMsg } from "../api";
-import { Callout, Card, CopyButton, Empty, Icon, Loading, LoadError, PageHeader, Spinner, parseDate, relTime, useToast } from "../components/ui";
+import {
+  Callout, Card, CopyButton, Empty, Icon, LoadError, Loading, PageHeader, parseDate, relTime, Spinner, TableWrap, useToast,
+} from "../components/ui";
 import { useSession } from "../session";
 import WalletSettings from "../components/WalletSettings";
 
@@ -188,7 +190,7 @@ export default function Settings() {
 
       <Card title="Active sessions" icon="monitor" sub={sessions ? `${sessions.length} signed in · revoke any you don't recognise` : "Revoke any you don't recognise"} flush>
         {sessErr && !sessions ? <LoadError what="Sessions" error={sessErr} onRetry={load} /> : !sessions ? <Loading /> : sessions.length === 0 ? <Empty icon="monitor" title="No active sessions" /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">Signed-in sessions</caption>
             <thead><tr><th>Device</th><th className="hide-sm">IP address</th><th>Started</th><th className="hide-sm">Expires</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
@@ -212,7 +214,7 @@ export default function Settings() {
                 </tr>
               ))}
             </tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
     </>

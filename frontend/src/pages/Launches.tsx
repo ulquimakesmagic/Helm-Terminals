@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
-import { CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
+import { ALL_CHAIN_ORDER, CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
 import { LaunchpadDirectory } from "../components/Launchpads";
 import { ChainLabel, ChainMark, PadLabel } from "../components/marks";
 import {
@@ -326,9 +326,9 @@ export default function Launches() {
           ["draft", <>Drafts <span className="muted num">{counts.draft}</span></>],
           ["archived", <>Archived <span className="muted num">{counts.archived}</span></>],
         ]} />
-        <div className="chips">
+        <div className="chips" style={{ flex: "1 1 360px", minWidth: 0 }} role="group" aria-label="Filter by chain">
           <button className={`chip ${chainF === "all" ? "on" : ""}`} aria-pressed={chainF === "all"} onClick={() => setChainF("all")}>All chains</button>
-          {[...CHAIN_ORDER, ...["tron", "near", "arc"].filter((n) => pads.some((p) => p.network === n))].map((c) => (
+          {ALL_CHAIN_ORDER.filter((c) => (CHAIN_ORDER as string[]).includes(c) || pads.some((p) => p.network === c)).map((c) => (
             <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c as ChainId)}><ChainMark network={c} size={16} />{chainOf(c).name}</button>
           ))}
         </div>

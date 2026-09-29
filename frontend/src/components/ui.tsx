@@ -97,12 +97,12 @@ export function PageHeader({ title, sub, actions }: { title: ReactNode; sub?: Re
   );
 }
 
-export function Card({ title, sub, icon, actions, children, flush, foot, className = "", style }: {
+export function Card({ title, sub, icon, actions, children, flush, foot, className = "", style, id }: {
   title?: ReactNode; sub?: ReactNode; icon?: IconName; actions?: ReactNode; children?: ReactNode;
-  flush?: boolean; foot?: ReactNode; className?: string; style?: React.CSSProperties;
+  flush?: boolean; foot?: ReactNode; className?: string; style?: React.CSSProperties; id?: string;
 }) {
   return (
-    <section className={`card ${className}`} style={style}>
+    <section className={`card ${className}`} style={style} id={id} tabIndex={id ? -1 : undefined}>
       {(title || actions) && (
         <div className="card-head">
           <div className="card-title">
@@ -308,6 +308,28 @@ export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol
 }
 
 /* ---------------------------------------------------------------- modal */
+/** A table's horizontal scroll area. When the table is wider than the screen it becomes a labelled, focusable
+ * region so keyboard users can scroll it too (WCAG 2.1.1); otherwise it adds no tab stop. */
+export function TableWrap({ children, label = "Table" }: { children: ReactNode; label?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(check) : null;
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => ro?.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="table-wrap" {...(scrolls ? { tabIndex: 0, role: "region", "aria-label": `${label} (scrolls sideways)` } : {})}>
+      {children}
+    </div>
+  );
+}
+
 export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
   title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; foot?: ReactNode; wide?: boolean; lock?: boolean;
 }) {

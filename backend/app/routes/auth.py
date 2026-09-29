@@ -33,8 +33,8 @@ class Register(BaseModel):
 
 class Login(BaseModel):
     email: EmailStr
-    password: str
-    totp: str | None = None
+    password: str = Field(max_length=200)
+    totp: str | None = Field(default=None, max_length=12)
 
 
 class Code(BaseModel):
@@ -122,15 +122,28 @@ async def totp_enable(body: PasswordConfirm, user: User = Depends(web_user), db:
 
 
 @router.post("/totp/verify")
-async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSession = Depends(get_db),
+                      authorization: str | None = Header(default=None)):
     if not user.totp_secret_enc:
         raise HTTPException(400, "call /auth/totp/enable first")
     if not await check_totp_once(db, user, body.code):
         raise HTTPException(400, "invalid code")
+    was_on = user.totp_enabled
     user.totp_enabled = True
-    await log_activity(db, user.id, "2fa.enabled")
+    ended = 0
+    if not was_on:
+        # Turning 2FA on signs out every other web session, so a session someone else already holds doesn't outlive
+        # the upgrade. This session and the Telegram bot's stay.
+        from sqlalchemy import update
+
+        current = token_hash((authorization or "")[7:].strip())
+        res = await db.execute(update(Session).where(
+            Session.user_id == user.id, Session.channel == "web", Session.revoked_at.is_(None),
+            Session.token_hash != current).values(revoked_at=utcnow()))
+        ended = res.rowcount or 0
+    await log_activity(db, user.id, "2fa.enabled", payload={"other_sessions_ended": ended})
     await db.commit()
-    return {"totp_enabled": True}
+    return {"totp_enabled": True, "other_sessions_ended": ended}
 
 
 @router.get("/me")

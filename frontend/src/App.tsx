@@ -1,22 +1,24 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, hasToken, setToken } from "./api";
-import { Icon, IconName, Logo } from "./components/ui";
+import { Icon, IconName, Loading, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
 import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
-import AutomationMoved from "./pages/AutomationMoved";
-import Wallets from "./pages/Wallets";
-import Networks from "./pages/Networks";
-import Launches from "./pages/Launches";
-import Workspace from "./pages/Workspace";
-import Tracker from "./pages/Tracker";
-import Activity from "./pages/Activity";
-import Settings from "./pages/Settings";
-import Profile from "./pages/Profile";
-import PublicProfile from "./pages/PublicProfile";
-import Admin from "./pages/Admin";
+// The landing, sign-in and dashboard pages load with the app; every other page is fetched when first opened,
+// so the first screen doesn't wait for the admin console, the trading workspace or the QR code library.
+const AutomationMoved = lazy(() => import("./pages/AutomationMoved"));
+const Wallets = lazy(() => import("./pages/Wallets"));
+const Networks = lazy(() => import("./pages/Networks"));
+const Launches = lazy(() => import("./pages/Launches"));
+const Workspace = lazy(() => import("./pages/Workspace"));
+const Tracker = lazy(() => import("./pages/Tracker"));
+const Activity = lazy(() => import("./pages/Activity"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Profile = lazy(() => import("./pages/Profile"));
+const PublicProfile = lazy(() => import("./pages/PublicProfile"));
+const Admin = lazy(() => import("./pages/Admin"));
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
@@ -76,7 +78,7 @@ function Shell({ children }: { children: React.ReactNode }) {
                 <Icon name="telegram" size={12} />{tg?.linked ? "Telegram linked" : "Telegram not linked"}
               </div>
             </Link>
-            <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => { api("/auth/logout", { body: {} }).catch(() => {}).finally(() => { setToken(null); nav("/login"); }); }}>
+            <button className="icon-btn" title="Sign out" aria-label="Sign out" onClick={() => { api("/auth/logout", { body: {} }).catch(() => {}).finally(() => { forgetWalletSessions(); setToken(null); nav("/login"); }); }}>
               <Icon name="logout" size={15} />
             </button>
           </div>
@@ -104,10 +106,18 @@ function Shell({ children }: { children: React.ReactNode }) {
             {health ? "API online" : healthChecked ? "API unreachable" : "Checking API"}
           </span>
         </header>
-        <main className="content" id="main" tabIndex={-1}>{children}</main>
+        <main className="content" id="main" tabIndex={-1}><Suspense fallback={<div className="card"><Loading rows={4} /></div>}>{children}</Suspense></main>
       </div>
     </div>
   );
+}
+
+/** Signing out also forgets this browser's TON Connect and NEAR Connect sessions, so the next person to use the
+ * browser doesn't find a wallet already connected. The wallets themselves are untouched. */
+function forgetWalletSessions() {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith("helm-ton:") || k.startsWith("helm-near:")) localStorage.removeItem(k);
+  } catch { /* storage blocked */ }
 }
 
 function Private({ children }: { children: React.ReactNode }) {
@@ -141,7 +151,7 @@ export default function App() {
         <Route path="/profile" element={<Private><Profile /></Private>} />
         <Route path="/settings" element={<Private><Settings /></Private>} />
         <Route path="/admin" element={<Private><Admin /></Private>} />
-        <Route path="/u/:handle" element={<PublicProfile />} />
+        <Route path="/u/:handle" element={<Suspense fallback={null}><PublicProfile /></Suspense>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </SessionProvider>

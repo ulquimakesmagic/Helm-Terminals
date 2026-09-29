@@ -23,6 +23,17 @@ const sum = (items: unknown[], key: string) => items.reduce((s: number, x: any) 
 const fee = (v: unknown) => (typeof v === "string" && v ? v.charAt(0).toUpperCase() + v.slice(1) : "None");
 
 export function summarize(pre: any, network: string): ReviewSummary | null {
+  const s = summarizeKind(pre, network);
+  if (!s || !pre || pre.kind === "bridge" || (isExtraChain(pre.network) && s.label.startsWith("Send on"))) return s;
+  // Decisions depend on where the money moves: the network and (for token actions) the exact token contract lead the
+  // cells on every review, so they're never hidden in the full preview.
+  const chain = chainOf(pre.network ?? network);
+  const lead: [string, ReactNode][] = [["Network", chain.name]];
+  if (typeof pre.mint === "string" && pre.mint) lead.push(["Token", <span className="mono" title={pre.mint}>{short(pre.mint)}</span>]);
+  return { ...s, cells: [...lead, ...s.cells] };
+}
+
+function summarizeKind(pre: any, network: string): ReviewSummary | null {
   if (!pre) return null;
   const chain = chainOf(pre.network ?? network);
   const coin = typeof pre.coin === "string" ? pre.coin : chain.native;

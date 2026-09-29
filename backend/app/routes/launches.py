@@ -4,7 +4,9 @@ import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 from solders.pubkey import Pubkey
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +54,10 @@ def _launch_out(l: Launch) -> dict:
         "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
         "settings": _settings(l),
+        # set when a deploy was sent but not confirmed in time (EVM), and why a late check ended it
+        "deploy_tx": (l.launchpad_params or {}).get("evm_deploy_tx"),
+        "deploy_error": (l.launchpad_params or {}).get("deploy_error"),
+        "deploy_note": (l.launchpad_params or {}).get("deploy_note"),
     }
 
 
@@ -134,7 +140,9 @@ class CreateLaunch(BaseModel):
     symbol: str = Field(min_length=1, max_length=10)
     description: str = Field(default="", max_length=500)
     image_b64: str | None = None
-    socials: dict = Field(default_factory=dict)
+    # twitter, telegram, website: a handful of short strings, never an unbounded blob
+    socials: dict[Annotated[str, StringConstraints(max_length=32)], Annotated[str, StringConstraints(max_length=300)]] = \
+        Field(default_factory=dict, max_length=10)
     dev_wallet_id: str | None = None
     dev_buy_sol: float = Field(default=0.0, ge=0, le=100)
     slippage_pct: float = Field(default=10.0, ge=0, le=50)
@@ -310,6 +318,14 @@ async def attach_wallets(launch_id: str, body: AttachWallets, user: User = Depen
 @router.post("/launches/{launch_id}/archive")
 async def archive(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     l = await _owned_launch(db, user, launch_id)
+    if l.status == "deploying":
+        running = (await db.execute(select(Job.id).where(
+            Job.launch_id == l.id, Job.kind == "deploy", Job.status.in_(("pending", "submitted")),
+            Job.updated_at > utcnow() - STALE_JOB).limit(1))).first()
+        if running:  # the deploy job would write the launch's status after the archive
+            raise HTTPException(409, "the deploy is still running; archive it once it has finished")
+        # remembered so a restore can't turn it into a draft that could be deployed twice
+        l.launchpad_params = {**(l.launchpad_params or {}), "archived_while_deploying": True}
     l.status, l.archived_at = "archived", utcnow()
     await log_activity(db, user.id, "launch.archived", "launch", l.id)
     await db.commit()
@@ -321,7 +337,12 @@ async def restore(launch_id: str, user: User = Depends(current_user), db: AsyncS
     l = await _owned_launch(db, user, launch_id)
     if l.status != "archived":
         raise HTTPException(409, "launch is not archived")
-    l.status = "live" if l.mint_address else "draft"
+    params = l.launchpad_params or {}
+    if params.get("archived_while_deploying") and not l.deployed_at:
+        l.status = "deploying"  # its outcome was never settled; it must not become a deployable draft
+    else:
+        l.status = "live" if l.mint_address else "draft"
+    l.launchpad_params = {k: v for k, v in params.items() if k != "archived_while_deploying"}
     l.archived_at = None
     await db.commit()
     return _launch_out(l)
@@ -646,6 +667,9 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
 
         await extra_launch.recheck(l, db, ex, get_adapter(l.launchpad))
         return _launch_out(l)
+    if l.status == "deploying" and (l.launchpad_params or {}).get("evm_deploy_tx"):
+        await _recheck_evm_deploy(l, db, ex, user)
+        return _launch_out(l)
     if l.status != "deploying" or not l.mint_address or l.network != "solana":
         return _launch_out(l)
     try:
@@ -662,6 +686,45 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
     await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id, {"mint": l.mint_address})
     await db.commit()
     return _launch_out(l)
+
+
+# Token resolvers of EVM deploys that timed out, kept in this process so a late receipt can still name the token.
+_EVM_RESOLVERS: dict = {}
+DEPLOY_TRACKING = ("evm_deploy_tx", "unconfirmed_since", "predicted_token", "deploy_error", "deploy_note",
+                   "archived_while_deploying")
+
+
+async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: User) -> None:
+    """A single-transaction EVM deploy that timed out: only its receipt decides. Success makes it live, a revert makes
+    it failed. With no receipt it stays deploying: a transaction one node doesn't know can still be mined from another
+    node's mempool, so "not found" is never treated as failure."""
+    params = l.launchpad_params or {}
+    h = params["evm_deploy_tx"]
+    try:
+        receipt = await ex.evm(l.network).rpc.receipt(h)
+    except Exception:
+        return  # can't tell right now; ask again later
+    if not receipt:
+        return
+    if int(receipt.get("status") or "0x0", 16) != 1:
+        l.status = "failed"
+        l.launchpad_params = {**params, "deploy_error": "the deploy transaction reverted; nothing was created"}
+        await db.commit()
+        return
+    token = None
+    resolver = _EVM_RESOLVERS.pop(l.id, None)
+    if resolver:
+        try:
+            token = await resolver(receipt.get("logs") or [])
+        except Exception:
+            token = None
+    token = token or params.get("predicted_token") or receipt.get("contractAddress")
+    l.status, l.mint_address, l.deployed_at = "live", token, l.deployed_at or utcnow()
+    if not token:
+        l.launchpad_params = {**params, "deploy_error": "launched, but the token address couldn't be read; "
+                                                        "check the explorer"}
+    await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id, {"tx": h, "token": token})
+    await db.commit()
 
 
 class ClaimBody(SpendConfirm):
@@ -895,7 +958,7 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
 
 
 STALE_JOB = timedelta(minutes=15)  # far beyond any confirmation or route wait
-
+AWAITING_WALLET = {"external_transfer", "ton_transfer"}  # jobs waiting on the user's own wallet, not on Helm
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
@@ -904,7 +967,8 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
         raise HTTPException(404, "job not found")
     last_tx = (await db.execute(select(func.max(Transaction.created_at)).where(Transaction.job_id == j.id))).scalar()
     quiet_since = max(j.updated_at, last_tx) if last_tx else j.updated_at
-    if j.status in ("pending", "submitted") and quiet_since < utcnow() - STALE_JOB:
+    if j.status in ("pending", "submitted") and quiet_since < utcnow() - STALE_JOB \
+            and not (j.status == "pending" and j.kind in AWAITING_WALLET):  # nothing of Helm's was running
         # Work runs inside the API process; a restart (a deploy) mid-job stops it. Don't leave the user waiting
         # forever: say it's unconfirmed, and that the explorer is the source of truth.
         j.status = "unconfirmed"
@@ -913,7 +977,11 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
                     "Check the transactions on the explorer before trying again."}
         await db.commit()
     txs = (await db.execute(select(Transaction).where(Transaction.job_id == j.id))).scalars().all()
-    return {"id": j.id, "kind": j.kind, "status": j.status, "error": (j.params or {}).get("error"),
+    network = (j.params or {}).get("network")
+    if not network and txs and txs[0].wallet_id:
+        tw = await db.get(Wallet, txs[0].wallet_id)
+        network = tw.network if tw else None
+    return {"id": j.id, "kind": j.kind, "status": j.status, "error": (j.params or {}).get("error"), "network": network,
             "transactions": [{"id": t.id, "kind": t.kind, "status": t.status, "signature": t.signature,
                               "error": t.error} for t in txs]}
 
@@ -980,6 +1048,9 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     if created:
         prior_status = l.status
         l.status = "deploying"
+        # a new attempt: forget the previous attempt's hash, timers and errors so a recheck can't act on them
+        l.launchpad_params = {k: v for k, v in (l.launchpad_params or {}).items() if k not in DEPLOY_TRACKING}
+        _EVM_RESOLVERS.pop(l.id, None)
         await db.commit()
 
         async def work(session, j):
@@ -1010,11 +1081,27 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 token = await plan.resolve_token(getattr(res, "logs", None) or []) or token
             if res.status == "confirmed" and not token:
                 j.params = {**j.params, "error": "launched, but the token address couldn't be read; check the explorer"}
+            landed = (await session.execute(select(func.count()).select_from(Transaction).where(
+                Transaction.job_id == j.id, Transaction.kind.like("deploy%"),
+                Transaction.status == "confirmed"))).scalar_one()
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
                 await _note_creator_share(session, launch, j, share)
+            elif len(plan.steps) == 1 and res.status == "timeout" and res.signature:
+                # The one create transaction was sent but not confirmed in time: it may still land. Stay "deploying"
+                # (which can't be deployed again) and let /recheck read its receipt, so a retry never makes a second token.
+                launch.launchpad_params = {**(launch.launchpad_params or {}), "evm_deploy_tx": res.signature,
+                                           "unconfirmed_since": utcnow().isoformat(), "predicted_token": token}
+                if plan.resolve_token:
+                    _EVM_RESOLVERS[launch.id] = plan.resolve_token
+            elif res.status == "failed" and not landed:
+                launch.status = "failed"  # nothing of this deploy is on-chain: safe to retry
             else:
-                launch.status = "failed"
+                # Part of a multi-step deploy landed (the token may exist) or a step's outcome is unknown. Never
+                # "failed", which would allow a second deploy: it stays deploying for the owner to check.
+                launch.launchpad_params = {**(launch.launchpad_params or {}), "deploy_note": (
+                    "Part of this deploy was sent and its outcome isn't certain. Check the dev wallet's transactions on "
+                    "the explorer; don't deploy again. Archive the launch if it didn't work out.")}
             await session.commit()
 
         await run_job(job.id, work)

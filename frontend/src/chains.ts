@@ -53,6 +53,9 @@ export const EXTRA_CHAINS: Record<ExtraChainId, Chain> = {
   ton: { id: "ton", name: "TON", short: "TON", native: "TON", color: "#0098ea",
     explorer: { account: "https://tonviewer.com/", token: "https://tonviewer.com/", tx: "https://tonviewer.com/transaction/" } },
 };
+/** Every chain Helm can show, core first, in display order. Lists driven by launchpads or wallets filter this. */
+export const ALL_CHAIN_ORDER: string[] = [...CHAIN_ORDER, "tron", "near", "arc", "ton"];
+
 export const isExtraChain = (id: string | null | undefined): id is ExtraChainId => !!id && id in EXTRA_CHAINS;
 
 export const chainOf = (id: string | null | undefined): Chain =>

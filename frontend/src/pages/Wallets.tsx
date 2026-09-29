@@ -7,7 +7,7 @@ import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain } from "../chains";
 import {
-  Address, Callout, Empty, Field, Icon, Loading, LoadError, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, UnitInput, useToast,
+  Address, Callout, Empty, Field, Icon, LoadError, Loading, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, TableWrap, UnitInput, useToast,
 } from "../components/ui";
 
 interface W { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null; balance_sol?: number; balance_native?: string | null; stable?: number; stable_symbol?: string; usd?: number; coin_usd?: number | null; is_main?: boolean }
@@ -435,7 +435,7 @@ export default function Wallets() {
           <Empty icon="wallet" title="No wallets yet" text="Create managed wallets to launch and trade from, or add an address to watch."
             action={<button className="btn sm" onClick={() => setModal("create")}><Icon name="plus" size={14} />Add wallets</button>} />
         ) : shown.length === 0 ? <Empty icon="search" title="No wallets match" /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">Your wallets</caption>
             <thead><tr>
               <th className="cb"><input type="checkbox" checked={allShownSelected} aria-label="Select all"
@@ -479,7 +479,7 @@ export default function Wallets() {
                 );
               })}
             </tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </div>
 

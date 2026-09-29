@@ -439,7 +439,7 @@ def _user_columns():
 
 
 @router.get("/users")
-async def users(q: str | None = Query(None, max_length=120), sort: str = "created_at", order: str = "desc",
+async def users(request: Request, q: str | None = Query(None, max_length=120), sort: str = "created_at", order: str = "desc",
                 status: str | None = None, page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=100),
                 user: User = Depends(any_admin), db: AsyncSession = Depends(get_db)):
     full = user.admin_role == "superadmin"  # type: ignore[attr-defined]
@@ -483,6 +483,10 @@ async def users(q: str | None = Query(None, max_length=120), sort: str = "create
             "wallets": n_wal, "two_factor": u.totp_enabled,
             "flags": ([{"flag": "suspended", "reason": reason, "at": iso(changed)}] if st == "suspended" else []),
         })
+    if q:  # searches are audited (who searched and how many matched; not the search text, which may be an email)
+        await audit(db, user, "users.searched", changes={"results": total, "query_chars": len(q.strip())},
+                    request=request)
+        await db.commit()
     return {"total": total, "page": page, "size": size, "items": items, "timezone": "UTC"}
 
 

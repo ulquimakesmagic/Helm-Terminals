@@ -18,6 +18,7 @@ Tolly (Arc). No bonding curve: createToken mints the whole supply single-sided i
   github.com/TollyLabs/v3-contracts (bytecode-matched deployment for chain 5042).
 """
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -298,7 +299,11 @@ def icon_data_uri(image: bytes) -> str:
     """The 96x96 PNG data URI Meme.Cooking stores on-chain as the token icon."""
     from PIL import Image
 
-    im = Image.open(io.BytesIO(image)).convert("RGBA")
+    im = Image.open(io.BytesIO(image))
+    if im.width * im.height > 25_000_000:  # a token logo, not a decompression bomb (the header is read, not the pixels)
+        raise ValueError("the image is too large; use one under 5000 x 5000 pixels")
+    im.draft("RGBA", (192, 192))  # JPEGs decode at reduced size
+    im = im.convert("RGBA")
     im.thumbnail((96, 96))
     canvas = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
     canvas.paste(im, ((96 - im.width) // 2, (96 - im.height) // 2))
@@ -394,7 +399,10 @@ class MemeCooking:
             raise AdapterError("the soft cap must be above zero")
         if hard and hard <= soft:
             raise AdapterError("the hard cap must be above the soft cap")
-        icon = icon_data_uri(image)
+        try:  # decoded off the event loop, so a heavy image can't stall other requests
+            icon = await asyncio.to_thread(icon_data_uri, image)
+        except (ValueError, OSError) as e:
+            raise AdapterError(f"the token image couldn't be read: {e}")
         s = socials or {}
         meta = {"description": description or "", "twitterLink": s.get("twitter") or "",
                 "telegramLink": s.get("telegram") or "", "website": s.get("website") or "", "image": ""}

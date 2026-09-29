@@ -172,6 +172,11 @@ class Market:
             self._gecko_calls.append(now)
 
 
+def _https(url) -> str | None:
+    """A provider-supplied link is shown only if it's plain https (never javascript:, data: or http:)."""
+    return url if isinstance(url, str) and url.lower().startswith("https://") and len(url) < 500 else None
+
+
 def _same(a: str | None, b: str, network: str) -> bool:
     if not a:
         return False
@@ -203,7 +208,7 @@ def _pair(p: dict, token: str, network: str) -> dict:
     txns = p.get("txns") or {}
     windows = ("m5", "h1", "h6", "h24")
     return {
-        "pair_address": p.get("pairAddress"), "dex_id": p.get("dexId"), "url": p.get("url"),
+        "pair_address": p.get("pairAddress"), "dex_id": p.get("dexId"), "url": _https(p.get("url")),
         "labels": p.get("labels") or [], "token_side": side,
         "base": {"address": base.get("address"), "symbol": base.get("symbol"), "name": base.get("name")},
         "quote": {"address": quote.get("address"), "symbol": quote.get("symbol"), "name": quote.get("name")},

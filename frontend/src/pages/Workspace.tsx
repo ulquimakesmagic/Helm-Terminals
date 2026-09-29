@@ -9,8 +9,7 @@ import { DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
 import { ChainLabel, PadLabel } from "../components/marks";
 import {
-  Address, Callout, Card, Empty, Field, Icon, Metrics, Seg, Skeleton, Spinner, StatusBadge, TokenImage, UnitInput,
-  parseDate, relTime, useToast,
+  Address, Callout, Card, Empty, Field, Icon, Metrics, parseDate, relTime, Seg, Skeleton, Spinner, StatusBadge, TableWrap, TokenImage, UnitInput, useToast,
 } from "../components/ui";
 
 type Dialog = { title: string; path: string; body: Record<string, unknown> } | null;
@@ -155,7 +154,7 @@ export default function Workspace() {
     setRefreshing(true);
     try {
       let [w, all] = await Promise.all([api<any>(`/launches/${id}/workspace`), api<any[]>("/wallets")]);
-      if (w.launch.status === "deploying" && ((w.launch.mint_address && w.launch.network === "solana") || isExtraChain(w.launch.network))) {
+      if (w.launch.status === "deploying" && ((w.launch.mint_address && w.launch.network === "solana") || isExtraChain(w.launch.network) || w.launch.deploy_tx)) {
         // The create was sent but not confirmed in time: look for the token on-chain.
         const l = await api<any>(`/launches/${id}/recheck`, { body: {} }).catch(() => null);
         if (l && l.status !== "deploying") w = await api(`/launches/${id}/workspace`);
@@ -170,8 +169,11 @@ export default function Workspace() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
+    // Refresh every 10 s while the tab is visible; catch up at once when it comes back (saves RPC calls in the background).
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 10000);
+    const onVis = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [load]);
 
   if (!ws) {
@@ -223,7 +225,7 @@ export default function Workspace() {
             {ws.wallets.length === 0 ? (
               <Empty icon="wallet" title="No wallets attached" text={`Attach managed ${chain.name} wallets to trade this token and to count the supply you control.`} />
             ) : (
-              <div className="table-wrap"><table className="rtable">
+              <TableWrap><table className="rtable">
                 <caption className="sr-only">Wallets attached to this launch</caption>
                 <thead><tr>
                   <th className="cb"><input type="checkbox" checked={allSel} aria-label="Select all wallets" onChange={() => setSelected(allSel ? new Set() : new Set(ws.wallets.map((w: any) => w.id)))} /></th>
@@ -242,12 +244,12 @@ export default function Workspace() {
                   ))}
                 </tbody>
                 <tfoot><tr><td className="m-hide" /><td className="span">Total</td><td className="hide-sm" /><td className="r num">{fmt(totalSol, 4)}</td><td className="r num">{compact(totalTok)}</td>{supply > 0 && <td className="r num hide-sm">{fmt((totalTok / supply) * 100, 2)}%</td>}</tr></tfoot>
-              </table></div>
+              </table></TableWrap>
             )}
           </Card>
   );
   const ticketCard = live ? (
-            <Card title="Order ticket" icon="zap" sub="Manual orders from the selected wallets">
+            <Card id="order-ticket" title="Order ticket" icon="zap" sub="Manual orders from the selected wallets">
               <div className="stack">
                 <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={auction ? [["buy", "Deposit"], ["sell", "Withdraw"]] : [["buy", "Buy"], ["sell", "Sell"]]} />
                 {auction && <p className="muted small">Meme.Cooking is an auction: deposits count until the countdown ends; withdrawing before then costs 2%.</p>}
@@ -359,7 +361,7 @@ export default function Workspace() {
   const txCard = (
       <Card title="Transactions" icon="activity" flush sub="Latest 50 for this launch, newest first">
         {ws.transactions.length === 0 ? <Empty icon="activity" title="No transactions yet" text="Deploys, trades, claims and transfers for this token appear here." /> : (
-          <div className="table-wrap"><table>
+          <TableWrap><table>
             <caption className="sr-only">Transactions for this launch</caption>
             <thead><tr><th>Time</th><th>Type</th><th>Status</th><th className="r">{cur} change</th><th className="r">Transaction</th></tr></thead>
             <tbody>
@@ -373,7 +375,7 @@ export default function Workspace() {
                 </tr>
               ))}
             </tbody>
-          </table></div>
+          </table></TableWrap>
         )}
       </Card>
   );
@@ -420,6 +422,7 @@ export default function Workspace() {
               Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
+          {live && <button className="btn jump-trade" onClick={() => { const el = document.getElementById("order-ticket"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); el?.focus({ preventScroll: true }); }}><Icon name="zap" size={14} />Trade</button>}
           {live && !extra && <button className="btn secondary" onClick={() => { setTab("automation"); document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" }); }}><Icon name="calendar" size={14} />Automation</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
@@ -449,8 +452,11 @@ export default function Workspace() {
           </button>
         </div>
       )}
-      {l.status === "deploying" && (l.mint_address
-        ? <Callout tone="warn"><b>Sent, not confirmed yet.</b> The create transaction didn't confirm in time, so it may still land. Helm checks for the token every 10 seconds. Don't deploy again until this resolves; that would create a second token.</Callout>
+      {l.status === "failed" && l.deploy_error && <Callout tone="err">{l.deploy_error}.</Callout>}
+      {l.status === "deploying" && (l.mint_address || l.deploy_tx
+        ? <Callout tone="warn"><b>Sent, not confirmed yet.</b> The create transaction didn't confirm in time, so it may still land. Helm checks for the token every 10 seconds. Don't deploy again until this resolves; that would create a second token.
+          {l.deploy_tx && <> <a href={chain.explorer.tx + l.deploy_tx} target="_blank" rel="noreferrer noopener">View the deploy transaction<Icon name="ext" size={11} /></a></>}</Callout>
+        : l.deploy_note ? <Callout tone="warn"><b>Outcome not certain.</b> {l.deploy_note}</Callout>
         : <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>)}
 
       {terminal ? (

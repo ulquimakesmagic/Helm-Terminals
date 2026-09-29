@@ -9,6 +9,7 @@ against https://docs.turnkey.com before enabling this in production, and configu
 """
 
 import base64
+import logging
 import json
 import secrets
 import time
@@ -17,8 +18,10 @@ import httpx
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from .base import EVM_NETWORKS, SigningError, WalletRef, parse_private_key
+from .base import SigningError, WalletRef, parse_private_key
 from .turnkey_import import PRODUCTION_SIGNER_SIGN_PUBLIC_KEY, encrypt_private_key_to_bundle
+
+log = logging.getLogger(__name__)
 
 
 class TurnkeySigner:
@@ -67,7 +70,8 @@ class TurnkeySigner:
             headers={"Content-Type": "application/json", "X-Stamp": self.stamp(body)},
         )
         if r.status_code != 200:
-            raise SigningError(f"Turnkey {r.status_code}: {r.text[:300]}")
+            log.warning("Turnkey %s on %s: %s", r.status_code, path, r.text[:500])  # detail stays in server logs
+            raise SigningError(f"the signing service returned HTTP {r.status_code}; try again, or contact support")
         activity = r.json().get("activity", {})
         status = activity.get("status")
         if status == "ACTIVITY_STATUS_FAILED":
@@ -123,7 +127,8 @@ class TurnkeySigner:
             r = await self._client.post(f"{self.base_url}/public/v1/query/whoami", content=body,
                                         headers={"Content-Type": "application/json", "X-Stamp": self.stamp(body)})
             if r.status_code != 200:
-                raise SigningError(f"Turnkey {r.status_code}: {r.text[:300]}")
+                log.warning("Turnkey whoami %s: %s", r.status_code, r.text[:500])
+                raise SigningError(f"the signing service returned HTTP {r.status_code}; try again, or contact support")
             self._user_id = r.json().get("userId")
             if not self._user_id:
                 raise SigningError("Turnkey didn't say which user this API key belongs to")

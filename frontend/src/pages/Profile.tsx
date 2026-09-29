@@ -6,8 +6,7 @@ import { ChainMark, PadLabel } from "../components/marks";
 import ReferralCard from "../components/Referrals";
 import { AVATAR_HUES, avatarBg, Heatmap, PadBars, PadRow, ProfileAvatar } from "../components/profile";
 import {
-  Address, Callout, Card, CopyButton, Empty, Field, Icon, IconName, Loading, Modal, PageHeader, Skeleton,
-  Spinner, Stat, StatusBadge, parseDate, relTime, useToast,
+  Address, Callout, Card, CopyButton, Empty, Field, Icon, IconName, Loading, Modal, PageHeader, parseDate, relTime, Skeleton, Spinner, Stat, StatusBadge, TableWrap, useToast,
 } from "../components/ui";
 import { useSession } from "../session";
 
@@ -140,10 +139,10 @@ export default function Profile() {
           <div className="who">
             {!p || !d ? <><Skeleton h={24} w={200} /><Skeleton h={14} w={140} /></> : (
               <>
-                <h1>{p.display_name}
+                <h2 className="who-name">{p.display_name}
                   <span className={`badge ${p.is_public ? "info" : ""}`}><Icon name={p.is_public ? "eye" : "eyeoff"} size={12} />{p.is_public ? "Public" : "Private"}</span>
                   {d.account.totp_enabled && <span className="badge good"><Icon name="shield" size={12} />2FA</span>}
-                </h1>
+                </h2>
                 <div className="handle">{p.handle ? `@${p.handle}` : "No handle yet"} · {d.account.email}</div>
                 {p.bio ? <p className="bio">{p.bio}</p> : <p className="muted small">Add a bio so people know what you build.</p>}
                 <div className="meta">
@@ -192,7 +191,7 @@ export default function Profile() {
 
           <Card title="Recent launches" icon="rocket" flush actions={<Link to="/launches" className="btn sm ghost">All<Icon name="arrowright" size={13} /></Link>}>
             {!d ? <Loading /> : d.recent_launches.length === 0 ? <Empty icon="rocket" title="Nothing launched yet" /> : (
-              <div className="table-wrap"><table>
+              <TableWrap><table>
                 <thead><tr><th>Token</th><th>Launchpad</th><th>Status</th><th className="hide-sm">Mint</th></tr></thead>
                 <tbody>
                   {d.recent_launches.map((l) => (
@@ -205,7 +204,7 @@ export default function Profile() {
                     </tr>
                   ))}
                 </tbody>
-              </table></div>
+              </table></TableWrap>
             )}
           </Card>
         </div>

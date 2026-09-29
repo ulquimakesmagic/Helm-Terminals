@@ -3,7 +3,26 @@
 from html import escape
 
 MAX_LIST = 12
-SOLSCAN = "https://solscan.io"
+# Explorer links per network: (transaction prefix, token prefix). Unknown networks get the hash without a link.
+EXPLORERS = {
+    "solana": ("https://solscan.io/tx/", "https://solscan.io/token/"),
+    "base": ("https://basescan.org/tx/", "https://basescan.org/token/"),
+    "bsc": ("https://bscscan.com/tx/", "https://bscscan.com/token/"),
+    "ethereum": ("https://etherscan.io/tx/", "https://etherscan.io/token/"),
+    "robinhood": ("https://robinhoodchain.blockscout.com/tx/", "https://robinhoodchain.blockscout.com/token/"),
+    "tron": ("https://tronscan.org/transaction/", "https://tronscan.org/token20/"),
+    "near": ("https://nearblocks.io/txns/", "https://nearblocks.io/token/"),
+    "arc": ("https://explorer.arc.io/tx/", "https://explorer.arc.io/token/"),
+    "ton": ("https://tonviewer.com/transaction/", "https://tonviewer.com/"),
+}
+
+
+def _link(network: str | None, kind: int, value: str) -> str:
+    """An explorer link for a transaction (kind 0) or token (kind 1), or just the short value when unknown."""
+    prefix = EXPLORERS.get(network or "", (None, None))[kind]
+    if not prefix:
+        return f"<code>{e(short(value))}</code>"
+    return f"<a href=\"{prefix}{e(value)}\">{e(short(value))}</a>"
 
 
 def e(v: object) -> str:
@@ -60,7 +79,7 @@ def render_workspace(ws: dict, section: str = "all") -> str:
     l = ws["launch"]
     head = f"<b>{e(l['name'])}</b> ${e(l['symbol'])}  [{e(l['status'])}]"
     if l.get("mint_address"):
-        head += f"\n<a href=\"{SOLSCAN}/token/{e(l['mint_address'])}\">{e(short(l['mint_address']))}</a>"
+        head += "\n" + _link(l.get("network") or "solana", 1, l["mint_address"])
     lines = [head]
     if ws.get("rpc_error"):
         lines.append(f"⚠️ Chain data partly unavailable: {e(ws['rpc_error'])}")
@@ -107,13 +126,15 @@ def render_preflight(title: str, pf: dict, requires_2fa: bool) -> str:
 
 
 def render_job(job: dict) -> str:
-    icon = {"confirmed": "✅", "failed": "❌", "partial": "⚠️"}.get(job["status"], "⏳")
+    icon = {"confirmed": "✅", "failed": "❌", "partial": "⚠️", "unconfirmed": "❓"}.get(job["status"], "⏳")
     lines = [f"{icon} <b>{e(job['kind'])}</b>: {e(job['status'])}"]
     if job.get("error"):
         lines.append(e(job["error"]))
+    if job["status"] == "unconfirmed":
+        lines.append("It may still land. Check the transaction on the explorer before trying again.")
     for t in job.get("transactions", [])[:MAX_LIST]:
         if t.get("signature"):
-            lines.append(f"  {e(t['kind'])} · {e(t['status'])} · <a href=\"{SOLSCAN}/tx/{e(t['signature'])}\">{e(short(t['signature']))}</a>")
+            lines.append(f"  {e(t['kind'])} · {e(t['status'])} · {_link(job.get('network'), 0, t['signature'])}")
         else:
             lines.append(f"  {e(t['kind'])} · {e(t['status'])} {e(t.get('error') or '')}")
     lines.append(f"\nJob <code>{e(job['id'])}</code>")

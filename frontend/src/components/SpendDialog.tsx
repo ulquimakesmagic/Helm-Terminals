@@ -2,7 +2,9 @@ import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg, fmt } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import { ReviewHero, summarize } from "./review";
-import { Address, Callout, Icon, Modal, Spinner, StatusBadge } from "./ui";
+import {
+  Address, Callout, Icon, Modal, Spinner, StatusBadge, TableWrap,
+} from "./ui";
 
 type Phase = "loading" | "review" | "submitting" | "polling" | "done" | "error";
 
@@ -276,7 +278,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
           </div>
           {job.error && <Callout tone="err">{job.error}</Callout>}
           <div className="card" style={{ background: "var(--bg-2)" }}>
-            <div className="table-wrap"><table>
+            <TableWrap><table>
               <tbody>
                 {job.transactions.map((t: any) => (
                   <tr key={t.id}>
@@ -289,7 +291,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
                   </tr>
                 ))}
               </tbody>
-            </table></div>
+            </table></TableWrap>
           </div>
         </>
       )}

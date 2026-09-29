@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errMsg, fmt, short } from "../api";
 import { chainOf } from "../chains";
 import SpendDialog from "./SpendDialog";
-import { Address, Callout, Card, Empty, Field, Icon, Loading, Seg, Spinner, useToast } from "./ui";
+import {
+  Address, Callout, Card, Empty, Field, Icon, Loading, Seg, Spinner, TableWrap, useToast,
+} from "./ui";
 
 /* Allocation & vesting plan, supply dispersal to a folder, and the launchpad's real launch protections. */
 
@@ -87,7 +89,7 @@ export default function Allocations({ launch, wallets, onChanged }: {
             : <span className={`badge ${remaining.startsWith("-") ? "bad" : "warn"}`}>{remaining.startsWith("-") ? `Over by ${Number(remaining.slice(1)).toLocaleString()}` : `${Number(remaining).toLocaleString()} unallocated`}</span>}
         </div>}>
         {!editing ? (v.rows.length === 0 ? <Empty icon="pie" title="No allocation plan yet" text="List where the supply goes: public sale or curve, team, treasury and so on, with unlock schedules." /> : (
-          <div className="table-wrap"><table className="rtable">
+          <TableWrap><table className="rtable">
             <caption className="sr-only">Supply allocation</caption>
             <thead><tr><th>Allocation</th><th className="r">Amount</th><th className="r">Supply</th><th>Unlock</th><th className="hide-sm">Holds now</th></tr></thead>
             <tbody>{v.rows.map((r) => (
@@ -103,7 +105,7 @@ export default function Allocations({ launch, wallets, onChanged }: {
                   <div className="muted">{fmt(r.unlocked_now_pct ?? 0, 1)}% unlocked now{r.lock ? (r.lock_enforced ? " · locked by Helm" : " · lock (not enforceable)") : " · declared"}</div></td>
                 <td className="hide-sm mono small">{r.balance_now == null ? "—" : Number(r.balance_now).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
               </tr>))}</tbody>
-          </table></div>
+          </table></TableWrap>
         )) : (
           <div className="stack" style={{ padding: 14 }}>
             {rows!.map((r, i) => {

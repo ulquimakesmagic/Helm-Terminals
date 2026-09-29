@@ -68,6 +68,11 @@ def check_production_config(s) -> None:
     # existing 2FA secrets unreadable, so that must be a planned migration, not something a deploy forces.
     if not s.secret_key or s.secret_key == DEFAULT_SECRET:
         raise RuntimeError("ENV=production needs SECRET_KEY set to a long random value, not the default")
+    if not (getattr(s, "superadmin_user_id", "") or "").strip():
+        # Not fatal (the owner may not have signed up yet), but without the pin the superadmin role goes to whichever
+        # account first signs in with the designated email, and emails aren't verified.
+        logging.getLogger("helm.security").warning(
+            "SUPERADMIN_USER_ID is not set: pin the owner's user ID so the admin role can't be claimed by email")
 
 
 def create_app() -> FastAPI:

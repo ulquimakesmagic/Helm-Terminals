@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, fmt, short } from "../api";
 import { chainOf, explorerUrl } from "../chains";
-import { Callout, Card, Empty, Field, Icon, Loading, Seg, Spinner, StatusBadge, UnitInput, parseDate, useToast } from "./ui";
+import {
+  Callout, Card, Empty, Field, Icon, Loading, parseDate, Seg, Spinner, StatusBadge, TableWrap, UnitInput, useToast,
+} from "./ui";
 
 /* Position plans for one launch: finite scheduled accumulation or staged exits from one wallet you pick. */
 
@@ -43,7 +45,7 @@ export default function LaunchAutomation({ launchId, network, symbol, wallets, l
   const load = useCallback(() => {
     api<Plan[]>(`/launches/${launchId}/automations`).then((p) => { setPlans(p); setErr(""); }).catch((e) => setErr(errMsg(e)));
   }, [launchId]);
-  useEffect(() => { load(); const t = setInterval(load, 15_000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { load(); const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 15_000); return () => clearInterval(t); }, [load]);
   const active = plans?.find((p) => ACTIVE.has(p.status));
   const act = (id: string, verb: "pause" | "resume" | "cancel") =>
     api(`/automations/${id}/${verb}`, { body: {} }).then(() => { toast("good", `Plan ${verb === "cancel" ? "cancelled" : verb + "d"}`); load(); })
@@ -59,7 +61,7 @@ export default function LaunchAutomation({ launchId, network, symbol, wallets, l
       {err && !plans ? <Callout tone="err">{err}</Callout> : !plans ? <Loading /> : (
         <Card title="Plans" icon="calendar" sub={`${plans.length} for $${symbol}`} flush>
           {plans.length === 0 ? <Empty icon="calendar" title="No plans yet" text={live ? "Create one below." : "Plans start once the token is live."} /> : (
-            <div className="table-wrap"><table className="rtable">
+            <TableWrap><table className="rtable">
               <caption className="sr-only">Position plans</caption>
               <thead><tr><th>Plan</th><th>Progress</th><th>Limits</th><th>Next</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>{plans.map((p) => {
@@ -87,7 +89,7 @@ export default function LaunchAutomation({ launchId, network, symbol, wallets, l
                   </tr>
                 );
               })}</tbody>
-            </table></div>
+            </table></TableWrap>
           )}
         </Card>
       )}
