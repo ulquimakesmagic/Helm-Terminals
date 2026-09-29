@@ -174,6 +174,48 @@ def check_transaction(tx: dict, *, owner: str, to: str | None = None, amount: in
         raise AdapterError("the transaction allows a higher energy fee than the preview; not signing it")
 
 
+def check_call(tx: dict, *, owner: str, contract: str, data: bytes, call_value: int, max_fee_limit: int) -> None:
+    """Refuse (AdapterError) unless the node-built transaction is exactly this contract call: same caller,
+    contract, calldata and TRX value, no TRC-10 attached, and an energy fee cap no higher than the preview's."""
+    raw_hex = tx.get("raw_data_hex") or ""
+    try:
+        raw = bytes.fromhex(raw_hex)
+    except ValueError:
+        raise AdapterError("the TRON node returned a malformed transaction")
+    if hashlib.sha256(raw).hexdigest() != (tx.get("txID") or "").lower():
+        raise AdapterError("the TRON node's transaction id doesn't match its contents; not signing it")
+    try:
+        f = pb_fields(raw)
+        contracts = f.get(11, [])
+        if len(contracts) != 1:
+            raise ValueError("expected one contract")
+        c = pb_fields(contracts[0])
+        ctype = c.get(1, [0])[0]
+        inner = pb_fields(pb_fields(c[2][0])[2][0])
+        expiration_ms = f.get(8, [0])[0]
+        fee_limit = f.get(18, [0])[0]
+    except (ValueError, KeyError, IndexError):
+        raise AdapterError("the TRON node returned a transaction Helm couldn't read; not signing it")
+    if (ctype != TRIGGER_TYPE or inner.get(1, [b""])[0] != decode_address(owner)
+            or inner.get(2, [b""])[0] != decode_address(contract) or inner.get(3, [0])[0] != call_value
+            or inner.get(5, [0])[0] or inner.get(6, [0])[0] or inner.get(4, [b""])[0] != data):
+        raise AdapterError("the transaction doesn't match the contract call in the preview; not signing it")
+    if expiration_ms and expiration_ms < time.time() * 1000:
+        raise AdapterError("the TRON node returned an already expired transaction")
+    if fee_limit > max_fee_limit:
+        raise AdapterError("the transaction allows a higher energy fee than the preview; not signing it")
+
+
+def event_logs(info: dict, topic0: str) -> list[dict]:
+    """Logs in a solidified receipt whose first topic is `topic0` (hex, no 0x)."""
+    return [lg for lg in (info.get("log") or []) if (lg.get("topics") or [""])[0].lower() == topic0.lower()]
+
+
+def address_from_word(word_hex: str) -> str:
+    """A TRON address from a 32-byte ABI word (or 20-byte hex) as found in logs and return data."""
+    return encode_address(b"\x41" + bytes.fromhex(word_hex[-40:]))
+
+
 # --- client --------------------------------------------------------------------------------------------
 
 
@@ -232,10 +274,11 @@ class TronClient:
         r = await self._req("GET", "/wallet/getchainparameters")
         return {p["key"]: int(p.get("value", 0)) for p in r.get("chainParameter", []) if "key" in p}
 
-    async def constant(self, owner: str, contract: str, selector: str, parameter: str = "") -> dict:
+    async def constant(self, owner: str, contract: str, selector: str, parameter: str = "",
+                       call_value: int = 0) -> dict:
         r = await self.post("/wallet/triggerconstantcontract", {
             "owner_address": owner, "contract_address": contract, "function_selector": selector,
-            "parameter": parameter, "visible": True})
+            "parameter": parameter, "visible": True, **({"call_value": call_value} if call_value else {})})
         if not (r.get("result") or {}).get("result"):
             msg = (r.get("result") or {}).get("message") or "call failed"
             raise AdapterError(f"TRON contract call failed: {_readable(msg)}")
@@ -274,6 +317,17 @@ class TronClient:
         tx = r.get("transaction") or {}
         if not (r.get("result") or {}).get("result") or not tx.get("raw_data_hex"):
             raise AdapterError(f"the TRON node couldn't build the token transfer: "
+                               f"{_readable((r.get('result') or {}).get('message', 'no transaction'))}")
+        return tx
+
+    async def build_call(self, owner: str, contract: str, selector: str, parameter: str, call_value: int,
+                         fee_limit: int) -> dict:
+        r = await self.post("/wallet/triggersmartcontract", {
+            "owner_address": owner, "contract_address": contract, "function_selector": selector,
+            "parameter": parameter, "fee_limit": fee_limit, "call_value": call_value, "visible": True})
+        tx = r.get("transaction") or {}
+        if not (r.get("result") or {}).get("result") or not tx.get("raw_data_hex"):
+            raise AdapterError(f"the TRON node couldn't build the call: "
                                f"{_readable((r.get('result') or {}).get('message', 'no transaction'))}")
         return tx
 

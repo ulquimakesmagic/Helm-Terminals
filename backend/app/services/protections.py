@@ -32,6 +32,21 @@ SPECIFIC = {
     }],
 }
 SPECIFIC["clanker-robinhood"] = SPECIFIC["clanker"]
+SPECIFIC["tolly"] = [{
+    "id": "anti_snipe_max_wallet", "label": "Anti-snipe max wallet", "available": True, "configurable": False,
+    "options": [],
+    "effect": "For the first 5 minutes after launch no wallet may hold more than 3% of supply (Tolly's contract).",
+    "fee": "None.",
+    "source": "TollyPad.MAX_WALLET / antiSnipeSeconds (TollyLabs/v3-contracts)",
+}]
+SPECIFIC["meme-cooking"] = [{
+    "id": "fair_auction", "label": "Fair-launch auction", "available": True, "configurable": True,
+    "options": ["duration_h", "soft_cap_near", "hard_cap_near"],
+    "effect": "Everyone deposits during the countdown and gets the same price; withdrawing early costs 2%, which "
+              "goes to those who stay. Below the soft cap everyone is refunded.",
+    "fee": "Meme.Cooking's own deposit and withdrawal fees. No Helm fee.",
+    "source": "docs.meme.cooking (How it works)",
+}]
 
 
 def protections_for(launchpad: str) -> dict:

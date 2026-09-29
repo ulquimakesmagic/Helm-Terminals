@@ -42,6 +42,8 @@ const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: bool
   "launchpads/printr": { fit: "fill" }, "launchpads/pons": { fit: "fill" }, "launchpads/surge": { fit: "fill" },
   "launchpads/anoncoin": { fit: "fill" }, "launchpads/bags": { fit: "fill" }, "launchpads/stonkfun": { fit: "fill" },
   "launchpads/clanker": { fit: "fill" }, "launchpads/letsbonk": { fit: "fill", round: true },
+  "launchpads/sunpump": { fit: "fill", round: true }, "launchpads/meme-cooking": { fit: "fill", round: true },
+  "launchpads/tolly": { fit: "fill" }, "launchpads/gaspump": { fit: "fill" },
 };
 
 const reported = new Set<string>();

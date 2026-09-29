@@ -267,7 +267,8 @@ async def test_new_networks_are_off_unless_enabled_and_mainnets_need_an_opt_in(c
     listed = {n["id"]: n for n in (await client.get("/chains")).json()["extra"]}
     assert listed["tron-nile"]["enabled"] and not listed["tron"]["enabled"] and not listed["arc"]["enabled"]
     assert listed["arc-testnet"]["chain_id"] == 5042002 and listed["arc"]["chain_id"] == 5042
-    assert "launches" in listed["tron"]["capabilities"] and listed["tron"]["capabilities"]["launches"].startswith("no")
+    assert listed["tron"]["capabilities"]["launches"].startswith("yes")
+    assert listed["tron-nile"]["capabilities"]["launches"].startswith("no")
     assert (await client.post("/wallets", json={"network": "tron", "count": 1}, headers=h)).status_code == 400
     monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
     assert (await client.get("/chains")).json()["extra"][0]["enabled"] is True  # tron mainnet, now opted in
@@ -544,12 +545,14 @@ async def test_amounts_and_recipients_are_validated(client, extra):
 
 
 async def test_launches_swaps_and_market_data_stay_unavailable(client, extra):
-    pads = (await client.get("/launchpads")).json()
-    assert not any(p["network"] in ("tron-nile", "near-testnet", "arc-testnet", "tron", "near", "arc") for p in pads)
+    pads = {p["id"]: p["network"] for p in (await client.get("/launchpads")).json() if p["status"] != "planned"}
+    assert {pads["sunpump"], pads["meme-cooking"], pads["tolly"]} == {"tron", "near", "arc"}
+    assert not any(n in ("tron-nile", "near-testnet", "arc-testnet", "ton", "ton-testnet") for n in pads.values())
     caps = {n["id"]: n["capabilities"] for n in (await client.get("/chains")).json()["extra"]}
     for net in caps:
-        for k in ("launches", "swaps", "market_data", "cross_chain"):
+        for k in ("market_data", "cross_chain"):
             assert caps[net][k].startswith("no"), (net, k)
+        assert caps[net]["launches"].startswith("yes" if net in ("tron", "near", "arc") else "no"), net
 
 
 # --- review fixes: never report a possibly-landed transfer as failed, and never resend blindly -----------------

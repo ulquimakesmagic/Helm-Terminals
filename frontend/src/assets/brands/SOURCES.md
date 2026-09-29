@@ -53,6 +53,10 @@ the official sites couldn't be read from the build environment. They're shown un
 | `launchpads/stonkfun.jpg` | stonkfun | Pale-blue "S" of two linked shapes on near-black | bd1c5736… |
 | `launchpads/clanker.jpg` | clanker, clanker-robinhood | Three rising purple bars on white (as in Clanker's header) | ba0a7eb8… |
 | `launchpads/letsbonk.jpg` | letsbonk | Orange dog with a bat on an orange circle | 1dd633b8… |
+| `launchpads/sunpump.jpg` | sunpump | Owner-supplied (400×400 JPEG, unchanged): orange sun with sunglasses | 7a322e72… |
+| `launchpads/meme-cooking.jpg` | meme-cooking | Owner-supplied (400×400 JPEG, unchanged): chef dog on a teal badge | 269bdd1e… |
+| `launchpads/tolly.jpg` | tolly | Owner-supplied (400×400 JPEG, unchanged): lime castle bridge on black | db823fed… |
+| `launchpads/gaspump.jpg` | gaspump (planned) | Owner-supplied (400×400 JPEG, unchanged): red fuel pump on blue | 361b4b04… |
 
 Every supported launchpad now has a logo.
 

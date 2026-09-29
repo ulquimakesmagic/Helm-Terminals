@@ -328,8 +328,8 @@ export default function Launches() {
         ]} />
         <div className="chips">
           <button className={`chip ${chainF === "all" ? "on" : ""}`} aria-pressed={chainF === "all"} onClick={() => setChainF("all")}>All chains</button>
-          {CHAIN_ORDER.map((c) => (
-            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c)}><ChainMark network={c} size={16} />{CHAINS[c].name}</button>
+          {[...CHAIN_ORDER, ...["tron", "near", "arc"].filter((n) => pads.some((p) => p.network === n))].map((c) => (
+            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c as ChainId)}><ChainMark network={c} size={16} />{chainOf(c).name}</button>
           ))}
         </div>
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>

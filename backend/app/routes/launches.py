@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
 from ..chains.evm import EVM_CHAINS, WEI, EvmRPCUnavailable
-from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, list_launchpads, needs_setup
+from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, is_extra, list_launchpads, needs_setup
 from ..chains.solana import (
     LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
     token_transfer_checked_ix,
@@ -392,6 +392,12 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         raise HTTPException(400, "set a dev wallet before deploying")
     dev = await owned_wallet(db, user, l.dev_wallet_id)
     adapter = get_adapter(l.launchpad)
+    if is_extra(adapter):  # SunPump, Meme.Cooking, Tolly
+        from ..services import extra_launch
+
+        if (reason := needs_setup(l.launchpad)):
+            raise HTTPException(400, reason)
+        return await extra_launch.deploy(l, body, user, db, ex, dev, adapter)
     if is_evm(adapter):
         return await _deploy_evm(l, body, user, db, ex, dev, adapter)
     bal = await rpc.get_balance(dev.address)
@@ -520,7 +526,8 @@ async def _attached_wallets(db: AsyncSession, user: User, launch: Launch, ids: l
     out = []
     for wid in ids:
         w = await owned_wallet(db, user, wid)
-        _core_only(w.network)
+        if not (w.network == launch.network and is_extra(get_adapter(launch.launchpad))):
+            _core_only(w.network)
         if await db.get(LaunchWallet, (launch.id, wid)) is None:
             raise HTTPException(400, f"wallet {wid} is not attached to this launch")
         out.append(w)
@@ -540,6 +547,10 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
     if body.side == "sell" and body.amount > 100:
         raise HTTPException(400, "sell amount is a percentage (1-100)")
     wallets = await _attached_wallets(db, user, l, body.wallet_ids)
+    if is_extra(get_adapter(l.launchpad)):
+        from ..services import extra_launch
+
+        return await extra_launch.trade(l, body, user, db, ex, wallets, get_adapter(l.launchpad))
     if l.network in EVM_CHAINS:
         return await _trade_evm(l, body, user, db, ex, wallets)
     s = get_settings()
@@ -627,9 +638,14 @@ async def _balances(rpc: SolanaRPC, addresses: list[str]) -> list[int]:
 
 @router.post("/launches/{launch_id}/recheck")
 async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                         rpc: SolanaRPC = Depends(get_rpc)):
+                         rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
     """For a Solana deploy that was sent but not confirmed in time: look for the token on-chain."""
     l = await _owned_launch(db, user, launch_id)
+    if l.launchpad in IMPLEMENTED and is_extra(get_adapter(l.launchpad)):
+        from ..services import extra_launch
+
+        await extra_launch.recheck(l, db, ex, get_adapter(l.launchpad))
+        return _launch_out(l)
     if l.status != "deploying" or not l.mint_address or l.network != "solana":
         return _launch_out(l)
     try:
@@ -659,8 +675,16 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
         return prior
     l = await _owned_launch(db, user, launch_id)
     w = await owned_wallet(db, user, body.wallet_id)
-    _core_only(w.network)
     adapter = get_adapter(l.launchpad)
+    if is_extra(adapter):
+        from ..services import extra_launch
+
+        if w.network != l.network:
+            raise HTTPException(400, f"that wallet is on {w.network}, not {l.network}")
+        if l.status != "live" or not l.mint_address:
+            raise HTTPException(409, "launch is not live")
+        return await extra_launch.claim(l, body, user, db, ex, w, adapter)
+    _core_only(w.network)
     pf = build_preflight("claim_fees", {"launch_id": l.id, "wallet": w.address, "platform_fee": "none"})
     if not body.confirm:
         return pf
@@ -808,6 +832,18 @@ async def workspace(launch_id: str, user: User = Depends(current_user), db: Asyn
     links = (await db.execute(select(LaunchWallet).where(LaunchWallet.launch_id == l.id))).scalars().all()
     wallets = [await db.get(Wallet, lk.wallet_id) for lk in links]
     out: dict = {"launch": _launch_out(l), "wallets": [], "transactions": [], "transparency": None, "rpc_error": None}
+    if is_extra(get_adapter(l.launchpad)):
+        from ..services import extra_launch
+
+        out.update(await extra_launch.workspace(l, ex, links, wallets))
+        txs = (await db.execute(
+            select(Transaction).join(Job, Job.id == Transaction.job_id).where(Job.launch_id == l.id)
+            .order_by(Transaction.created_at.desc()).limit(50))).scalars().all()
+        out["transactions"] = [{"id": t.id, "kind": t.kind, "status": t.status, "signature": t.signature,
+                                "error": t.error, "sol_delta": 0, "created_at": t.created_at.isoformat()} for t in txs]
+        out["pnl"] = {"net_sol_flow": 0, "confirmed_txs": 0,
+                      "note": "Net flow isn't tracked on this network yet. Wallet balances above are live."}
+        return out
     controlled: dict[str, int] = {}
     decimals = 6
     evm = l.network in EVM_CHAINS

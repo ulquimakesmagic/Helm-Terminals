@@ -36,7 +36,17 @@ def _net_out(n) -> dict:
     return {"id": n.id, "family": n.family, "name": n.name, "testnet": n.testnet, "native": n.native,
             "decimals": n.decimals, "chain_id": n.chain_id, "network_id": n.network_id, "explorer": n.explorer,
             "notes": n.notes,
-            "enabled": n.id in extra_enabled(), "capabilities": CAPABILITIES[n.family], "sources": SOURCES[n.family]}
+            "enabled": n.id in extra_enabled(), "capabilities": _caps(n), "sources": SOURCES[n.family]}
+
+
+def _caps(n) -> dict:
+    """The family's capabilities; launchpads are integrated on mainnets only, so testnets say so."""
+    caps = dict(CAPABILITIES[n.family])
+    if n.testnet:
+        for k in ("launches", "swaps"):
+            if not caps[k].startswith("no"):
+                caps[k] = "no: launchpads are integrated on mainnet only"
+    return caps
 
 
 @router.get("/chains")

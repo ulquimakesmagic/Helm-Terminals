@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
-import { chainOf, explorerUrl } from "../chains";
+import { chainOf, explorerUrl, isExtraChain } from "../chains";
 import MarketTerminal from "../components/Market";
 import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
@@ -155,7 +155,7 @@ export default function Workspace() {
     setRefreshing(true);
     try {
       let [w, all] = await Promise.all([api<any>(`/launches/${id}/workspace`), api<any[]>("/wallets")]);
-      if (w.launch.status === "deploying" && w.launch.mint_address && w.launch.network === "solana") {
+      if (w.launch.status === "deploying" && ((w.launch.mint_address && w.launch.network === "solana") || isExtraChain(w.launch.network))) {
         // The create was sent but not confirmed in time: look for the token on-chain.
         const l = await api<any>(`/launches/${id}/recheck`, { body: {} }).catch(() => null);
         if (l && l.status !== "deploying") w = await api(`/launches/${id}/workspace`);
@@ -188,6 +188,9 @@ export default function Workspace() {
   const chain = chainOf(l.network);
   const cur = chain.native;
   const live = l.status === "live";
+  // TRON, NEAR and Arc launches: no market-data provider, no launch plans; Meme.Cooking trades are auction deposits.
+  const extra = isExtraChain(l.network);
+  const auction = l.launchpad === "meme-cooking";
   const sel = [...selected];
   const toggle = (wid: string) => setSelected((s) => { const n = new Set(s); n.has(wid) ? n.delete(wid) : n.add(wid); return n; });
   const attached = new Set(ws.wallets.map((w: any) => w.id));
@@ -246,8 +249,9 @@ export default function Workspace() {
   const ticketCard = live ? (
             <Card title="Order ticket" icon="zap" sub="Manual orders from the selected wallets">
               <div className="stack">
-                <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={[["buy", "Buy"], ["sell", "Sell"]]} />
-                <Field label={side === "buy" ? `Spend per wallet` : "Sell from each wallet"} extra={side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
+                <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={auction ? [["buy", "Deposit"], ["sell", "Withdraw"]] : [["buy", "Buy"], ["sell", "Sell"]]} />
+                {auction && <p className="muted small">Meme.Cooking is an auction: deposits count until the countdown ends; withdrawing before then costs 2%.</p>}
+                <Field label={side === "buy" ? (auction ? "Deposit per wallet" : `Spend per wallet`) : (auction ? "Withdraw from each wallet's deposit" : "Sell from each wallet")} extra={side === "sell" && auction ? "percent of each wallet's deposit" : side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
                   <UnitInput unit={side === "buy" ? cur : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </Field>
                 <div className="chips" role="group" aria-label="Preset amounts">
@@ -274,7 +278,7 @@ export default function Workspace() {
                   </div>
                 )}
                 <button className={`btn lg block ${side}`} disabled={!sel.length || !(amt > 0) || (side === "sell" && amt > 100)} onClick={() => setDialog({
-                  title: `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
+                  title: auction ? `${side === "buy" ? "Deposit into" : "Withdraw from"} the $${l.symbol} auction` : `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
                   body: { side, wallet_ids: sel, amount: amt, mode, stagger_ms: +stagger, slippage_pct: +slippage },
                 })}>
                   {sel.length ? `Review ${side} · ${sel.length} wallet${sel.length === 1 ? "" : "s"}` : "Select wallets to trade"}
@@ -290,7 +294,20 @@ export default function Workspace() {
           )}
     </>
   );
-  const opsCard = live ? (
+  const opsCard = live && extra ? (auction ? (
+            <Card title="Claim" icon="coins" sub="After the auction ends">
+              <div className="stack">
+                <p className="muted small">Once the countdown ends, claim your share of the tokens, or your NEAR back if the soft cap wasn't reached.</p>
+                <Field label="Wallet">
+                  <select value={claimWallet} onChange={(e) => setClaimWallet(e.target.value)}>
+                    <option value="">Choose a wallet…</option>
+                    {ws.wallets.map((w: any) => <option key={w.id} value={w.id}>{w.label || short(w.address)}</option>)}
+                  </select>
+                </Field>
+                <button className="btn block" disabled={!claimWallet} onClick={() => setDialog({ title: "Claim tokens or refund", path: `/launches/${id}/claim-fees`, body: { wallet_id: claimWallet } })}>
+                  <Icon name="coins" size={15} />Review claim</button>
+              </div>
+            </Card>) : null) : live ? (
             <Card title="Token operations" icon="layers" sub="Claim, burn or send from your wallets">
               <div className="stack">
                 <Seg full value={op} onChange={setOp} options={[["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"]]} />
@@ -403,7 +420,7 @@ export default function Workspace() {
               Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
-          {live && <button className="btn secondary" onClick={() => { setTab("automation"); document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" }); }}><Icon name="calendar" size={14} />Automation</button>}
+          {live && !extra && <button className="btn secondary" onClick={() => { setTab("automation"); document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" }); }}><Icon name="calendar" size={14} />Automation</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
@@ -438,15 +455,26 @@ export default function Workspace() {
 
       {terminal ? (
         <>
-          <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} ticket={ticketCard} />
+          {extra ? (
+            <div className="grid g-main">
+              <div className="col">
+                <Card title="Market" icon="trend" sub={chain.name}>
+                  <div className="stack tight">
+                    <p className="muted small">{ws.market_note}</p>
+                    {ws.explorer?.token && <a href={ws.explorer.token} target="_blank" rel="noreferrer noopener">View the token on the explorer <Icon name="ext" size={11} /></a>}
+                  </div>
+                </Card>
+              </div>
+              <div className="col">{ticketCard}</div>
+            </div>
+          ) : <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} ticket={ticketCard} />}
           <section className="your-position" aria-labelledby="pos-h">
             <h2 id="pos-h" className="sec-kicker"><Icon name="wallet" size={12} />Your position · from your Helm wallets</h2>
             {position}
           </section>
           <WsTabs on={tab} setOn={setTab} tabs={[
             ["wallets", `Wallets${ws.wallets.length ? ` · ${ws.wallets.length}` : ""}`, walletsCard],
-            ["automation", "Automation", automationCard],
-            ["allocations", "Allocation & vesting", allocationsCard],
+            ...(extra ? [] : [["automation", "Automation", automationCard], ["allocations", "Allocation & vesting", allocationsCard]] as [string, string, React.ReactNode][]),
             ["tx", `Transactions${ws.transactions.length ? ` · ${ws.transactions.length}` : ""}`, txCard],
             ["supply", "Holders", transparencyCard],
             ...(opsCard ? [["ops", "Token operations", opsCard] as [string, string, React.ReactNode]] : []),
@@ -463,7 +491,7 @@ export default function Workspace() {
           </div>
           <section aria-labelledby="alloc-h" className="stack">
             <h2 id="alloc-h" className="sec-kicker"><Icon name="pie" size={12} />Allocation, vesting and launch protections</h2>
-            {allocationsCard}
+            {extra ? <p className="muted small">Allocation plans aren't available on {chain.name} yet.</p> : allocationsCard}
           </section>
           {txCard}
         </>

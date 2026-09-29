@@ -208,6 +208,23 @@ def outcome_status(result: dict) -> tuple[str, str | None]:
 async def sign_and_send(client: NearClient, signer, signer_ref: str, signer_id: str, pubkey32: bytes,
                         receiver_id: str, actions: list[bytes]) -> tuple[str | None, str, str | None]:
     """(tx hash base58, status, error). Nonce and a recent final block hash are read fresh for each send."""
+    h, status, err, _ = await sign_and_send_result(client, signer, signer_ref, signer_id, pubkey32, receiver_id, actions)
+    return h, status, err
+
+
+def success_value(result: dict) -> object:
+    """The JSON value the last action returned (e.g. a new meme's id), or None."""
+    v = ((result or {}).get("status") or {}).get("SuccessValue")
+    if not v:
+        return None
+    try:
+        return json.loads(base64.b64decode(v))
+    except ValueError:
+        return None
+
+
+async def sign_and_send_result(client: NearClient, signer, signer_ref: str, signer_id: str, pubkey32: bytes,
+                               receiver_id: str, actions: list[bytes]) -> tuple[str | None, str, str | None, dict]:
     key = await client.access_key(signer_id, pubkey32)
     nonce = int(key["nonce"]) + 1
     block_hash = await client.final_block_hash()
@@ -221,10 +238,10 @@ async def sign_and_send(client: NearClient, signer, signer_ref: str, signer_id: 
     except AdapterError as e:
         text = str(e)
         if "TIMEOUT" in text.upper() or "outcome unknown" in text:
-            return h, "timeout", "sent, not final yet; check the explorer before retrying"
+            return h, "timeout", "sent, not final yet; check the explorer before retrying", {}
         if any(k in text for k in ("INVALID_TRANSACTION", "InvalidNonce", "NotEnoughBalance", "LackBalanceForState",
                                    "INVALID_SIGNATURE", "EXPIRED_TRANSACTION")):
-            return None, "failed", f"rejected by the network: {text[:200]}"
-        return h, "timeout", f"the result is unknown ({text[:120]}); check the explorer before retrying"
+            return None, "failed", f"rejected by the network: {text[:200]}", {}
+        return h, "timeout", f"the result is unknown ({text[:120]}); check the explorer before retrying", {}
     status, err = outcome_status(result)
-    return h, status, err
+    return h, status, err, result

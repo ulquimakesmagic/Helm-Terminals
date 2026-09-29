@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     ton_testnet_rpc_url: str = ""
     toncenter_api_key: str = ""  # X-API-Key; without it toncenter allows 1 request a second
     ton_proof_domains: str = ""  # hosts a TON Connect proof may name; default: helmterminals.xyz + CORS_ORIGINS hosts
+    pinata_jwt: str = ""  # Pinata API JWT: pins Meme.Cooking token images and metadata to IPFS
     extra_rpc_timeout_s: float = Field(default=15.0, gt=0, le=60)
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"
