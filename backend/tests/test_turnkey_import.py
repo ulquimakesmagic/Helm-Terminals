@@ -72,11 +72,15 @@ class FakeTurnkey:
             p = body["parameters"]
             enc = json.loads(p["encryptedBundle"])
             self.received = hpke_decrypt(self.target, enc["encappedPublic"], enc["ciphertext"])
+            self.formats = p["addressFormats"]
             if p["curve"] == "CURVE_ED25519":
                 address = str(Keypair.from_seed(self.received).pubkey())
             else:
                 from eth_keys import keys
                 address = keys.PrivateKey(self.received).public_key.to_checksum_address()
+                if p["addressFormats"] == ["ADDRESS_FORMAT_TRON"]:
+                    from app.chains.tron import address_from_evm
+                    address = address_from_evm(address)
             return httpx.Response(200, json={"activity": {"status": "ACTIVITY_STATUS_COMPLETED", "result": {
                 "importPrivateKeyResult": {"privateKeyId": "pk-imported",
                                            "addresses": [{"address": self.address_override or address}]}}}})
@@ -97,6 +101,25 @@ async def test_solana_and_evm_keys_reach_the_enclave_intact():
     assert tk.received == bytes(kp)[:32]  # the 32-byte seed, as Turnkey expects for ed25519
     ref = await tk.signer().import_wallet("u1", "base", "0x" + "44" * 32)
     assert tk.received == bytes.fromhex("44" * 32) and ref.address.startswith("0x")
+
+
+async def test_tron_arc_and_near_keys_import_in_their_own_formats(monkeypatch):
+    """TronLink's hex key becomes the TRON address, Arc's the EVM one, and a NEAR wallet's ed25519:… key its implicit
+    account. Addresses come from TronWeb, ethers and near-js vectors (see tests/data/wallet_vectors.json)."""
+    from app.chains import near
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "extra_networks", "tron-nile,near-testnet,arc-testnet,ton-testnet")
+    tk = FakeTurnkey()
+    ref = await tk.signer().import_wallet("u1", "tron-nile", "11" * 32)
+    assert ref.address == "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ" and tk.formats == ["ADDRESS_FORMAT_TRON"]
+    ref = await tk.signer().import_wallet("u1", "arc-testnet", "0x" + "11" * 32)
+    assert ref.address == "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A" and tk.formats == ["ADDRESS_FORMAT_ETHEREUM"]
+    kp = Keypair.from_seed(bytes([7]) * 32)
+    ref = await tk.signer().import_wallet("u1", "near-testnet", "ed25519:" + near._b58(bytes(kp)))
+    assert tk.received == bytes([7]) * 32 and ref.address == bytes(kp.pubkey()).hex()
+    with pytest.raises(SigningError, match="TON"):
+        await tk.signer().import_wallet("u1", "ton-testnet", "11" * 32)
 
 
 async def test_import_refuses_an_unverified_or_mismatched_bundle():

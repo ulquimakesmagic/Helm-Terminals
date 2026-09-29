@@ -190,3 +190,13 @@ export async function forgetWallet(net: NetInfo, userId: string) {
 }
 
 export const WALLET_APP: Record<string, string> = { tron: "TronLink", evm: "a browser EVM wallet", near: "a NEAR wallet", ton: "a TON wallet" };
+
+/** Link the user's own wallet: connect, sign Helm's one-time challenge, and have Helm verify it. Links, never spends. */
+export async function linkOwnWallet(net: NetInfo, userId: string): Promise<void> {
+  const { api } = await import("../api");
+  const address = await connectWallet(net, userId);
+  const ch = await api<any>(`/chains/${net.id}/wallet-proof/challenge`, { body: { address, domain: window.location.host } });
+  const sig: any = await signChallenge(net, userId, ch.address, ch);
+  await api(`/chains/${net.id}/wallet-proof/verify`, { body: { address: sig.signed_as ?? ch.address, domain: window.location.host,
+    nonce: ch.nonce, signature: sig.signature, public_key: sig.public_key ?? null, chain_id: sig.chain_id ?? null } });
+}

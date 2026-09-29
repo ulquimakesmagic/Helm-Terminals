@@ -132,10 +132,13 @@ class TurnkeySigner:
     async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
         """Import through Turnkey's encrypted flow: the key is encrypted to Turnkey's signer enclave (after checking the
         enclave's signature on the target), so Turnkey's API servers never see it in the clear."""
-        evm = network in EVM_NETWORKS
-        if network != "solana" and not evm:
-            raise SigningError(f"Turnkey signer doesn't support {network}")
-        raw, address = parse_private_key(network, secret)
+        from .base import family
+
+        fam = family(network)
+        raw, address = parse_private_key(network, secret)  # refuses TON and anything that isn't a key
+        evm = fam in ("evm", "tron")  # secp256k1
+        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "tron": "ADDRESS_FORMAT_TRON",
+                          "solana": "ADDRESS_FORMAT_SOLANA", "near": "ADDRESS_FORMAT_SOLANA"}[fam]
         tk_user = await self._whoami()
         init = await self._submit("/public/v1/submit/init_import_private_key", "ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY",
                                   {"userId": tk_user})
@@ -149,13 +152,17 @@ class TurnkeySigner:
             "privateKeyName": f"helm:{user_id}:{network}:import:{secrets.token_hex(3)}"[:100],
             "encryptedBundle": encrypted,
             "curve": "CURVE_SECP256K1" if evm else "CURVE_ED25519",
-            "addressFormats": ["ADDRESS_FORMAT_ETHEREUM" if evm else "ADDRESS_FORMAT_SOLANA"],
+            "addressFormats": [address_format],
         })
         found = _find(result, "importPrivateKeyResult") or {}
         got = ((found.get("addresses") or [{}])[0]).get("address")
         if not found.get("privateKeyId") or not got:
             raise SigningError("Turnkey imported no key (unexpected response shape)")
-        if (got.lower() if evm else got) != (address.lower() if evm else address):
+        if fam == "near":
+            from ..chains.near import implicit_from_solana_style
+
+            got = implicit_from_solana_style(got)
+        if (got.lower() if fam == "evm" else got) != (address.lower() if fam == "evm" else address):
             raise SigningError("Turnkey's address for the imported key doesn't match the key's own address")
         return WalletRef(signer_ref=found["privateKeyId"], address=address)
 

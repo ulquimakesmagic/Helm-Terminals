@@ -207,7 +207,12 @@ async def import_wallet(body: ImportWallet, user: User = Depends(web_user), db: 
         raise HTTPException(401, "totp_required: enter your 2FA code to import a wallet")
     evm = body.network in EVM_CHAINS
     if body.network != "solana" and not evm:
-        raise HTTPException(400, f"unsupported network {body.network}")
+        from ..chains.networks import EXTRA_NETWORKS, require_enabled
+
+        if body.network not in EXTRA_NETWORKS:
+            raise HTTPException(400, f"unsupported network {body.network}")
+        if require_enabled(body.network).family == "ton":
+            raise HTTPException(400, "Helm doesn't hold TON keys: connect your own wallet with TON Connect instead")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     networks = list(EVM_CHAINS) if evm and body.all_evm else [body.network]

@@ -297,13 +297,34 @@ async def test_managed_wallets_use_each_networks_own_address_format(client, extr
     assert r.status_code == 400 and "own transfer" in r.json()["detail"]
 
 
-async def test_importing_keys_on_new_networks_is_refused(client, extra):
+async def test_importing_keys_on_tron_near_and_arc(client, extra, monkeypatch):
+    """A key exported from TronLink, an EVM wallet or a NEAR wallet can be imported (password and 2FA, like any
+    import); the wallet lands on that one network with the key's own address. TON keys are never taken."""
+    from solders.keypair import Keypair
+
+    from app.chains import near
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "extra_networks", "tron-nile,near-testnet,arc-testnet,ton-testnet")
     h = await signup(client, main=False)
     secret = await enable_2fa(client, h)
-    r = await client.post("/wallets/import", json={"network": "tron-nile", "private_key": "11" * 32,
-                                                   "password": "correct-horse-battery",
-                                                   "totp": await totp_code(secret)}, headers=h)
-    assert r.status_code in (400, 501)
+    kp = Keypair.from_seed(bytes([7]) * 32)
+    cases = [("tron-nile", "11" * 32, "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ"),
+             ("arc-testnet", "0x" + "11" * 32, "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A"),
+             ("near-testnet", "ed25519:" + near._b58(bytes(kp)), bytes(kp.pubkey()).hex())]
+    for net, key, address in cases:
+        r = await client.post("/wallets/import", json={"network": net, "private_key": key, "all_evm": True,
+                                                       "password": "correct-horse-battery",
+                                                       "totp": await totp_code(secret)}, headers=h)
+        assert r.status_code == 201, r.text
+        out = r.json()
+        assert [(w["network"], w["address"], w["kind"]) for w in out] == [(net, address, "managed")]
+        assert "signer_ref" not in out[0] and key not in r.text
+    for net, key in (("ton-testnet", "11" * 32), ("near-testnet", "ed25519:notakey"), ("tron-nile", "zz" * 32)):
+        r = await client.post("/wallets/import", json={"network": net, "private_key": key, "password": "correct-horse-battery",
+                                                       "totp": await totp_code(secret)}, headers=h)
+        assert r.status_code == 400, (net, r.text)
+        assert key not in r.text
 
 
 # --- balances, metadata, history ----------------------------------------------------------------------------

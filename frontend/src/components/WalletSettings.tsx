@@ -47,12 +47,7 @@ export default function WalletSettings() {
     setLinkErr(""); setBusy("link");
     try {
       const c = await connectors();
-      const n = { id: net.id, name: net.name, family: net.family, testnet: net.testnet, chain_id: net.chain_id };
-      const address = await c.connectWallet(n, me.id);
-      const ch = await api<any>(`/chains/${net.id}/wallet-proof/challenge`, { body: { address, domain: window.location.host } });
-      const sig: any = await c.signChallenge(n, me.id, ch.address, ch);
-      await api(`/chains/${net.id}/wallet-proof/verify`, { body: { address: sig.signed_as ?? ch.address, domain: window.location.host,
-        nonce: ch.nonce, signature: sig.signature, public_key: sig.public_key ?? null, chain_id: sig.chain_id ?? null } });
+      await c.linkOwnWallet({ id: net.id, name: net.name, family: net.family, testnet: net.testnet, chain_id: net.chain_id }, me.id);
       toast("good", `${net.name} wallet linked`);
       await load();
     } catch (e: any) { setLinkErr(e?.message ?? errMsg(e)); } finally { setBusy(""); }

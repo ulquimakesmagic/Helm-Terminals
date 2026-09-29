@@ -11,7 +11,7 @@ from solders.keypair import Keypair
 
 from eth_keys import keys as eth_keys
 
-from .base import EVM_NETWORKS, SigningError, WalletRef, parse_private_key
+from .base import EVM_NETWORKS, SigningError, WalletRef, parse_private_key  # noqa: F401
 
 PREFIX = "local:"
 EVM_PREFIX = "local-evm:"
@@ -44,10 +44,11 @@ class LocalDevSigner:
 
     async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
         """Take custody of an existing key the user pasted. The key is only ever held encrypted, like created ones."""
-        if network not in EVM_NETWORKS and network != "solana":
-            raise SigningError(f"LocalDevSigner doesn't support {network}")
+        from .base import family
+
+        fam = family(network)  # parse_private_key refuses TON
         raw, address = parse_private_key(network, secret)
-        if network in EVM_NETWORKS:
+        if fam in ("evm", "tron"):
             return WalletRef(signer_ref=EVM_PREFIX + self._f.encrypt(raw).decode(), address=address)
         return WalletRef(signer_ref=PREFIX + self._f.encrypt(bytes(Keypair.from_seed(raw))).decode(), address=address)
 
