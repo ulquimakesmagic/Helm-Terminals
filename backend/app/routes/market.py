@@ -49,7 +49,7 @@ async def launch_market(launch_id: str, user: User = Depends(current_user), db: 
     try:
         res = await market.snapshot(network, token)
     except MarketError as e:
-        return {**base, "state": "error", "error_kind": e.kind, "error": str(e), "pool": None, "metrics": None}
+        return {**base, "state": "error", **e.details(), "pool": None, "metrics": None}
     return {**base, **res}
 
 

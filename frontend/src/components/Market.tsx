@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg } from "../api";
 import { chainOf } from "../chains";
 import GmgnChart from "./GmgnChart";
@@ -9,7 +9,7 @@ const WINS: [Win, string][] = [["m5", "5m"], ["h1", "1h"], ["h6", "6h"], ["h24",
 interface MarketRes {
   state: "ok" | "no_pool" | "no_token" | "unsupported" | "not_configured" | "error";
   network: string; token: string | null; whose: "launch" | "source"; symbol?: string;
-  fetched_at?: number; stale?: boolean; error?: string; error_kind?: string; explorer_url?: string; gmgn_url?: string;
+  fetched_at?: number; stale?: boolean; error?: string; error_kind?: string; retry_after_s?: number; explorer_url?: string; gmgn_url?: string;
   pool: { address: string; dex: string | null; quote_address: string | null; quote_symbol: string | null; liquidity_usd: number | null } | null;
   metrics: { price_usd: number | null; holder_count: number | null; price_change: Record<Win, number | null>;
     volume_usd: Record<Win, number | null>; txns: Record<Win, { buys: number | null; sells: number | null; swaps: number | null }> } | null;
@@ -34,25 +34,34 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [retryAt, setRetryAt] = useState(0);
+  const nextRequestAt = useRef(0);
   const [win, setWin] = useState<Win>("h24");
+  useEffect(() => {
+    nextRequestAt.current = 0; setRetryAt(0); setRes(null); setError("");
+  }, [launchId, network, token]);
   useEffect(() => {
     let active = true, inFlight = false, pollable = true;
     const load = async () => {
-      if (inFlight) return;
+      if (inFlight || Date.now() < nextRequestAt.current) return;
       inFlight = true; setBusy(true);
       try {
         const data = await api<MarketRes>(`/launches/${launchId}/market`);
         if (!active) return;
         setRes(data); setError(""); setNow(Date.now());
+        const delay = Number.isFinite(data.retry_after_s) ? Math.max(0, data.retry_after_s ?? 0) : 0;
+        nextRequestAt.current = delay ? Date.now() + delay * 1000 : 0;
+        setRetryAt(nextRequestAt.current);
         pollable = !["unsupported", "no_token", "not_configured"].includes(data.state);
       } catch (e) { if (active) setError(errMsg(e)); }
       finally { inFlight = false; if (active) setBusy(false); }
     };
     void load();
     const poll = setInterval(() => { if (pollable && document.visibilityState === "visible") void load(); }, 60000);
-    const clock = setInterval(() => setNow(Date.now()), 15000);
+    const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => { active = false; clearInterval(poll); clearInterval(clock); };
   }, [launchId, network, token, revision]);
+  const retrySeconds = Math.max(0, Math.ceil((retryAt - now) / 1000));
   const age = res?.fetched_at ? now / 1000 - res.fetched_at : 0;
   const expired = age > 300;
   const stale = !!res?.stale || !!error || age > 90;
@@ -69,7 +78,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   if (error) notice = <Callout tone="warn"><b>Market refresh failed.</b> {error}{res?.fetched_at && " The last response is marked stale."}</Callout>;
   else if (res?.state === "not_configured") notice = <Callout icon="info"><b>GMGN market metrics need setup.</b> The platform operator needs to connect GMGN API access. The chart is loaded independently.</Callout>;
   else if (res?.state === "unsupported") notice = <Callout icon="globe">GMGN's documented token-data API does not cover {chainOf(chartNetwork).name}. Wallets and Helm trading remain available where supported.</Callout>;
-  else if (res?.state === "error" || res?.stale) notice = <Callout tone="warn"><b>{res.stale ? "Showing previously fetched GMGN data." : "GMGN metrics are unavailable."}</b> {res.error}</Callout>;
+  else if (res?.state === "error" || res?.stale) notice = <Callout tone="warn"><b>{res.error_kind === "access_denied" ? "GMGN access needs attention." : res.stale ? "Showing previously fetched GMGN data." : "GMGN metrics are unavailable."}</b> {res.error}{retrySeconds > 0 && <> Retry available at {new Date(retryAt).toLocaleTimeString()}.</>}</Callout>;
   else if (res?.state === "no_pool") notice = <Callout icon="radar"><b>No indexed main pool yet.</b> Pool details appear when GMGN indexes an eligible pool. A new token may have chart activity before a DEX pool is reported.{explorer && <> <a href={explorer} target="_blank" rel="noreferrer">View token on explorer</a></>}</Callout>;
 
   return <section className={`term terminal-view-${mobileView}`} aria-label="GMGN market">
@@ -89,8 +98,8 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
         <span className={`fresh ${stale || expired ? "stale" : ""}`}>
           {res?.fetched_at ? `${expired ? "Expired · " : stale ? "Stale · " : ""}GMGN metrics fetched ${new Date(res.fetched_at * 1000).toLocaleTimeString()}` : "GMGN metrics · awaiting data"}
         </span>
-        <button className="btn sm ghost" onClick={() => setRevision((r) => r + 1)} disabled={busy} aria-label="Refresh market data">
-          {busy ? <Spinner /> : <Icon name="refresh" size={13} />}Refresh
+        <button className="btn sm ghost" onClick={() => setRevision((r) => r + 1)} disabled={busy || retrySeconds > 0} aria-label={retrySeconds > 0 ? `Refresh available in ${retrySeconds} seconds` : "Refresh market data"}>
+          {busy ? <Spinner /> : <Icon name="refresh" size={13} />}{retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Refresh"}
         </button>
       </div>
     </div>

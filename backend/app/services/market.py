@@ -5,6 +5,7 @@ Candles are rendered by GMGN's hosted embed, never constructed from market snaps
 """
 
 import asyncio
+import logging
 import math
 import re
 import time
@@ -24,12 +25,18 @@ API_CHAIN = {"solana": "sol", "bsc": "bsc", "base": "base", "ethereum": "eth",
 CHART_CHAIN = {"solana": "sol", "bsc": "bsc", "ethereum": "eth"}
 CACHE_TTL, STALE_MAX, ERROR_TTL, CACHE_LIMIT = 60, 300, 15, 256
 WINDOWS = {"m5": "5m", "h1": "1h", "h6": "6h", "h24": "24h"}
+log = logging.getLogger(__name__)
 
 
 class MarketError(Exception):
-    def __init__(self, kind: str, message: str) -> None:
+    def __init__(self, kind: str, message: str, *, retry_until: float = 0) -> None:
         super().__init__(message)
         self.kind = kind
+        self.retry_until = retry_until
+
+    def details(self) -> dict:
+        return {"error_kind": self.kind, "error": str(self),
+                "retry_after_s": max(0, math.ceil(self.retry_until - time.monotonic()))}
 
 
 def valid_address(network: str, token: str) -> bool:
@@ -120,6 +127,7 @@ class Market:
     _inflight: dict = field(default_factory=dict)
     _calls: deque = field(default_factory=deque)
     _backoff_until: float = 0
+    _backoff_error: MarketError | None = None
 
     def __post_init__(self):
         # GMGN documents IPv4 only. Fixed origin and no redirects protect the server credential.
@@ -136,7 +144,22 @@ class Market:
 
     def _answer(self, entry, stale=False):
         return {**entry.value, "stale": stale, "age_s": round(time.monotonic() - entry.at),
-                **({"error": str(entry.error), "error_kind": entry.error.kind} if stale and entry.error else {})}
+                **(entry.error.details() if stale and entry.error else {})}
+
+    def _pause(self, error: MarketError, delay: float) -> MarketError:
+        # Preserve the cause for every token, including cached/stale responses.
+        error.retry_until = time.monotonic() + delay
+        self._backoff_until, self._backoff_error = error.retry_until, error
+        return error
+
+    def _diagnostic(self, kind: str, response=None, envelope=None):
+        # Never log provider messages, URLs, headers, tokens or exception text.
+        code = (envelope or {}).get("code")
+        code_text = str(code)
+        safe_code = code_text if re.fullmatch(r"-?\d{1,6}", code_text) and code_text != self.api_key else "unreported"
+        log.warning("gmgn_market_failure category=%s http_status=%s provider_code=%s response_format=%s",
+                    kind, response.status_code if response is not None else "none", safe_code,
+                    "json" if envelope is not None else "non_json")
 
     async def snapshot(self, network: str, token: str) -> dict:
         if network not in API_CHAIN:
@@ -157,7 +180,8 @@ class Market:
                 return self._answer(entry)
         if key not in self._inflight:
             if len(self._inflight) >= 32:
-                raise MarketError("rate_limited", "Market data requests are busy. Try again shortly.")
+                raise MarketError("busy", "Market data requests are busy. Try again shortly.",
+                                  retry_until=now + ERROR_TTL)
             task = asyncio.create_task(self._load(key, network, token))
             self._inflight[key] = task
             def done(t):
@@ -179,8 +203,10 @@ class Market:
             entry = _Entry(time.monotonic(), {**result, "fetched_at": time.time()})
         except MarketError as exc:
             old = self._cache.get(key)
+            if not exc.retry_until:
+                exc.retry_until = time.monotonic() + ERROR_TTL
             entry = _Entry(old.at if old else time.monotonic(), old.value if old else None,
-                           exc, time.monotonic() + ERROR_TTL)
+                           exc, exc.retry_until)
             self._remember(key, entry)
             if entry.value and time.monotonic() - entry.at < STALE_MAX:
                 return self._answer(entry, stale=True)
@@ -190,18 +216,21 @@ class Market:
 
     async def _get(self, chain, token):
         now = time.monotonic()
-        if now < self._backoff_until:
-            raise MarketError("rate_limited", "GMGN requests are cooling down. Please try again later.")
+        if self._backoff_error and now < self._backoff_until:
+            raise self._backoff_error
+        self._backoff_error = None
         while self._calls and now - self._calls[0] >= 60:
             self._calls.popleft()
         if len(self._calls) >= get_settings().gmgn_requests_per_minute:
-            raise MarketError("rate_limited", "Helm's GMGN request budget is reached. Updates will resume shortly.")
+            raise MarketError("request_budget", "Helm's GMGN request budget is reached. Updates will resume shortly.",
+                              retry_until=self._calls[0] + 60)
         self._calls.append(now)
         try:
             response = await self.client.get(f"{GMGN_API}/v1/token/info",
                 params={"chain": chain, "address": token, "timestamp": int(time.time()), "client_id": str(uuid4())},
                 headers={"X-APIKEY": self.api_key, "Accept": "application/json", "User-Agent": "HelmTerminals/1.0"})
         except httpx.HTTPError:
+            self._diagnostic("unavailable")
             raise MarketError("unavailable", "GMGN could not be reached. Please try again later.") from None
         try:
             body = response.json()
@@ -211,13 +240,14 @@ class Market:
         if response.status_code == 429 or str(envelope.get("code")) == "429" or str(envelope.get("error")) in {"RATE_LIMIT_EXCEEDED", "RATE_LIMIT_BANNED"}:
             reset = max(_num(response.headers.get("x-ratelimit-reset")) or 0, _num(envelope.get("reset_at")) or 0)
             delay = max(60, reset - time.time(), _num(response.headers.get("retry-after")) or 0)
-            self._backoff_until = time.monotonic() + delay
-            raise MarketError("rate_limited", "GMGN has paused requests due to its rate limit. Updates will resume after the cooldown.")
+            self._diagnostic("rate_limited", response, body if isinstance(body, dict) else None)
+            raise self._pause(MarketError("rate_limited", "GMGN has paused requests due to its rate limit. Updates will resume after the cooldown."), delay)
         if response.status_code in (401, 403) or str(envelope.get("code")) in {"401", "403"}:
-            self._backoff_until = time.monotonic() + 60
-            raise MarketError("access_denied", "GMGN market-data access is unavailable. The operator needs to check the API key and plan.")
+            self._diagnostic("access_denied", response, body if isinstance(body, dict) else None)
+            raise self._pause(MarketError("access_denied", "GMGN denied market-data access. The operator needs to check the backend API key, read permissions, plan and any server IP restrictions."), 60)
         if response.status_code >= 300 or not isinstance(body, dict) or body.get("code") != 0 or "data" not in body:
             # Provider bodies can echo secrets or internal addresses; never return them to a user.
+            self._diagnostic("unavailable", response, body if isinstance(body, dict) else None)
             raise MarketError("unavailable", "GMGN did not return market data. Please try again later.")
         return body["data"]
 

@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import time
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx
@@ -169,7 +170,8 @@ async def test_requests_coalesce_and_budget_is_shared(provider, monkeypatch):
     assert all(r["state"] == "ok" for r in results) and len(p.requests) == 1
     with pytest.raises(MarketError) as error:
         await m.snapshot("solana", QUOTE)
-    assert error.value.kind == "rate_limited" and len(p.requests) == 1
+    assert error.value.kind == "request_budget" and len(p.requests) == 1
+    assert 0 < error.value.details()["retry_after_s"] <= 60
 
 
 async def test_chain_mapping_address_validation_and_case_sensitive_cache(provider):
@@ -228,3 +230,98 @@ async def test_cache_is_bounded(provider, monkeypatch):
         p.data = token_data(token)
         await m.snapshot("solana", token)
     assert len(m._cache) == 2 and ("solana", TOKEN) not in m._cache
+
+
+@pytest.mark.parametrize("status,code", [(401, 0), (403, 0), (200, 401), (200, "403")])
+async def test_access_denial_survives_cooldown_across_tokens_and_recovers(client, provider, monkeypatch, caplog, status, code):
+    p, m = provider
+    clock = [time.monotonic()]
+    monkeypatch.setattr(mk, "time", SimpleNamespace(monotonic=lambda: clock[0], time=time.time))
+    p.status, p.code = status, code
+    h, lid = await launch(client)
+    first = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+    assert first["error_kind"] == "access_denied" and first["retry_after_s"] == 60
+    clock[0] += 20  # Beyond the old 15-second negative cache: the original regression.
+    second = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+    assert second["error_kind"] == "access_denied" and second["retry_after_s"] == 40
+    assert second["error"] == first["error"]
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", QUOTE)
+    assert caught.value.kind == "access_denied"
+    assert caught.value.details()["retry_after_s"] == 40
+    assert len(p.requests) == 1
+    logs = [r for r in caplog.records if r.name == "app.services.market"]
+    assert len(logs) == 1 and f"http_status={status}" in logs[0].message
+    assert "test-only-secret" not in logs[0].message
+    clock[0] += 41
+    p.status, p.code = 200, 0
+    recovered = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+    assert recovered["state"] == "ok" and "error_kind" not in recovered
+    assert len(p.requests) == 2 and m._backoff_error is None
+
+
+async def test_stale_access_error_keeps_cause_and_retry_until_success(provider, monkeypatch):
+    p, m = provider
+    clock = [time.monotonic()]
+    monkeypatch.setattr(mk, "time", SimpleNamespace(monotonic=lambda: clock[0], time=time.time))
+    await m.snapshot("solana", TOKEN)
+    clock[0] += 65
+    p.status = 403
+    stale = await m.snapshot("solana", TOKEN)
+    assert stale["stale"] and stale["error_kind"] == "access_denied" and stale["retry_after_s"] == 60
+    clock[0] += 20
+    stale = await m.snapshot("solana", TOKEN)
+    assert stale["metrics"]["price_usd"] == 120 and stale["retry_after_s"] == 40
+    assert stale["error_kind"] == "access_denied" and len(p.requests) == 2
+    clock[0] += 300
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "access_denied"  # Expired metrics are no longer exposed.
+
+
+async def test_genuine_rate_limit_exposes_retry_delay_and_recovers(provider, monkeypatch):
+    p, m = provider
+    clock = [time.monotonic()]
+    monkeypatch.setattr(mk, "time", SimpleNamespace(monotonic=lambda: clock[0], time=time.time))
+    p.status, p.headers = 429, {"retry-after": "120"}
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "rate_limited" and caught.value.details()["retry_after_s"] == 120
+    clock[0] += 70
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", QUOTE)
+    assert caught.value.kind == "rate_limited" and caught.value.details()["retry_after_s"] == 50
+    assert len(p.requests) == 1
+    clock[0] += 51
+    p.status = 200
+    assert (await m.snapshot("solana", TOKEN))["state"] == "ok"
+    assert len(p.requests) == 2
+
+
+@pytest.mark.parametrize("payload", [None, {"code": 403, "message": "test-only-secret"},
+    {"code": "test-only-secret", "error": "test-only-secret", "message": "private contents"}])
+async def test_diagnostics_only_include_safe_fields(caplog, payload):
+    response = httpx.Response(403, json=payload) if payload is not None else httpx.Response(403, text="private contents test-only-secret")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response)) as client:
+        with pytest.raises(MarketError) as error:
+            await Market(client=client, api_key="test-only-secret").snapshot("solana", TOKEN)
+    assert error.value.kind == "access_denied"
+    logs = [r.message for r in caplog.records if r.name == "app.services.market"]
+    assert len(logs) == 1 and "http_status=403" in logs[0]
+    assert f"response_format={'non_json' if payload is None else 'json'}" in logs[0]
+    assert "test-only-secret" not in logs[0] and "private contents" not in logs[0]
+
+
+@pytest.mark.parametrize("status,configured,exit_code", [(200, True, 0), (403, True, 1), (200, False, 1)])
+async def test_operator_check_uses_one_read_only_call_and_never_prints_data(provider, monkeypatch, capsys, status, configured, exit_code):
+    from app import market_check
+    p, m = provider
+    p.status = status
+    if not configured:
+        m.api_key = ""
+    monkeypatch.setattr(market_check, "Market", lambda: m)
+    assert await market_check.check("solana", TOKEN) == exit_code
+    output = capsys.readouterr()
+    assert "test-only-secret" not in output.out + output.err
+    assert TOKEN not in output.out and "price" not in output.out
+    assert len(p.requests) == (1 if configured else 0)

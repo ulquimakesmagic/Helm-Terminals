@@ -61,8 +61,37 @@ documented response used here and are omitted rather than inferred from each oth
 - API snapshots cache for 60 seconds; concurrent identical requests coalesce. Cache is bounded to 256 entries.
   Failures are cached briefly. Polling occurs once a minute in visible browser tabs and stops for setup/unsupported states.
   GMGN 429 cooldowns respect `X-RateLimit-Reset`, `reset_at` and numeric `Retry-After`, with at least 60 seconds of rest.
+  Access failures (HTTP/API 401 or 403) retain `access_denied` throughout their 60-second cooldown, including across
+  tokens and stale-cache responses. They are never reclassified as rate limits. Helm's own quota is `request_budget`.
+  Error responses include `retry_after_s`; the terminal shows a countdown and skips manual/automatic refreshes until
+  that delay has elapsed. The visible-tab polling interval remains one minute.
   The existing production single-process constraint makes this budget shared by the deployment; scale-out would need
   a shared cache and quota coordinator. The third-party iframe manages its own traffic.
+
+## Diagnosing production access
+
+After setting or replacing `GMGN_API_KEY`, restart/redeploy the **backend**: the running market client retains its
+startup key. Confirm the key's read permissions and entitlement for `https://openapi.gmgn.ai`; if an IP allowlist is
+configured, it must include the deployed backend's outgoing IPv4 address, not the operator's laptop address. Server
+time must be synchronized (GMGN validates request timestamps within five seconds).
+
+From the deployed backend's `backend` working directory, using its existing environment, run one read-only check:
+
+```sh
+python -m app.market_check --network solana --token FDa5EVK4bJJy3dDJpvgXcDGfm9ymw8NZBt6BsSZ7Pk4F
+```
+
+This performs at most one token-info request, makes no trades and prints only state, sanitized error text and retry
+delay. It exits 0 for a successful provider lookup (`ok` or `no_pool`) and 1 for failure or missing configuration.
+Do not put keys on the command line. Avoid repeatedly running the check during provider cooldowns: each CLI run has
+its own process/cache, and cannot see the application process's cooldown.
+
+Actual failed upstream requests produce a `gmgn_market_failure` log containing only category, HTTP status, a bounded
+numeric provider code (other values are `unreported`) and `json`/`non_json` response format. Cached failures produce
+no duplicate log. No API keys, provider messages, response bodies, request headers or token addresses are logged by
+this diagnostic. HTTP 401/403 identifies an access rejection, not its exact cause; `non_json` can help support
+distinguish a gateway refusal from a JSON API rejection. Use the status/code with GMGN support rather than guessing
+that every 403 is an expired key or an exhausted quota. No new environment variables are required.
 
 ## Sources and commercial deployment
 
@@ -87,8 +116,8 @@ Frontend tests exercise the exact embed URL builder, address validation and the 
 Browser review covers desktop/390px layouts, timeframe URLs, chart expansion, wallet selection, buy/sell review,
 keyboard section navigation, missing-key, no-pool, stale and error states. No real transactions were submitted.
 
-The public GMGN demo API returned the documented token-info response during verification. Its public chart host
-returned HTTP 403 to a separate HEAD check and the browser embed stayed blank/slow in this environment. The loading
-and recovery UI were verified, but successful live candle rendering has **not** been verified. Recheck from the
-deployed site and resolve access with GMGN if the embed remains blocked; do not bypass it with private endpoints or
-silently re-enable the old chart. Production API access and commercial display rights still require the operator's key/plan.
+The public GMGN demo API returned the documented token-info response during initial verification. A later browser
+check of the deployed HELM workspace confirmed that GMGN candles and volume render (the embedded chart was set to
+market cap). Production market metrics still showed an access failure; chart loading is independent of API-key
+access. The cooldown correction and diagnostics do not grant provider permissions or prove that the deployed key
+works. Verify with the operator check above after deployment. Commercial display rights require the operator's plan.
