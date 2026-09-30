@@ -54,8 +54,9 @@ class Settings(BaseSettings):
     turnkey_api_private_key: str = ""  # P-256 private scalar, hex
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    # Public GeckoTerminal API. This is indicative market data and never feeds trade quotes or execution.
-    geckoterminal_api_url: str = "https://api.geckoterminal.com/api/v2"
+    # GMGN display-only OpenAPI. No private key or GMGN trading access required.
+    gmgn_api_key: str = Field(default="", repr=False)
+    gmgn_requests_per_minute: int = Field(default=30, ge=1, le=300)
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
     # EVM RPC URLs per chain, each a comma-separated list rotated like SOLANA_RPC_URL. Blank = public endpoint

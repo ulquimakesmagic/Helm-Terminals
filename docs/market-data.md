@@ -1,67 +1,94 @@
-# Launch terminal market data
+# GMGN market terminal
 
-The terminal view of a live launch shows indicative, third-party market data next to the launch's own Helm data
-(wallets, supply, transactions, operations). The two are kept apart: market data is labelled as such, and it never
-feeds quotes, previews, confirmations or anything that executes.
+Helm's launch workspace uses **GMGN only** for its token chart and market metrics. The former custom candle renderer,
+DEX Screener integration and GeckoTerminal integration have been removed. There is no alternate market provider.
+Helm wallet balances, supply transparency, activity, previews, fees, signing and trade execution remain independent.
 
-## Providers and endpoints
+## Interfaces and setup
 
-Both are documented public APIs called from the backend only (the browser never calls a provider, and no provider
-key lives in a `VITE_` variable). Nothing is scraped and no undocumented embed is used.
+- Chart: `https://www.gmgn.cc/kline/{chain}/{token}?theme=dark&interval={interval}`. Only the parameters in
+  [GMGN's embed guide](https://docs.gmgn.ai/index/cooperation-api-integrate-gmgn-price-chart) are used.
+  Intervals: `5`, `15`, `60`, `240`, `1D`. The chart requires no Helm API credential.
+- Metrics: backend-only `GET https://openapi.gmgn.ai/v1/token/info`, with `chain`, `address`, Unix-seconds
+  `timestamp` and a fresh UUID `client_id`; authentication is the `X-APIKEY` header. No private key or signed trade
+  calls are needed. The response supplies both token activity and main-pool details, avoiding a duplicate pool request.
+- Helm: authenticated `GET /launches/{id}/market`. Ownership is checked before provider access. Copied drafts resolve
+  to the original token; after deployment the launch's own chain/address takes over. Symbols never select tokens.
+- The retired `/market/candles` route returns 410 for owned launches, advising old clients to reload.
 
-| What | Provider | Endpoint |
+Set backend `GMGN_API_KEY` to your own key from [GMGN API access](https://gmgn.ai/ai). Do not use GMGN's public demo
+key in production. Never put this secret in a `VITE_` variable, logs or the browser. No frontend environment variable
+is required. Optional `GMGN_REQUESTS_PER_MINUTE=30` caps this server's shared budget (range 1–300); choose a value
+within your plan. GMGN requires IPv4 egress and a synchronized server clock. `GECKOTERMINAL_API_URL` is obsolete.
+
+## Coverage
+
+| Helm chain | GMGN token API ID | Documented chart embed |
 |---|---|---|
-| Pools that trade the token, with DEX, pair address, quote asset, liquidity, price, price change, volume, buy/sell counts, FDV and market cap | DEX Screener | `GET https://api.dexscreener.com/token-pairs/v1/{chainId}/{tokenAddress}` |
-| Price candles (OHLCV) for one pool | GeckoTerminal | `GET {GECKOTERMINAL_API_URL}/networks/{network}/pools/{pool}/ohlcv/{timeframe}` |
+| Solana | `sol` | `sol` |
+| BNB Chain | `bsc` | `bsc` |
+| Ethereum | `eth` | `eth` |
+| Base | `base` | Not documented; unavailable |
+| Robinhood | `robinhood` | Not documented; unavailable |
+| Arc | `arc` | Not documented; unavailable |
+| TRON, NEAR, TON | Not supported by the published token command | Unavailable |
 
-DEX Screener documents no candle endpoint and no chart embed with parameters, so it isn't used for chart history.
-`GECKOTERMINAL_API_URL` defaults to `https://api.geckoterminal.com/api/v2`; no key is needed.
+API coverage follows the official repository's current token command and validation list, which is newer/broader
+than the introductory Agent API page. An allowed chain is not a guarantee that any particular launchpad/pool is indexed.
+Do not extend iframe paths by analogy with API chain IDs. Runtime indexing and plan availability can differ.
 
-Helm routes:
+## Meaning of the numbers
 
-- `GET /launches/{id}/market` returns the token's pools (largest liquidity first) and a `state`: `ok`, `no_pool`
-  (not indexed yet), `no_token` (a draft), `unsupported` (a chain the provider doesn't cover) or `error`.
-- `GET /launches/{id}/market/candles?pool=&tf=` returns candles for one of that token's own pools (any other pool is
-  refused with 404). Timeframes: `5m`, `15m`, `1h`, `4h`, `1d`, which map to GeckoTerminal's documented
-  `minute/5`, `minute/15`, `hour/1`, `hour/4` and `day/1`. Up to 200 candles.
+The main pool is selected by GMGN; its address, DEX, quote asset and liquidity are labelled as such. The published
+token-info response exposes one main pool, not a list of all pairs, so Helm does not invent a pool selector.
+The iframe is token-based and its pool routing cannot be controlled through documented parameters.
 
-## Chain mapping
+USD price, volume, swaps, buys, sells and holder count use documented token fields. They are **token-wide**, not
+main-pool trade counts. Percentage change is calculated only from GMGN's current price and the documented starting
+price of the window. No candle history is reconstructed. Missing, malformed, nonfinite or negative amounts remain
+missing, while actual zero is preserved. FDV, native price and market cap are not provided as direct fields by the
+documented response used here and are omitted rather than inferred from each other or from supply.
 
-| Helm | DEX Screener | GeckoTerminal |
-|---|---|---|
-| Solana | `solana` | `solana` |
-| Base (8453) | `base` | `base` |
-| BNB Chain (56) | `bsc` | `bsc` |
-| Ethereum (1) | `ethereum` | `eth` |
-| Robinhood Chain (4663) | `robinhood` | `robinhood` |
+## Failure and freshness
 
-Pools are resolved from the launch's own chain and token address, never by ticker. A pool is kept only when its
-chain matches and the token is its base or quote token (Solana addresses compared case-sensitively).
+- Missing key: setup notice for metrics; the independently loaded chart can still work.
+- No indexed main pool: explanation and explorer link; an independently indexed chart may still be available.
+- Unsupported chains: explicit unavailable state, with Helm trading and wallet controls preserved.
+- API errors: sanitized messages, never raw provider bodies. Old successful metrics may be shown for at most five
+  minutes, always marked stale. Browser errors and elapsed time also mark retained metrics stale; expired values hide.
+- Embed failures: loading/slow states, manual reload and a direct GMGN chart link. An iframe `load` event does **not**
+  prove that candles rendered or are current. Helm cannot inspect or verify the cross-origin chart's freshness.
+- API snapshots cache for 60 seconds; concurrent identical requests coalesce. Cache is bounded to 256 entries.
+  Failures are cached briefly. Polling occurs once a minute in visible browser tabs and stops for setup/unsupported states.
+  GMGN 429 cooldowns respect `X-RateLimit-Reset`, `reset_at` and numeric `Retry-After`, with at least 60 seconds of rest.
+  The existing production single-process constraint makes this budget shared by the deployment; scale-out would need
+  a shared cache and quota coordinator. The third-party iframe manages its own traffic.
 
-## Honesty rules
+## Sources and commercial deployment
 
-- A missing number stays missing ("—"); it never becomes zero, and FDV and market cap are shown only as each is
-  returned. One is never calculated from the other.
-- When the launch token is the pool's quote token, DEX Screener's price, FDV and market cap describe the other token,
-  so they're withheld and the view says so; candles are requested for the quote side.
-- Malformed candle rows are dropped, never filled in. No synthetic candles.
+Reviewed 2026-09-30: [official wiki](https://github.com/GMGNAI/gmgn-skills/wiki),
+[token contract](https://github.com/GMGNAI/gmgn-skills/blob/main/skills/gmgn-token/SKILL.md),
+[API client](https://github.com/GMGNAI/gmgn-skills/blob/main/src/client/OpenApiClient.ts),
+[authentication](https://github.com/GMGNAI/gmgn-skills/blob/main/src/client/signer.ts),
+[chain validation](https://github.com/GMGNAI/gmgn-skills/blob/main/src/validate.ts), and
+[GMGN terms](https://gmgn.ai/static/tos.html).
 
-## Limits, caching and failure
+The chart guide expressly invites website embedding; provider branding stays intact. The general terms restrict
+unauthorized automation and do not establish an unrestricted public-data redistribution license. Before enabling
+the server key for commercial public display, the operator must confirm that the API plan/any supplemental terms
+cover Helm's use. The repository's MIT code license does not itself grant data redistribution rights. No website
+scraping, private endpoints, hosted GMGN wallets or GMGN trading API have been integrated.
 
-GeckoTerminal's public tier allows 30 calls a minute per its FAQ and about 10 per its product page, with no SLA.
-Helm keeps one shared cache and budget per server: pools are reused for 30 seconds, candles for 60, and uncached
-candle requests are capped at 8 a minute. A provider's 429 starts a back-off (its `Retry-After`, else 60 seconds).
-When a provider fails, the last good answer up to 30 minutes old is shown and marked stale with its age; past that,
-the view shows an error with a retry.
+## Validation and remaining live check
 
-## Terms
+Backend market tests cover authentication/ownership, the documented request contract, copied launches, unsupported
+chains, missing credentials, malformed responses, missing numbers, cache bounds/coalescing, throttling and expiry.
+Frontend tests exercise the exact embed URL builder, address validation and the separate chart-chain allowlist.
+Browser review covers desktop/390px layouts, timeframe URLs, chart expansion, wallet selection, buy/sell review,
+keyboard section navigation, missing-key, no-pool, stale and error states. No real transactions were submitted.
 
-DEX Screener's API terms restrict products whose *primary purpose* competes with DEX Screener; Helm's is launching
-and managing tokens, and the market view is a supporting panel with attribution. GeckoTerminal's public API terms
-should be reviewed before relying on it commercially. Both providers are credited in the view, with links.
-
-## Not covered
-
-- No live trades feed (neither provider documents one in these APIs), so the terminal shows buy/sell counts per
-  window instead of individual trades.
-- A freshly created token shows "no pool yet" until the providers index it.
+The public GMGN demo API returned the documented token-info response during verification. Its public chart host
+returned HTTP 403 to a separate HEAD check and the browser embed stayed blank/slow in this environment. The loading
+and recovery UI were verified, but successful live candle rendering has **not** been verified. Recheck from the
+deployed site and resolve access with GMGN if the embed remains blocked; do not bypass it with private endpoints or
+silently re-enable the old chart. Production API access and commercial display rights still require the operator's key/plan.

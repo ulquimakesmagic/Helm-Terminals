@@ -112,9 +112,16 @@ function WsTabs({ tabs, on, setOn }: { tabs: [string, string, React.ReactNode][]
   const cur = tabs.find((t) => t[0] === on) ?? tabs[0];
   return (
     <section className="ws-tabs">
-      <div className="ws-tablist" role="tablist" aria-label="Launch sections">
+      <div className="ws-tablist" role="tablist" aria-label="Launch sections" onKeyDown={(e) => {
+        const index = tabs.indexOf(cur);
+        const next = e.key === "ArrowRight" ? (index + 1) % tabs.length : e.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+          : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+        if (next < 0) return;
+        e.preventDefault(); setOn(tabs[next][0]);
+        e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>
         {tabs.map(([k, label]) => (
-          <button key={k} type="button" role="tab" id={`wt-${k}`} aria-selected={cur[0] === k} aria-controls="wt-panel"
+          <button key={k} type="button" role="tab" id={`wt-${k}`} tabIndex={cur[0] === k ? 0 : -1} aria-selected={cur[0] === k} aria-controls="wt-panel"
             className={cur[0] === k ? "on" : ""} onClick={() => setOn(k)}>{label}</button>
         ))}
       </div>
@@ -149,6 +156,7 @@ export default function Workspace() {
   const [sendPct, setSendPct] = useState("10");
   const [updated, setUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [mobileView, setMobileView] = useState<"chart" | "trade" | "activity">("chart");
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -190,10 +198,10 @@ export default function Workspace() {
   const chain = chainOf(l.network);
   const cur = chain.native;
   const live = l.status === "live";
-  // TRON, NEAR and Arc launches: no market-data provider, no launch plans; Meme.Cooking trades are auction deposits.
+  // Extra-chain launch plans remain unavailable; Meme.Cooking trades are auction deposits.
   const extra = isExtraChain(l.network);
   const auction = l.launchpad === "meme-cooking";
-  const sel = [...selected];
+  const sel = [...selected].filter((wid) => ws.wallets.some((w: any) => w.id === wid));
   const toggle = (wid: string) => setSelected((s) => { const n = new Set(s); n.has(wid) ? n.delete(wid) : n.add(wid); return n; });
   const attached = new Set(ws.wallets.map((w: any) => w.id));
   const totalSol = ws.wallets.reduce((s: number, w: any) => s + (w.sol ?? 0), 0);
@@ -249,9 +257,22 @@ export default function Workspace() {
           </Card>
   );
   const ticketCard = live ? (
-            <Card id="order-ticket" title="Order ticket" icon="zap" sub="Manual orders from the selected wallets">
+            <Card id="order-ticket" className="terminal-ticket" title={`Trade $${l.symbol}`} icon="zap" sub="Helm execution · review before sending">
               <div className="stack">
                 <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={auction ? [["buy", "Deposit"], ["sell", "Withdraw"]] : [["buy", "Buy"], ["sell", "Sell"]]} />
+                <details className="ticket-wallets">
+                  <summary><span className="row"><Icon name="wallet" size={14} />Wallets</span><span className="mono">{sel.length} / {ws.wallets.length} selected</span></summary>
+                  <div className="ticket-wallet-actions"><button type="button" className="btn sm ghost" disabled={!ws.wallets.length} onClick={() => setSelected(new Set(ws.wallets.map((w: any) => w.id)))}>Select all</button>
+                    <button type="button" className="btn sm ghost" disabled={!sel.length} onClick={() => setSelected(new Set())}>Clear</button></div>
+                  <div className="ticket-wallet-list">
+                    {ws.wallets.map((w: any) => <label key={w.id} className="ticket-wallet">
+                      <input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} />
+                      <span className="grow"><b>{w.label || short(w.address)}</b><span className="muted mono small">{short(w.address)}</span></span>
+                      <span className="mono small">{w.sol == null ? "—" : fmt(w.sol, 4)} {cur}</span>
+                    </label>)}
+                    {!ws.wallets.length && <p className="muted small">Attach a wallet in the Wallets section below to start.</p>}
+                  </div>
+                </details>
                 {auction && <p className="muted small">Meme.Cooking is an auction: deposits count until the countdown ends; withdrawing before then costs 2%.</p>}
                 <Field label={side === "buy" ? (auction ? "Deposit per wallet" : `Spend per wallet`) : (auction ? "Withdraw from each wallet's deposit" : "Sell from each wallet")} extra={side === "sell" && auction ? "percent of each wallet's deposit" : side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
                   <UnitInput unit={side === "buy" ? cur : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -262,10 +283,11 @@ export default function Workspace() {
                 <div className="kv small">
                   <div className="k">Wallets</div>
                   <div className="v">{sel.length ? <span className="mono">{sel.length}</span> : <button type="button" className="btn sm ghost" style={{ height: 22, padding: "0 6px" }} onClick={() => setSelected(new Set(ws.wallets.map((w: any) => w.id)))} disabled={!ws.wallets.length}>Select all {ws.wallets.length}</button>}</div>
-                  <div className="k">{side === "buy" ? "Total spend" : "Selling"}</div>
+                  <div className="k">{side === "buy" ? "Spend before fees" : "Selling"}</div>
                   <div className="v mono">{side === "buy" ? `${fmt(sel.length * amt, 6)} ${cur}` : `${fmt(amt, 2)}% ≈ ${compact((selTok * Math.min(amt, 100)) / 100)} tokens`}</div>
                   <div className="k">Execution</div>
                   <div className="v">{mode === "stagger" ? `One at a time · ${stagger} ms` : "All at once"} · {slippage}% slippage</div>
+                  <div className="k">Fees & checks</div><div className="v">Shown in review</div>
                 </div>
                 <button type="button" className="btn ghost sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
                   <Icon name="settings" size={13} />{advanced ? "Hide" : "Change"} execution settings
@@ -422,8 +444,8 @@ export default function Workspace() {
               Updated {updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
-          {live && <button className="btn jump-trade" onClick={() => { const el = document.getElementById("order-ticket"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); el?.focus({ preventScroll: true }); }}><Icon name="zap" size={14} />Trade</button>}
-          {live && !extra && <button className="btn secondary" onClick={() => { setTab("automation"); document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" }); }}><Icon name="calendar" size={14} />Automation</button>}
+          {live && <button className="btn jump-trade" onClick={() => { setMobileView("trade"); requestAnimationFrame(() => { const el = document.getElementById("order-ticket"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); el?.focus({ preventScroll: true }); }); }}><Icon name="zap" size={14} />Trade</button>}
+          {live && !extra && <button className="btn secondary" onClick={() => { setTab("automation"); setMobileView("activity"); requestAnimationFrame(() => document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" })); }}><Icon name="calendar" size={14} />Automation</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
@@ -461,19 +483,14 @@ export default function Workspace() {
 
       {terminal ? (
         <>
-          {extra ? (
-            <div className="grid g-main">
-              <div className="col">
-                <Card title="Market" icon="trend" sub={chain.name}>
-                  <div className="stack tight">
-                    <p className="muted small">{ws.market_note}</p>
-                    {ws.explorer?.token && <a href={ws.explorer.token} target="_blank" rel="noreferrer noopener">View the token on the explorer <Icon name="ext" size={11} /></a>}
-                  </div>
-                </Card>
-              </div>
-              <div className="col">{ticketCard}</div>
-            </div>
-          ) : <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} ticket={ticketCard} />}
+          <nav className="terminal-mobile-nav" aria-label="Terminal view">
+            {(["chart", ...(live ? ["trade"] : []), "activity"] as const).map((view) => <button type="button" key={view} aria-pressed={mobileView === view}
+              className={mobileView === view ? "on" : ""} onClick={() => { setMobileView(view as "chart" | "trade" | "activity"); if (view === "activity") setTab("tx"); }}>
+              <Icon name={view === "chart" ? "trend" : view === "trade" ? "zap" : "activity"} size={15} />{view[0].toUpperCase() + view.slice(1)}
+            </button>)}
+          </nav>
+          <MarketTerminal key={`${l.id}:${l.network}:${l.mint_address}`} launchId={l.id} network={l.network} token={l.mint_address} symbol={l.symbol} ticket={ticketCard} mobileView={mobileView} />
+          <div className={`terminal-records terminal-records-${mobileView}`}>
           <section className="your-position" aria-labelledby="pos-h">
             <h2 id="pos-h" className="sec-kicker"><Icon name="wallet" size={12} />Your position · from your Helm wallets</h2>
             {position}
@@ -486,10 +503,11 @@ export default function Workspace() {
             ...(opsCard ? [["ops", "Token operations", opsCard] as [string, string, React.ReactNode]] : []),
             ["perf", "Performance", perfCard],
           ]} />
+          </div>
         </>
       ) : (
         <>
-          {sourceMarket && <MarketTerminal launchId={l.id} network={l.network} symbol={l.symbol} />}
+          {sourceMarket && <MarketTerminal key={`${l.id}:${l.cloned_from.network}:${l.cloned_from.address}`} launchId={l.id} network={l.cloned_from.network} token={l.cloned_from.address} symbol="Copied token" />}
           {position}
           <div className="grid g-main">
             <div className="col">{walletsCard}</div>

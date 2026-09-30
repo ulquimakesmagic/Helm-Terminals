@@ -1,4 +1,4 @@
-"""Market view for a launch: indicative third-party data (DEX Screener pools, GeckoTerminal candles).
+"""Market view for a launch: indicative GMGN data and hosted-chart capabilities.
 
 Display only. These numbers never feed a trade preview, an execution quote or a confirmation.
 """
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_db
 from ..deps import current_user
 from ..models import User
-from ..services.market import TIMEFRAMES, Market, MarketError, get_market
+from ..services.market import CHART_CHAIN, Market, MarketError, get_market, valid_address
 from ..models import Launch
 from .launches import _cloned_from, _owned_launch
 
@@ -20,7 +20,8 @@ NOTE = "Indicative third-party market data. Not used for Helm's previews, quotes
 def _explorer(network: str, token: str) -> str:
     urls = {"solana": "https://solscan.io/token/", "base": "https://basescan.org/token/",
             "bsc": "https://bscscan.com/token/", "ethereum": "https://etherscan.io/token/",
-            "robinhood": "https://robinhoodchain.blockscout.com/token/"}
+            "robinhood": "https://robinhoodchain.blockscout.com/token/", "arc": "https://explorer.arc.io/token/",
+            "tron": "https://tronscan.org/token20/", "near": "https://nearblocks.io/token/", "ton": "https://tonviewer.com/"}
     return urls[network] + token if network in urls else ""
 
 
@@ -40,41 +41,20 @@ async def launch_market(launch_id: str, user: User = Depends(current_user), db: 
                         market: Market = Depends(get_market)):
     l = await _owned_launch(db, user, launch_id)
     network, token, whose = _target(l)
-    base = {"note": NOTE, "network": network, "token": token, "whose": whose,
+    base = {"note": NOTE, "network": network, "token": token, "whose": whose, "source": "GMGN",
+            "chart_chain": CHART_CHAIN.get(network) if token and valid_address(network, token) else None,
             "explorer_url": _explorer(network, token) if token else None}
     if not token:
-        return {**base, "state": "no_token", "pairs": []}
+        return {**base, "state": "no_token", "pool": None, "metrics": None}
     try:
-        res = await market.pairs(network, token)
+        res = await market.snapshot(network, token)
     except MarketError as e:
-        return {**base, "state": "error", "error_kind": e.kind, "error": str(e), "pairs": [], "source": "DEX Screener"}
-    if not res["supported"]:
-        return {**base, "state": "unsupported", "pairs": [], "source": res["source"]}
-    return {**base, "state": "ok" if res["pairs"] else "no_pool", **res}
+        return {**base, "state": "error", "error_kind": e.kind, "error": str(e), "pool": None, "metrics": None}
+    return {**base, **res}
 
 
 @router.get("/launches/{launch_id}/market/candles")
-async def launch_candles(launch_id: str, pool: str, tf: str = "15m", user: User = Depends(current_user),
-                         db: AsyncSession = Depends(get_db), market: Market = Depends(get_market)):
-    if tf not in TIMEFRAMES:
-        raise HTTPException(400, f"tf must be one of {list(TIMEFRAMES)}")
-    l = await _owned_launch(db, user, launch_id)
-    network, token, _ = _target(l)
-    if not token:
-        raise HTTPException(404, "this launch has no token yet")
-    # Only pools that actually trade this token are charted: the pool must come from the token's own list.
-    try:
-        pools = await market.pairs(network, token)
-    except MarketError as e:
-        return {"state": "error", "error_kind": e.kind, "error": str(e), "candles": [], "note": NOTE}
-    match = next((p for p in pools.get("pairs", []) if p["pair_address"] == pool), None)
-    if not match:
-        raise HTTPException(404, "that pool doesn't trade this launch's token")
-    try:
-        res = await market.candles(network, pool, tf, match["token_side"])
-    except MarketError as e:
-        return {"state": "error", "error_kind": e.kind, "error": str(e), "candles": [], "source": "GeckoTerminal",
-                "note": NOTE}
-    if not res["supported"]:
-        return {"state": "unsupported", "candles": [], "source": res["source"], "note": NOTE}
-    return {"state": "ok" if res["candles"] else "no_candles", "note": NOTE, **res}
+async def launch_candles(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    # Explicit retirement for old clients: never silently use another chart provider.
+    await _owned_launch(db, user, launch_id)
+    raise HTTPException(410, "Helm now displays GMGN's hosted chart. Reload the terminal to update.")
