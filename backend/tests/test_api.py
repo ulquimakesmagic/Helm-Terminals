@@ -62,6 +62,25 @@ async def test_users_cannot_see_each_others_launches(client):
     assert (await client.get("/launches", headers=h2)).json() == []
 
 
+async def test_launchpad_number_options_are_type_and_range_checked(client, monkeypatch):
+    from app.chains import registry
+
+    monkeypatch.setattr(registry._cache["pumpfun"], "options_schema", lambda: {"fields": [
+        {"key": "priority_fee_sol", "type": "number", "min": 0, "default": 0.0005},
+    ]})
+    h = await signup(client)
+    base = {"launchpad": "pumpfun", "name": "Typed", "symbol": "TYP"}
+    bad_type = await client.post("/launches", json={**base, "options": {"priority_fee_sol": "fast"}}, headers=h)
+    assert bad_type.status_code == 400
+    assert "must be a number" in bad_type.json()["detail"]
+    too_low = await client.post("/launches", json={**base, "options": {"priority_fee_sol": -0.1}}, headers=h)
+    assert too_low.status_code == 400
+    assert "at least 0" in too_low.json()["detail"]
+    valid = await client.post("/launches", json={**base, "options": {"priority_fee_sol": 0.001}}, headers=h)
+    assert valid.status_code == 201
+    assert valid.json()["settings"] == {"priority_fee_sol": 0.001}
+
+
 async def test_deploy_requires_matching_preflight_and_is_idempotent(client, fake_rpc):
     h = await signup(client)
     dev = (await make_wallets(client, h))[0]

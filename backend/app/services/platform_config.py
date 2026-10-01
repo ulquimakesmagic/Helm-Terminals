@@ -52,10 +52,20 @@ FEE_PATHS = [
     {"id": "creator_share_clanker", "label": "Creator-reward share: Clanker", "setting": "creator_share_bps",
      "networks": ["base", "robinhood"], "supported": True, "lands": "claimable",
      "how": "The treasury is a reward recipient in Clanker's LP locker; claimed from Clanker's fee locker."},
+    {"id": "creator_share_pumpfun", "label": "Creator-reward share: Pump.fun", "setting": None,
+     "networks": ["solana"], "supported": False, "lands": None,
+     "how": "Pump.fun now documents a native, one-time fee-share configuration with up to 10 shareholders. Helm's "
+            "PumpPortal deployment does not create that configuration yet, so creator fees continue to go directly "
+            "to the creator wallet."},
+    {"id": "creator_share_meteora", "label": "Creator-reward share: Meteora DBC", "setting": None,
+     "networks": ["solana"], "supported": False, "lands": None,
+     "how": "A split requires a Helm-owned Meteora DBC configuration with explicit partner and creator fee "
+            "claimers. The current Jupiter Studio route does not expose that split."},
     {"id": "creator_share_other", "label": "Creator-reward share: other launchpads", "setting": None,
      "networks": [], "supported": False, "lands": None,
-     "how": "Not available yet for pump.fun, LetsBonk, Meteora DBC, Four.meme, Flap, Pons or Uniswap v2: Helm "
-            "doesn't set up their reward splits."},
+     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, Pons, SunPump, Tolly, "
+            "Meme.Cooking or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
+            "rights and are not relabelled as creator rewards."},
     {"id": "partner_flap", "label": "Flap launchpad commission (tax tokens)", "setting": None,
      "networks": ["bsc", "robinhood"], "supported": True, "lands": "claimable",
      "how": "The treasury is set as the commission receiver on new Flap tax tokens; Flap pays its commission from its "

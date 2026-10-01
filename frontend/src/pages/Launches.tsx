@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
-import { ALL_CHAIN_ORDER, CHAIN_ORDER, CHAINS, ChainId, chainOf, NEEDS_IMAGE, Pad, padName } from "../chains";
+import { ALL_CHAIN_ORDER, CHAIN_ORDER, CHAINS, ChainId, chainOf, Pad, padName } from "../chains";
+import { launchpadExperience } from "../launchpadExperience";
 import { LaunchpadDirectory } from "../components/Launchpads";
 import { ChainLabel, ChainMark, PadLabel } from "../components/marks";
 import {
@@ -27,7 +28,11 @@ function optLabel(key: string, o: string | number): string {
   return String(o);
 }
 
-interface OptField { key: string; type: string; label?: string; hint?: string; options?: (string | number)[]; default?: unknown }
+interface OptField {
+  key: string; type: "number" | "select" | string; label?: string; hint?: string;
+  options?: (string | number)[]; default?: unknown; min?: number; max?: number;
+}
+interface PadSchema { fields: OptField[]; socials: string[]; requires_image: boolean; notes: string[] }
 
 type Filter = "all" | "live" | "draft" | "archived";
 
@@ -53,29 +58,43 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   const [notice, setNotice] = useState<string | null>(null);
   const [quoteMint, setQuoteMint] = useState("");
   const [eligible, setEligible] = useState(false);
-  const [extra, setExtra] = useState<OptField[]>([]);
+  const [schema, setSchema] = useState<PadSchema>({ fields: [], socials: [], requires_image: false, notes: [] });
+  const [schemaLoading, setSchemaLoading] = useState(true);
   const [opts, setOpts] = useState<Record<string, unknown>>({});
-  const [buyLabel, setBuyLabel] = useState("Dev buy");
+  const [slippagePct, setSlippagePct] = useState("10");
   const pad = pads.find((p) => p.id === f.launchpad);
   const quote = quotes.find((q) => q.mint === quoteMint);
   const paired = !!quote && quote.kind !== "native";
 
   useEffect(() => {
+    let active = true;
     setQuoteMint(""); setEligible(false); setQuotes([]); setNotice(null);
-    if (pad?.status !== "available") return;
+    setSchemaLoading(true); setError("");
+    if (pad?.status !== "available") { setSchemaLoading(false); return; }
     api<{ assets: QuoteAsset[]; notice: string | null }>(`/launchpads/${f.launchpad}/quote-assets`)
-      .then((r) => { setQuotes(r.assets); setNotice(r.notice); setQuoteMint(r.assets[0]?.mint ?? ""); })
+      .then((r) => { if (active) { setQuotes(r.assets); setNotice(r.notice); setQuoteMint(r.assets[0]?.mint ?? ""); } })
       .catch(() => undefined);
-    // Launchpad-specific settings (e.g. Flap's trading tax). Dev buy and slippage have their own inputs.
-    setExtra([]); setOpts({});
-    api<{ fields?: OptField[] }>(`/launchpads/${f.launchpad}/options`).then((r) => {
-      setBuyLabel((r.fields ?? []).find((x) => x.key === "dev_buy_sol")?.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy");
-      const fields = (r.fields ?? []).filter((x) => x.type === "select");
-      setExtra(fields);
-      setOpts(Object.fromEntries(fields.map((x) => [x.key, x.default])));
-    }).catch(() => undefined);
+    setSchema({ fields: [], socials: [], requires_image: false, notes: [] }); setOpts({});
+    api<Partial<PadSchema>>(`/launchpads/${f.launchpad}/options`).then((r) => {
+      if (!active) return;
+      const fields = r.fields ?? [];
+      setSchema({ fields, socials: r.socials ?? [], requires_image: !!r.requires_image, notes: r.notes ?? [] });
+      setOpts(Object.fromEntries(fields.filter((x) => !["dev_buy_sol", "slippage_pct"].includes(x.key)).map((x) => [x.key, x.default])));
+      const buy = fields.find((x) => x.key === "dev_buy_sol");
+      const slip = fields.find((x) => x.key === "slippage_pct");
+      setF((old) => ({ ...old, dev_buy_sol: String(buy?.default ?? 0) }));
+      setSlippagePct(String(slip?.default ?? 10));
+      setSchemaLoading(false);
+    }).catch((e) => { if (active) { setSchemaLoading(false); setError(`Could not load ${padName(f.launchpad)} settings: ${errMsg(e)}`); } });
+    return () => { active = false; };
   }, [f.launchpad, pad?.status]);
   const chain = chainOf(pad?.network);
+  const experience = launchpadExperience(f.launchpad);
+  const requiresImage = schema.requires_image;
+  const devBuyField = schema.fields.find((x) => x.key === "dev_buy_sol");
+  const slippageField = schema.fields.find((x) => x.key === "slippage_pct");
+  const launchFields = schema.fields.filter((x) => !["dev_buy_sol", "slippage_pct"].includes(x.key));
+  const socials = new Set(schema.socials);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase() : e.target.value });
 
@@ -95,6 +114,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
         launchpad: f.launchpad, name: f.name.trim(), symbol: f.symbol.trim(), description: f.description,
         socials: { twitter: f.twitter, telegram: f.telegram, website: f.website },
         dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: paired ? 0 : +f.dev_buy_sol || 0,
+        slippage_pct: +slippagePct || 0,
         image_b64: image ? await toBase64(image) : null,
         quote_mint: paired ? quoteMint : null, eligibility_confirmed: paired ? eligible : false,
         options: opts,
@@ -104,17 +124,24 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   }
 
   return (
-    <Modal wide title="New launch" sub="Pick a chain and launchpad, then fill in the token. Nothing is sent on-chain until you confirm the deployment." onClose={onClose}
+    <Modal wide title={experience.title} sub={`${experience.mode} · ${chain.name}. Nothing is sent on-chain until you review and confirm deployment.`} onClose={onClose}
       foot={<>
-        <span className="muted small grow">{NEEDS_IMAGE.has(f.launchpad) && !image ? `${padName(f.launchpad)} needs a token image.` : !f.dev_wallet_id && "You can pick a dev wallet later, before deploying."}</span>
+        <span className="muted small grow">{schemaLoading ? "Loading launchpad settings…" : requiresImage && !image ? `${padName(f.launchpad)} needs a token image.` : !f.dev_wallet_id && "You can pick a dev wallet later, before deploying."}</span>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn" disabled={!f.name || !f.symbol || busy || (NEEDS_IMAGE.has(f.launchpad) && !image) || (paired && !eligible)} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}Create draft</button>
+        <button className="btn" disabled={!f.name || !f.symbol || busy || schemaLoading || pad?.status !== "available" || (requiresImage && !image) || (paired && !eligible)} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}Create draft</button>
       </>}>
       {error && <Callout tone="err">{error}</Callout>}
       <div>
         <h3 style={{ marginBottom: 10 }}>1 · Chain and launchpad</h3>
         <LaunchpadDirectory pads={pads} picked={f.launchpad} onPick={(p) => setF({ ...f, launchpad: p.id })} />
       </div>
+      <section className="pad-experience" style={{ borderColor: experience.accent }}>
+        <div className="pad-experience-head">
+          <div className="pad-experience-mark"><PadLabel pad={f.launchpad} network={chain.id} size={24} /></div>
+          <div className="grow"><span className="eyebrow" style={{ color: experience.accent }}>{experience.mode}</span><h3>{experience.title}</h3><p>{experience.description}</p></div>
+        </div>
+        <div className="pad-feature-grid">{experience.features.map((item) => <span key={item}><Icon name="check" size={13} />{item}</span>)}</div>
+      </section>
       <div className="divider" />
       <h3>2 · Token</h3>
       <div className="row" style={{ alignItems: "stretch", gap: 16, flexWrap: "nowrap" }}>
@@ -124,7 +151,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
             <img src={preview} alt="" style={{ width: 112, height: 112, borderRadius: 18, objectFit: "cover", border: "1px solid var(--line-2)" }} />
           ) : (
             <div style={{ width: 112, height: 112, borderRadius: 18, border: "1.5px dashed var(--line-2)", display: "grid", placeItems: "center", color: "var(--muted)", textAlign: "center", fontSize: 11.5 }}>
-              <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />{NEEDS_IMAGE.has(f.launchpad) ? <b className="warn-t">required</b> : "max 2 MB"}</div></div>
+              <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />{requiresImage ? <b className="warn-t">required</b> : "max 2 MB"}</div></div>
             </div>
           )}
         </label>
@@ -141,12 +168,13 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
       <Field label="Description" extra={`${f.description.length}/500`}>
         <textarea value={f.description} onChange={set("description")} rows={3} maxLength={500} placeholder="What is this token about?" />
       </Field>
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-        <Field label="X / Twitter"><input value={f.twitter} onChange={set("twitter")} placeholder="https://x.com/…" /></Field>
-        <Field label="Telegram"><input value={f.telegram} onChange={set("telegram")} placeholder="https://t.me/…" /></Field>
-        <Field label="Website"><input value={f.website} onChange={set("website")} placeholder="https://…" /></Field>
-      </div>
+      {schema.socials.length > 0 && <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        {socials.has("twitter") && <Field label="X / Twitter"><input value={f.twitter} onChange={set("twitter")} placeholder="https://x.com/…" /></Field>}
+        {socials.has("telegram") && <Field label="Telegram"><input value={f.telegram} onChange={set("telegram")} placeholder="https://t.me/…" /></Field>}
+        {socials.has("website") && <Field label="Website"><input value={f.website} onChange={set("website")} placeholder="https://…" /></Field>}
+      </div>}
       <div className="divider" />
+      <div className="section-heading"><div><span className="eyebrow">Launchpad-specific</span><h3>3 · {experience.settingsTitle}</h3></div><span className="badge cap">{padName(f.launchpad)}</span></div>
       <div className="row nowrap" style={{ alignItems: "flex-start" }}>
         <Field label="Dev wallet" style={{ flex: 2 }} hint={wallets.length === 0 ? "Create a managed wallet on the Wallets page first." : "Signs the create transaction and makes the dev buy. Short of gas or dev-buy funds? At deploy, Helm offers to route USDC from your main wallet (or another wallet) into it."}>
           <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
@@ -154,23 +182,26 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
             {wallets.filter((w) => w.network === chain.id).map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-        {!paired && <Field label={buyLabel} style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
+        {!paired && devBuyField && <Field label={devBuyField.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy"} hint={devBuyField.hint} style={{ flex: 1 }}><UnitInput unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
       </div>
-      {extra.map((x) => (
+      <div className="grid g-form">
+      {launchFields.map((x) => (
         <Field key={x.key} label={x.label ?? x.key} hint={x.hint}>
-          <select value={String(opts[x.key] ?? "")} onChange={(e) => setOpts({ ...opts, [x.key]: Number.isNaN(+e.target.value) ? e.target.value : +e.target.value })}>
-            {(x.options ?? []).map((o) => (
-              <option key={String(o)} value={String(o)}>{optLabel(x.key, o)}</option>
-            ))}
-          </select>
+          {x.type === "select" ? <select value={String(opts[x.key] ?? "")} onChange={(e) => setOpts({ ...opts, [x.key]: Number.isNaN(+e.target.value) ? e.target.value : +e.target.value })}>
+            {(x.options ?? []).map((o) => <option key={String(o)} value={String(o)}>{optLabel(x.key, o)}</option>)}
+          </select> : <input type="number" min={x.min} max={x.max} step="any" value={String(opts[x.key] ?? "")} onChange={(e) => setOpts({ ...opts, [x.key]: e.target.value === "" ? "" : +e.target.value })} />}
         </Field>
       ))}
+      {slippageField && <Field label={slippageField.label ?? "Maximum slippage (%)"} hint={slippageField.hint}><UnitInput unit="%" value={slippagePct} onChange={(e) => setSlippagePct(e.target.value)} /></Field>}
+      </div>
+      {schema.notes.map((note) => <Callout key={note}>{note}</Callout>)}
+      <div className="reward-disclosure"><div><Icon name="coins" size={17} /><b>{experience.rewardTitle}</b></div><p>{experience.rewardCopy}</p></div>
       <p className="muted small">After creating the draft, plan the token's allocation and vesting in its Launchdesk. Any
         anti-sniping settings above are explained again, with their effect and fees, in the deploy preview.</p>
       {quotes.length > 1 && (
         <>
           <div className="divider" />
-          <h3>3 · Pair with</h3>
+          <h3>4 · Pair with</h3>
           <div className="chips">
             {quotes.map((q) => (
               <button key={q.mint} type="button" className={`chip ${quoteMint === q.mint ? "on" : ""}`} onClick={() => setQuoteMint(q.mint)} title={q.name}>

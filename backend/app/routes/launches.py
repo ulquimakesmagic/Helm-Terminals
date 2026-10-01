@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import math
 import re
 from datetime import datetime, timedelta
 
@@ -62,10 +63,9 @@ def _launch_out(l: Launch) -> dict:
 
 
 def _settings(l: Launch) -> dict:
-    """The launchpad settings chosen for this launch (select options such as anti-sniping), for display."""
-    from ..services.protections import SPECIFIC
-
-    keys = {o for p in SPECIFIC.get(l.launchpad, []) for o in p.get("options", [])}
+    """The launchpad-specific settings chosen for this launch, for display in its Launchdesk."""
+    keys = {f["key"] for f in get_adapter(l.launchpad).options_schema().get("fields", [])
+            if f.get("key") not in ("dev_buy_sol", "slippage_pct")}
     return {k: v for k, v in (l.launchpad_params or {}).items() if k in keys}
 
 
@@ -179,6 +179,13 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
             raise HTTPException(400, f"'{k}' isn't a setting {body.launchpad} offers")
         if f.get("type") == "select" and v not in f.get("options", []):
             raise HTTPException(400, f"{f.get('label', k)} must be one of {f.get('options')}")
+        if f.get("type") == "number":
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise HTTPException(400, f"{f.get('label', k)} must be a number")
+            if f.get("min") is not None and v < f["min"]:
+                raise HTTPException(400, f"{f.get('label', k)} must be at least {f['min']}")
+            if f.get("max") is not None and v > f["max"]:
+                raise HTTPException(400, f"{f.get('label', k)} must be at most {f['max']}")
         params[k] = v
     if body.quote_mint and body.quote_mint != SOL_QUOTE["mint"]:
         if body.launchpad != "bags":

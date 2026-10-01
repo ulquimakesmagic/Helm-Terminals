@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl, isExtraChain } from "../chains";
+import { launchpadExperience } from "../launchpadExperience";
 import MarketTerminal from "../components/Market";
 import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
@@ -14,6 +15,17 @@ import {
 
 type Dialog = { title: string; path: string; body: Record<string, unknown> } | null;
 type Op = "claim" | "burn" | "send";
+
+function launchSetting(key: string, value: unknown): string {
+  const labels: Record<string, string> = {
+    tax_rate_pct: "Trading tax", creator_tax_pct: "Creator tax", lp_share_pct: "Supply in pool",
+    lp_tokens: "LP tokens", sniper_start_pct: "Opening sniper fee", sniper_decay_s: "Sniper decay",
+    dbc_quote: "Curve currency", anti_sniping: "Anti-sniping", label: "Category",
+    duration_h: "Auction length", soft_cap_near: "Soft cap", hard_cap_near: "Hard cap",
+  };
+  const unit = key.endsWith("_pct") ? "%" : key.endsWith("_s") ? "s" : key.endsWith("_h") ? "h" : key.endsWith("_near") ? " NEAR" : "";
+  return `${labels[key] ?? key.replace(/_/g, " ")}: ${String(value)}${unit}`;
+}
 
 /** Draft → Deploying → Live, with Failed as a stop on the way. Reflects the launch's real status only. */
 function Pipeline({ status }: { status: string }) {
@@ -196,6 +208,13 @@ export default function Workspace() {
   }
   const l = ws.launch;
   const chain = chainOf(l.network);
+  const experience = launchpadExperience(l.launchpad);
+  const claimMode = l.launchpad === "bags" && l.quote ? "external" : experience.claimMode;
+  const claimUrl = l.launchpad === "bags" && l.quote ? "https://bags.fm/" : experience.claimUrl;
+  const claimInApp = claimMode === "in-app";
+  const effectiveOp: Op = op === "claim" && !claimInApp ? "burn" : op;
+  const opOptions: [Op, string][] = claimInApp ? [["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"]] : [["burn", "Burn"], ["send", "Send"]];
+  const chosenSettings = Object.entries(l.settings ?? {});
   const cur = chain.native;
   const live = l.status === "live";
   // Extra-chain launch plans remain unavailable; Meme.Cooking trades are auction deposits.
@@ -332,12 +351,14 @@ export default function Workspace() {
                   <Icon name="coins" size={15} />Review claim</button>
               </div>
             </Card>) : null) : live ? (
-            <Card title="Token operations" icon="layers" sub="Claim, burn or send from your wallets">
+            <Card title="Token operations" icon="layers" sub={claimInApp ? "Claim, burn or send from your wallets" : "Burn or send from your wallets"}>
               <div className="stack">
-                <Seg full value={op} onChange={setOp} options={[["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"]]} />
-                {op === "claim" && (
+                {claimMode === "external" && <Callout><b>{experience.rewardTitle}.</b> {experience.claimCopy} {claimUrl && <a href={claimUrl} target="_blank" rel="noreferrer">Open {claimUrl.includes("bags") ? "Bags" : "launchpad"}</a>}</Callout>}
+                {claimMode === "automatic" && <Callout><b>{experience.rewardTitle}.</b> {experience.claimCopy}</Callout>}
+                <Seg full value={effectiveOp} onChange={setOp} options={opOptions} />
+                {effectiveOp === "claim" && claimInApp && (
                   <>
-                    <p className="muted small">Collect creator fees earned by the token's creator wallet.</p>
+                    <p className="muted small">{experience.claimCopy}</p>
                     <Field label="Creator wallet">
                       <select value={claimWallet} onChange={(e) => setClaimWallet(e.target.value)}>
                         <option value="">Choose…</option>
@@ -348,7 +369,7 @@ export default function Workspace() {
                       <Icon name="coins" size={15} />Review claim</button>
                   </>
                 )}
-                {op === "burn" && (
+                {effectiveOp === "burn" && (
                   <>
                     <Callout tone="warn">Burning permanently destroys tokens. It can't be undone.</Callout>
                     <Field label="Share of the wallet's tokens" hint={firstSel ? `From ${firstSel.label || short(firstSel.address)} (first selected wallet) · ${compact(firstSel.tokens)} tokens` : "Select a wallet in the table first"}>
@@ -358,7 +379,7 @@ export default function Workspace() {
                       <Icon name="flame" size={15} />Review burn</button>
                   </>
                 )}
-                {op === "send" && (
+                {effectiveOp === "send" && (
                   <>
                     <Field label="Recipient"><input className="mono" placeholder={`${chain.name} address`} value={sendTo} onChange={(e) => setSendTo(e.target.value)} autoComplete="off" spellCheck={false} /></Field>
                     <Field label="Share of the wallet's tokens" hint={firstSel ? `From ${firstSel.label || short(firstSel.address)} · needs your 2FA code` : "Select a wallet in the table first"}>
@@ -456,6 +477,14 @@ export default function Workspace() {
       </header>
 
       <Pipeline status={l.status} />
+
+      <section className="workspace-pad-strip" style={{ borderLeftColor: experience.accent }} aria-label={`${experience.mode} details`}>
+        <div className="grow"><span className="eyebrow" style={{ color: experience.accent }}>{experience.mode}</span><p>{experience.description}</p></div>
+        <div className="chips">
+          {(chosenSettings.length ? chosenSettings.map(([key, value]) => launchSetting(key, value)) : experience.features)
+            .map((feature) => <span className="chip static" key={feature}>{feature}</span>)}
+        </div>
+      </section>
 
       {error && <Callout tone="err">Latest refresh failed: {error}</Callout>}
       {ws.rpc_error && <Callout tone="warn"><b>Chain data is partly unavailable.</b> Balances may be missing. {ws.rpc_error}</Callout>}
