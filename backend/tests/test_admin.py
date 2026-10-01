@@ -241,7 +241,8 @@ async def test_deploying_this_changes_no_rate(client, monkeypatch):
     assert pc.bps("route_fee_bps") == 30
     assert pc.creator_share("clanker")["bps"] == 1000  # the existing Clanker share
     assert pc.creator_share("bags")["bps"] == 0  # Bags had none, and still has none until an admin sets it
-    assert pc.creator_share("pumpfun") == {**pc.creator_share("pumpfun"), "bps": 0, "supported": False}
+    assert pc.creator_share("pumpfun")["bps"] == 0  # also opt-in until the admin saves a creator-share rate
+    assert pc.creator_share("pumpfun")["supported"] is True
 
 
 # --- revenue routing and the ledger -----------------------------------------------------------------------
@@ -413,7 +414,8 @@ async def test_creator_share_is_disclosed_and_only_the_share_goes_to_the_treasur
     terms = _creator_share_terms("bags", {})
     assert terms["bps"] == 500 and terms["recipient"] == pc.treasury_for("solana") and "5%" in terms["note"]
     assert _creator_share_terms("bags", {"quote": {"mint": str(Keypair().pubkey())}})["bps"] == 0  # pair launch
-    assert _creator_share_terms("pumpfun", {})["bps"] == 0  # launchpad doesn't support a split
+    pump_terms = _creator_share_terms("pumpfun", {}, str(Keypair().pubkey()))
+    assert pump_terms["bps"] == 500 and pump_terms["creator_bps"] == 9500
 
     seen = {}
     bags = BagsAdapter(api_key="k", client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500))))
@@ -448,6 +450,45 @@ async def test_clanker_uses_the_share_the_creator_confirmed():
     assert a._share({"helm_creator_share": {"bps": 0, "recipient": ""}}) == ("", 0)
     notes = a.deploy_notes(confirmed)
     assert notes["rewards"].startswith("95%") and notes["platform_share"].startswith("5%")
+
+
+async def test_pumpfun_share_is_required_after_create_and_recorded(client, fake_rpc, monkeypatch):
+    from solders.hash import Hash
+    from solders.pubkey import Pubkey
+
+    from app.chains import registry
+    from app.chains.solana import build_unsigned, sol_transfer_ix
+    from app.models import Transaction
+
+    hb, sb = await boss(client)
+    await _set_share(client, hb, sb, 600)
+    h = await signup(client, "pump-creator@example.com")
+    dev = (await client.get("/wallets", headers=h)).json()[0]
+    seen = {}
+
+    async def sharing_tx(mint, creator, share):
+        seen.update({"mint": mint, "creator": creator, "share": share})
+        payer = Pubkey.from_string(creator)
+        return build_unsigned(payer, [sol_transfer_ix(payer, payer, 1)], str(Hash.default()))
+
+    monkeypatch.setattr(registry._cache["pumpfun"], "build_creator_share_tx", sharing_tx, raising=False)
+    draft = (await client.post("/launches", json={"name": "Shared", "symbol": "SHR",
+                                                  "dev_wallet_id": dev["id"]}, headers=h)).json()
+    preview, result = await confirm(client, h, f"/launches/{draft['id']}/deploy", {})
+    assert result.status_code == 200
+    terms = preview["preflight"]["helm_creator_share"]
+    assert terms["bps"] == 600 and terms["creator_bps"] == 9400
+    assert terms["creator"] == dev["address"] and terms["recipient"] == pc.treasury_for("solana")
+    launch = (await client.get(f"/launches/{draft['id']}", headers=h)).json()
+    assert launch["status"] == "live" and launch["creator_share_setup"]["status"] == "active"
+    assert seen["mint"] == launch["mint_address"] and seen["share"]["bps"] == 600
+    async with get_sessionmaker()() as db:
+        txs = (await db.execute(select(Transaction).where(Transaction.kind == "deploy_fee_share"))).scalars().all()
+        event = (await db.execute(select(RevenueEvent).where(
+            RevenueEvent.launch_id == draft["id"], RevenueEvent.source == "creator_share",
+        ))).scalars().one()
+    assert len(txs) == 1 and txs[0].status == "confirmed"
+    assert event.destination == terms["recipient"] and event.status == "claimable"
 
 
 async def test_existing_launches_keep_their_terms(client, fake_rpc):

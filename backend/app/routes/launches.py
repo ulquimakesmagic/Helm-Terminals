@@ -26,7 +26,9 @@ from ..deps import (
     two_fa_warnings, valid_address, valid_address_for,
 )
 from ..models import Automation, FeeRecord, Job, Launch, LaunchWallet, RevenueEvent, Transaction, User, Wallet, utcnow
-from ..services.executor import Executor, run_built, run_evm_plan, run_evm_trade, run_single, run_trade
+from ..services.executor import (
+    Executor, run_built, run_evm_plan, run_evm_trade, run_required_followup, run_single, run_trade,
+)
 from ..services.auto_fund import detail as funding_detail
 from ..services.auto_fund import plan_funding, run_funding, usd_value
 from ..services.fees import describe, fee_plan_for
@@ -59,6 +61,7 @@ def _launch_out(l: Launch) -> dict:
         "deploy_tx": (l.launchpad_params or {}).get("evm_deploy_tx"),
         "deploy_error": (l.launchpad_params or {}).get("deploy_error"),
         "deploy_note": (l.launchpad_params or {}).get("deploy_note"),
+        "creator_share_setup": (l.launchpad_params or {}).get("creator_share_setup"),
     }
 
 
@@ -375,7 +378,8 @@ def _creator_share_terms(launchpad: str, params: dict, dev_address: str = "") ->
               "note": "Helm takes no share of creator rewards on pair-token launches (Bags has no fee-share step for them)"}
     if sh["bps"] and dev_address and sh["recipient"].lower() == dev_address.lower():
         sh = {**sh, "bps": 0, "note": "Helm takes no share of your creator rewards"}  # nothing to split
-    return {"bps": sh["bps"], "recipient": sh["recipient"] if sh["bps"] else "", "note": sh["note"]}
+    return {"bps": sh["bps"], "recipient": sh["recipient"] if sh["bps"] else "", "note": sh["note"],
+            "creator": dev_address if sh["bps"] else "", "creator_bps": 10_000 - sh["bps"] if sh["bps"] else 10_000}
 
 
 def _helm_fees(share: dict, funding: dict | None) -> str:
@@ -397,14 +401,57 @@ async def _note_creator_share(session, launch: Launch, job: Job, share: dict) ->
     from ..models import RevenueEvent
     from ..services.platform_config import CREATOR_SHARE_LAUNCHPADS
 
-    session.add(RevenueEvent(
-        source="creator_share", network=CREATOR_SHARE_LAUNCHPADS.get(launch.launchpad, launch.network),
-        asset="various", amount_raw=None, decimals=0, estimated=True, status="claimable",
-        destination=share["recipient"], launch_id=launch.id, job_id=job.id, payer_user_id=launch.user_id,
-        reference=launch.mint_address,
-        note=(f"{share['bps'] / 100:g}% of this launch's creator rewards on {launch.launchpad}; accrues and is claimed "
-              "on the launchpad, so the amount isn't directly verifiable from Helm")))
-    launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share}
+    existing = (await session.execute(select(RevenueEvent).where(
+        RevenueEvent.source == "creator_share", RevenueEvent.launch_id == launch.id,
+    ))).scalars().first()
+    if existing is None:
+        session.add(RevenueEvent(
+            source="creator_share", network=CREATOR_SHARE_LAUNCHPADS.get(launch.launchpad, launch.network),
+            asset="various", amount_raw=None, decimals=0, estimated=True, status="claimable",
+            destination=share["recipient"], launch_id=launch.id, job_id=job.id, payer_user_id=launch.user_id,
+            reference=launch.mint_address,
+            note=(f"{share['bps'] / 100:g}% of this launch's creator rewards on {launch.launchpad}; accrues and is "
+                  "claimed on the launchpad, so the amount isn't directly verifiable from Helm")))
+    params = {**(launch.launchpad_params or {}), "helm_creator_share": share}
+    if launch.launchpad == "pumpfun":
+        params["creator_share_setup"] = {"status": "active", "configured_at": utcnow().isoformat()}
+        params.pop("deploy_note", None)
+    launch.launchpad_params = params
+
+
+async def _activate_pumpfun_share(session, ex: Executor, job: Job, launch: Launch, dev: Wallet,
+                                  adapter, share: dict) -> bool:
+    """Finish pump.fun's required post-create sharing transaction without ever taking custody of creator funds."""
+    if launch.launchpad != "pumpfun" or not share.get("bps"):
+        return True
+    pending = {"status": "pending", "updated_at": utcnow().isoformat()}
+    launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share,
+                               "creator_share_setup": pending}
+    await session.commit()
+    try:
+        raw = await adapter.build_creator_share_tx(launch.mint_address, dev.address, share)
+    except AdapterError as e:
+        error = f"Token created, but Pump.fun fee sharing is not active yet: {e}"
+        job.status, job.params = "partial", {**(job.params or {}), "error": error}
+        launch.launchpad_params = {**(launch.launchpad_params or {}),
+                                   "creator_share_setup": {"status": "failed", "error": str(e)[:300],
+                                                           "updated_at": utcnow().isoformat()},
+                                   "deploy_note": error}
+        await session.commit()
+        return False
+    result = await run_required_followup(session, ex, job, dev, "deploy_fee_share", raw,
+                                         {dev.address: dev.signer_ref or ""})
+    if result.status == "confirmed":
+        return True
+    error = result.error or "the fee-sharing transaction did not confirm"
+    job.params = {**(job.params or {}), "error": f"Pump.fun creator-reward split: {error}"}
+    launch.launchpad_params = {**(launch.launchpad_params or {}),
+                               "creator_share_setup": {"status": result.status, "error": error[:300],
+                                                       "updated_at": utcnow().isoformat()},
+                               "deploy_note": ("The token exists, but its Pump.fun creator-reward split has not "
+                                               "confirmed. Helm will recheck it before making the launch live.")}
+    await session.commit()
+    return False
 
 
 @router.post("/launches/{launch_id}/deploy")
@@ -512,11 +559,21 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
             # reconciled by checking this mint's supply, even if the worker never returned from run_built().
             if built.mint:
                 launch.mint_address = built.mint
+                if l.launchpad == "pumpfun" and share.get("bps"):
+                    launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share,
+                                               "creator_share_setup": {"status": "waiting_for_token"}}
                 await session.commit()
             res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
             if res.status == "confirmed":
-                launch.status, launch.mint_address, launch.deployed_at = "live", built.mint, utcnow()
-                await _note_creator_share(session, launch, j, share)
+                launch.mint_address, launch.deployed_at = built.mint, utcnow()
+                share_ready = await _activate_pumpfun_share(session, ex, j, launch, dev, adapter, share)
+                if share_ready:
+                    launch.status = "live"
+                    await _note_creator_share(session, launch, j, share)
+                else:
+                    # The token exists, so a second deploy would be dangerous. Keep it in the non-retryable
+                    # deploying state until /recheck confirms or safely retries the one-time sharing config.
+                    launch.status = "deploying"
             elif res.status == "timeout" and built.mint:
                 # Sent but not confirmed in time: it may still land. Keep the mint so Helm can check for it, and
                 # don't offer a redeploy, which would create a second token.
@@ -696,6 +753,63 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
         if missing and since and utcnow() - datetime.fromisoformat(since) > timedelta(minutes=10):
             # a create transaction's blockhash expires in about a minute; ten minutes on, it can't land any more
             l.status, l.mint_address = "failed", None
+            await db.commit()
+        return _launch_out(l)
+    params = dict(l.launchpad_params or {})
+    share = params.get("helm_creator_share") or {}
+    if l.launchpad == "pumpfun" and share.get("bps") and (params.get("creator_share_setup") or {}).get("status") != "active":
+        job = (await db.execute(select(Job).where(
+            Job.launch_id == l.id, Job.kind == "deploy",
+        ).order_by(Job.created_at.desc()).limit(1))).scalars().first()
+        dev = await db.get(Wallet, l.dev_wallet_id) if l.dev_wallet_id else None
+        if not job or not dev:
+            l.launchpad_params = {**params, "deploy_note": (
+                "The token exists, but Helm cannot finish its Pump.fun reward split because the original deploy "
+                "job or creator wallet is unavailable. Contact support before treating the launch as complete.")}
+            await db.commit()
+            return _launch_out(l)
+        prior = (await db.execute(select(Transaction).where(
+            Transaction.job_id == job.id, Transaction.kind == "deploy_fee_share",
+        ).order_by(Transaction.created_at.desc()).limit(1))).scalars().first()
+        if prior and prior.status == "confirmed":
+            # The server may have restarted after committing the transaction result but before updating the launch.
+            # Never ask pump.fun to build the effectively one-time configuration again in that case.
+            job.status = "confirmed"
+            l.status, l.deployed_at = "live", l.deployed_at or utcnow()
+            await _note_creator_share(db, l, job, share)
+            await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id,
+                               {"mint": l.mint_address, "creator_share": True})
+            await db.commit()
+            return _launch_out(l)
+        if prior and prior.signature and prior.status in ("pending", "timeout"):
+            try:
+                status, error = await rpc.confirm(prior.signature, timeout_s=0)
+            except Exception:
+                return _launch_out(l)
+            if status not in ("confirmed", "failed"):
+                return _launch_out(l)
+            prior.status, prior.error = status, error
+            await db.commit()
+            if status == "confirmed":
+                job.status = "confirmed"
+                l.status, l.deployed_at = "live", l.deployed_at or utcnow()
+                await _note_creator_share(db, l, job, share)
+                await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id,
+                                   {"mint": l.mint_address, "creator_share": True})
+                await db.commit()
+                return _launch_out(l)
+        updated = (params.get("creator_share_setup") or {}).get("updated_at")
+        if updated:
+            try:
+                if utcnow() - datetime.fromisoformat(updated) < timedelta(seconds=45):
+                    return _launch_out(l)
+            except ValueError:
+                pass
+        if await _activate_pumpfun_share(db, ex, job, l, dev, get_adapter("pumpfun"), share):
+            l.status, l.deployed_at = "live", l.deployed_at or utcnow()
+            await _note_creator_share(db, l, job, share)
+            await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id,
+                               {"mint": l.mint_address, "creator_share": True})
             await db.commit()
         return _launch_out(l)
     l.status, l.deployed_at = "live", l.deployed_at or utcnow()

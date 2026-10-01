@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     gmgn_requests_per_minute: int = Field(default=30, ge=1, le=300)
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
     pumpfun_ipfs_url: str = "https://pump.fun/api/ipfs"
+    # Official pump.fun transaction builder for creator-fee sharing and distribution. It returns unsigned
+    # transactions; Helm's signer still signs locally, so no wallet secret is sent to pump.fun.
+    pumpfun_agent_api_url: str = "https://fun-block.pump.fun"
     # EVM RPC URLs per chain, each a comma-separated list rotated like SOLANA_RPC_URL. Blank = public endpoint
     # (rate-limited; fine for testing). Every URL's chain ID is checked before use.
     evm_rpc_base: str = ""

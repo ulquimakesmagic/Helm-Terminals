@@ -18,7 +18,8 @@ from .extra_pads import MemeCooking, Pinata, SunPump, Tolly
 
 def _pumpfun() -> LaunchpadAdapter:
     s = get_settings()
-    return PumpFunAdapter(trade_url=s.pumpportal_trade_url, ipfs_url=s.pumpfun_ipfs_url)
+    return PumpFunAdapter(trade_url=s.pumpportal_trade_url, ipfs_url=s.pumpfun_ipfs_url,
+                          agent_api_url=s.pumpfun_agent_api_url)
 
 
 def _letsbonk() -> LaunchpadAdapter:

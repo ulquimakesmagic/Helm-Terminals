@@ -494,6 +494,29 @@ async def run_built(
     return res
 
 
+async def run_required_followup(
+    db: AsyncSession,
+    ex: Executor,
+    job: Job,
+    wallet: Wallet | None,
+    kind: str,
+    raw: bytes,
+    refs: dict[str, str],
+) -> SubmitResult:
+    """Send a required transaction after an already-confirmed primary action.
+
+    This is used when an external builder can only construct the second transaction after the first action exists
+    on-chain. A failure therefore makes the job partial, never failed: the primary action already landed.
+    """
+    job.status = "submitted"
+    await db.commit()
+    res = await submit_tracked(ex, job, wallet, kind, raw, refs)
+    await _record(db, job, wallet, kind, res, None)
+    _finish(job, [SubmitResult("primary", "confirmed"), res])
+    await db.commit()
+    return res
+
+
 # --- EVM ------------------------------------------------------------------------------------------
 
 

@@ -504,10 +504,11 @@ export default function Workspace() {
         </div>
       )}
       {l.status === "failed" && l.deploy_error && <Callout tone="err">{l.deploy_error}.</Callout>}
-      {l.status === "deploying" && (l.mint_address || l.deploy_tx
+      {l.status === "deploying" && (l.deploy_note
+        ? <Callout tone="warn"><b>Launch setup needs attention.</b> {l.deploy_note}</Callout>
+        : l.mint_address || l.deploy_tx
         ? <Callout tone="warn"><b>Sent, not confirmed yet.</b> The create transaction didn't confirm in time, so it may still land. Helm checks for the token every 10 seconds. Don't deploy again until this resolves; that would create a second token.
           {l.deploy_tx && <> <a href={chain.explorer.tx + l.deploy_tx} target="_blank" rel="noreferrer noopener">View the deploy transaction<Icon name="ext" size={11} /></a></>}</Callout>
-        : l.deploy_note ? <Callout tone="warn"><b>Outcome not certain.</b> {l.deploy_note}</Callout>
         : <Callout><b>Deploying.</b> Waiting for the chain to confirm; this page refreshes every 10 seconds.</Callout>)}
 
       {terminal ? (

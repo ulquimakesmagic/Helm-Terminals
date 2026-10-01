@@ -52,11 +52,10 @@ FEE_PATHS = [
     {"id": "creator_share_clanker", "label": "Creator-reward share: Clanker", "setting": "creator_share_bps",
      "networks": ["base", "robinhood"], "supported": True, "lands": "claimable",
      "how": "The treasury is a reward recipient in Clanker's LP locker; claimed from Clanker's fee locker."},
-    {"id": "creator_share_pumpfun", "label": "Creator-reward share: Pump.fun", "setting": None,
-     "networks": ["solana"], "supported": False, "lands": None,
-     "how": "Pump.fun now documents a native, one-time fee-share configuration with up to 10 shareholders. Helm's "
-            "PumpPortal deployment does not create that configuration yet, so creator fees continue to go directly "
-            "to the creator wallet."},
+    {"id": "creator_share_pumpfun", "label": "Creator-reward share: Pump.fun", "setting": "creator_share_bps",
+     "networks": ["solana"], "supported": True, "lands": "claimable",
+     "how": "After the token confirms, Helm creates pump.fun's native one-time sharing config. Creator and treasury "
+            "are separate shareholders; either party can trigger the permissionless distribution."},
     {"id": "creator_share_meteora", "label": "Creator-reward share: Meteora DBC", "setting": None,
      "networks": ["solana"], "supported": False, "lands": None,
      "how": "A split requires a Helm-owned Meteora DBC configuration with explicit partner and creator fee "
@@ -75,7 +74,9 @@ FEE_PATHS = [
      "how": "Configured with BAGS_PARTNER_WALLET / BAGS_PARTNER_CONFIG; paid by Bags, not directly verifiable here."},
 ]
 
-CREATOR_SHARE_LAUNCHPADS = {"bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood"}
+CREATOR_SHARE_LAUNCHPADS = {
+    "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood",
+}
 
 
 @dataclass
@@ -161,7 +162,7 @@ def creator_share(launchpad: str) -> dict:
         # until an admin sets the share, so deploying this doesn't change anyone's rates.
         return {"bps": 0, "recipient": "", "supported": True,
                 "note": "Helm takes no share of your creator rewards"}
-    share = min(max(bps("creator_share_bps"), 0), 2000) if recipient else 0  # Clanker's own cap
+    share = min(max(bps("creator_share_bps"), 0), 1000) if recipient else 0
     return {"bps": share, "recipient": recipient, "supported": True,
             "note": (f"{share / 100:g}% of your creator rewards go to Helm's treasury; you keep {100 - share / 100:g}%"
                      if share else "Helm takes no share of your creator rewards")}

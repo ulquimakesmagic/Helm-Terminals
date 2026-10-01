@@ -66,8 +66,15 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
   }
   if (k === "helm_creator_share" && v && typeof v === "object") {
     // The creator confirms this split with the rest of the preview; it only applies to this new launch.
-    const c = v as { bps: number; note: string };
-    return <span style={{ fontWeight: c.bps ? 600 : 400 }}>{c.note}</span>;
+    const c = v as { bps: number; note: string; recipient?: string; creator?: string; creator_bps?: number };
+    if (!c.bps) return <span>{c.note}</span>;
+    return (
+      <div className="stack tight" style={{ alignItems: "flex-end" }}>
+        <span style={{ fontWeight: 600 }}>{c.note}</span>
+        {c.creator && <span className="row nowrap" style={{ gap: 8 }}><span className="muted small">Creator {(c.creator_bps ?? 10_000 - c.bps) / 100}%</span><Address address={c.creator} network={network} /></span>}
+        {c.recipient && <span className="row nowrap" style={{ gap: 8 }}><span className="muted small">Helm {c.bps / 100}%</span><Address address={c.recipient} network={network} /></span>}
+      </div>
+    );
   }
   if ((k === "funding" || k === "funding_detail") && v && typeof v === "object") {
     const o = v as Record<string, unknown>;

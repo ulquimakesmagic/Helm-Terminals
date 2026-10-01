@@ -20,7 +20,7 @@ rights and must stay distinct in the UI and revenue ledger.
 | --- | --- | --- | --- | --- | --- |
 | Bags | Bonding curve or paired pool | Bags royalty | Yes | Active: creator and Helm are separate claimers | Keep and add an integration test that verifies 94/6 recipients before signing |
 | Clanker | Locked Uniswap V4 liquidity | LP rewards | Yes | Active: creator and Helm are separate locker recipients | Keep; show both recipients and percentages in every deployment preview |
-| Pump.fun | Bonding curve, later PumpSwap | Creator fees | Yes, through Pump Fees sharing config | Creator receives 100%; Helm does not configure sharing yet | Add `create_fee_sharing_config` and the one-time `update_fee_shares_v2` as a post-create deployment stage, then verify the on-chain 94/6 shareholders before declaring the launch live |
+| Pump.fun | Bonding curve, later PumpSwap | Creator fees | Yes, through Pump Fees sharing config | Active for new launches when the admin share is enabled: Helm builds the official one-time config after creation and keeps the launch in setup until it confirms | Monitor the official API and add direct on-chain account verification as a second independent check |
 | Meteora DBC | Dynamic curve, then DAMM | Creator and partner trading fees plus configurable migration liquidity | Yes, when Helm owns the DBC config | Current Jupiter Studio config has no Helm-controlled split | Create and audit a Helm DBC config whose partner/creator economics are explicit; migrate only after devnet and mainnet-fork verification |
 | Flap.sh | Standard or tax token | Optional creator tax; separate launchpad commission | No creator-share split in the current adapter | Creator tax goes directly to dev; Helm may receive Flap's separate commission on tax tokens | Keep these as separate revenue lines; do not take 6% from creator tax |
 | Pons | Bonding curve | Optional creator tax | No multi-recipient split in the current adapter | Creator tax accrues for the dev wallet | Keep direct-to-creator; pursue a provider partner fee rather than routing tax through Helm |
@@ -35,9 +35,11 @@ rights and must stay distinct in the UI and revenue ledger.
 
 1. Keep Bags and Clanker at the configured 6% native split and make the preflight show creator address, Helm treasury,
    94%, and 6% as separate immutable terms.
-2. Implement Pump.fun sharing next. It is the nearest compatible path, but its shareholder update is one-time, so the
-   launch must not be marked live until both the coin creation and fee-sharing configuration have confirmed.
-3. Build a Helm-owned Meteora DBC configuration. Treat this as a new adapter version because it changes curve and
+2. Keep Pump.fun's sharing setup as a required post-create stage. The official transaction builder is
+   `POST https://fun-block.pump.fun/agents/sharing-config`; Helm validates the returned 94/6 shareholder list before
+   signing and does not mark the launch live until both transactions confirm. Fee claims use `/agents/collect-fees`,
+   which automatically distributes to all shareholders when a sharing config exists.
+3. Build a Helm-owned Meteora DBC configuration using the direct Meteora SDK. Treat this as a new adapter version because it changes curve and
    migration economics from the current Jupiter Studio route.
 4. Ask LetsBonk, Flap, Pons, Four.meme, SunPump and Tolly for documented partner or referral programs. Add each only
    when Helm can record an independently claimable revenue entitlement.
@@ -47,6 +49,7 @@ rights and must stay distinct in the UI and revenue ledger.
 ## Sources used for the next integrations
 
 - [Pump.fun creator fee sharing](https://github.com/pump-fun/pump-public-docs/blob/main/docs/instructions/CREATOR_FEE_SHARING.md)
+- [Pump.fun official fee transaction API](https://github.com/pump-fun/pump-fun-skills/blob/main/coin-fees/SKILL.md)
 - [Bags royalty split](https://support.bags.fm/en/articles/13434876-royalty-earned)
 - [Clanker authenticated deployment rewards](https://github.com/clanker-devco/DOCS/blob/main/api-reference/authenticated/deployment.md)
 - [Meteora DBC accounts and fee fields](https://github.com/MeteoraAg/docs/blob/main/developer-guides/dbc/program/accounts.mdx)

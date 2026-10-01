@@ -31,10 +31,10 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
   pumpfun: {
     mode: "Bonding curve", title: "Launch on Pump.fun",
     description: "Create on Pump.fun's bonding curve, with an optional creator buy and priority fee.",
-    features: ["Pump.fun metadata", "Optional creator buy", "Creator fees claimable in Helm"],
+    features: ["Pump.fun metadata", "Native reward split", "Creator fees distributable in Helm"],
     settingsTitle: "Pump.fun curve settings", rewardTitle: "Pump.fun creator fees",
-    rewardCopy: "Creator fees currently go directly to the creator wallet. Pump.fun supports a native shareholder configuration, which Helm must integrate before taking a 6% share.",
-    claimMode: "in-app", claimCopy: "Collect Pump.fun creator fees into the selected creator wallet.", accent: "#55e878",
+    rewardCopy: "Helm writes the disclosed creator and treasury percentages into Pump.fun's native one-time sharing config. Each side receives its own share; Helm never holds the creator's portion.",
+    claimMode: "in-app", claimCopy: "Distribute available Pump.fun fees directly to every configured shareholder.", accent: "#55e878",
   },
   letsbonk: {
     mode: "Bonding curve", title: "Launch on LetsBonk",
