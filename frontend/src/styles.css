@@ -1215,6 +1215,23 @@ p a:not(.btn):hover, .small a:not(.btn):hover, .market-note a:hover { text-decor
 @media (max-width: 900px) { .jump-trade { display: inline-flex; } }
 
 /* Respect reduced motion everywhere. */
+.launch-identity { display: flex; align-items: stretch; gap: 16px; }
+.launch-identity > .grow { min-width: 0; }
+.launch-identity-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.launch-funding { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.launch-funding .field { min-width: 0; white-space: normal; }
+.launch-form-section { padding: 18px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--bg-2); }
+.launch-form-section h4 { margin: 0 0 6px; }
+.launch-form-section > p { margin: 0 0 14px; line-height: 1.6; }
+.pad-scope { border-top: 1px solid var(--line-2); padding-top: 12px; margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.launch-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.launch-summary dt { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.launch-summary dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .launch-identity { flex-direction: column; }
+  .launch-identity-fields, .launch-summary dl, .launch-funding { grid-template-columns: 1fr; }
+  .launch-form-section { padding: 14px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
