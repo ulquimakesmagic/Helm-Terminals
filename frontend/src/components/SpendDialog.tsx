@@ -32,6 +32,7 @@ const LABELS: Record<string, string> = {
   dev_buy_usd: "Dev buy (USD, est.)", from_address: "From address", route_fee: "Route fee", receive: "Receive", leftover: "Leftover",
   covers: "Covers", helm_creator_share: "Helm's share of your creator rewards", helm_fees: "All Helm fees",
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
+  commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",

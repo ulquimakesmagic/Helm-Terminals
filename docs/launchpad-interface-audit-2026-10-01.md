@@ -27,6 +27,8 @@ The image limit remains Helm's backend limit of 2 MB, not a claim about each lau
 
 ## Backend follow-up risks
 
+Update: the later [Flap Base and revenue work](flap-base-and-revenue.md) removes the pending Pons fee deduction, corrects Flap's tax migrator, and records frozen commission configuration separately from measured revenue. The notes below describe the state at the time of this interface audit.
+
 - Existing uncommitted changes to `pons.py`, `routes/launches.py` and `platform_config.py` predate this UI work. They were preserved and are not validated by the frontend checks.
 - The pending Pons revenue implementation uses wallet-wide escrow pending value and a separate treasury transfer. Attribution, partial failure and recovery need review before it is treated as production-ready revenue collection.
 - Flap's tax-token migrator/version combination needs verification against the official launcher reference before expanding tax controls. Do not infer contract compatibility from a matching native UI.

@@ -364,6 +364,7 @@ class RevenueEvent(Base):
     """One piece of Helm revenue, in its original asset and network. `status`:
     received  - moved on-chain to a treasury address in a confirmed transaction Helm sent
     pending   - in a transaction that hasn't confirmed
+    configured - provider recipient configured; no accrual or payment established (amount must be unknown)
     claimable - held by a provider (Relay, a launchpad fee locker) until someone claims it
     failed    - signed fee transaction reached a verified terminal failure; not revenue received
     `reconciled_at` is set when an admin has matched it against the treasury's on-chain inflows."""

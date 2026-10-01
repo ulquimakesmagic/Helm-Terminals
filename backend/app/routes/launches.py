@@ -419,6 +419,24 @@ async def _note_creator_share(session, launch: Launch, job: Job, share: dict) ->
     launch.launchpad_params = params
 
 
+async def _note_flap_partner(session, launch: Launch) -> None:
+    """Record configuration only, using the recipient frozen from the submitted calldata."""
+    config = (launch.launchpad_params or {}).get("flap_commission") or {}
+    recipient = config.get("recipient")
+    if not launch.launchpad.startswith("flap-sh") or not recipient:
+        return
+    await session.execute(select(Launch.id).where(Launch.id == launch.id).with_for_update())
+    existing = (await session.execute(select(RevenueEvent).where(
+        RevenueEvent.source == "partner", RevenueEvent.launch_id == launch.id,
+    ))).scalars().first()
+    if existing is None:
+        session.add(RevenueEvent(
+            source="partner", network=launch.network, asset="various", amount_raw=None, decimals=0,
+            estimated=True, status="configured", destination=recipient, launch_id=launch.id, job_id=config.get("job_id"),
+            payer_user_id=launch.user_id, reference=launch.mint_address,
+            note="Flap commission recipient configured at launch. No accrual or payout verified; not received revenue."))
+
+
 async def _activate_pumpfun_share(session, ex: Executor, job: Job, launch: Launch, dev: Wallet,
                                   adapter, share: dict) -> bool:
     """Finish pump.fun's required post-create sharing transaction without ever taking custody of creator funds."""
@@ -821,7 +839,7 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
 # Token resolvers of EVM deploys that timed out, kept in this process so a late receipt can still name the token.
 _EVM_RESOLVERS: dict = {}
 DEPLOY_TRACKING = ("evm_deploy_tx", "unconfirmed_since", "predicted_token", "deploy_error", "deploy_note",
-                   "archived_while_deploying", "deploy_started_at")
+                   "archived_while_deploying", "deploy_started_at", "flap_commission")
 
 
 async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: User) -> None:
@@ -866,6 +884,7 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
         l.launchpad_params = {**params, "deploy_error": "launched, but the token address couldn't be read; "
                                                         "check the explorer"}
     await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id, {"tx": h, "token": token})
+    await _note_flap_partner(db, l)
     await db.commit()
 
 
@@ -890,7 +909,12 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
             raise HTTPException(409, "launch is not live")
         return await extra_launch.claim(l, body, user, db, ex, w, adapter)
     _core_only(w.network)
-    pf = build_preflight("claim_fees", {"launch_id": l.id, "wallet": w.address, "platform_fee": "none"})
+    if w.network != l.network:
+        raise HTTPException(400, f"that wallet is on {w.network}, not {l.network}")
+    claim_summary = {"launch_id": l.id, "wallet": w.address, "network": l.network, "platform_fee": "none"}
+    if l.launchpad == "pons":
+        claim_summary["claim_scope"] = "All Pons rewards for this wallet, across launches; no Helm deduction."
+    pf = build_preflight("claim_fees", claim_summary)
     if not body.confirm:
         return pf
     job, created = await begin_spend(db, user, body, pf, "claim_fees", l.id, pf["preflight"])
@@ -1256,6 +1280,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
                 return
             opts = {**params, "helm_creator_share": share}
+            if l.launchpad.startswith("flap-sh"):
+                opts["flap_commission_receiver"] = summary.get("commission_receiver", "")
             if l.image_blob:
                 opts["logo_url"] = f"{get_settings().public_api_url.rstrip('/')}/public/launch-images/{l.id}"
             from ..services.evm_exec import sign_text
@@ -1273,6 +1299,10 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 launch.status = "failed"
                 await session.commit()
                 return
+            if l.launchpad.startswith("flap-sh"):
+                receiver = (plan.notes or {}).get("commission_receiver")
+                launch.launchpad_params = {**(launch.launchpad_params or {}),
+                                          "flap_commission": {"recipient": receiver, "job_id": j.id}}
             if plan.token:
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "predicted_token": plan.token}
                 await session.commit()
@@ -1288,6 +1318,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             if res.status == "confirmed":
                 launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
                 await _note_creator_share(session, launch, j, share)
+                await _note_flap_partner(session, launch)
             elif len(plan.steps) == 1 and res.status == "timeout" and res.signature:
                 # The one create transaction was sent but not confirmed in time: it may still land. Stay "deploying"
                 # (which can't be deployed again) and let /recheck read its receipt, so a retry never makes a second token.

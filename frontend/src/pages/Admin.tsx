@@ -154,7 +154,7 @@ function Revenue({ me }: { me: AdminMe }) {
           <label className="field"><span>Source</span><select value={f.source} onChange={set("source")}><option value="">All</option>
             {Object.entries(SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           <label className="field"><span>Status (ledger)</span><select value={f.status} onChange={set("status")}><option value="">All</option>
-            <option value="received">Received</option><option value="pending">Pending</option><option value="claimable">Claimable</option><option value="failed">Failed</option><option value="unreconciled">Unreconciled</option></select></label>
+            <option value="received">Received</option><option value="pending">Pending</option><option value="claimable">Claimable</option><option value="configured">Configured (not revenue)</option><option value="failed">Failed</option><option value="unreconciled">Unreconciled</option></select></label>
         </div>
       </Card>
 
@@ -183,7 +183,7 @@ function Revenue({ me }: { me: AdminMe }) {
             )}
           </Card>
           <Callout tone="info">
-            <b>Received</b>: {sum.notes.received} <b>Pending</b>: {sum.notes.pending} <b>Claimable</b>: {sum.notes.claimable} <b>Failed</b>: {sum.notes.failed} <b>Estimated</b>: {sum.notes.estimated} Valuation: {sum.valuation.method}.
+            <b>Received</b>: {sum.notes.received} <b>Pending</b>: {sum.notes.pending} <b>Claimable</b>: {sum.notes.claimable} <b>Configured</b>: {sum.notes.configured} <b>Failed</b>: {sum.notes.failed} <b>Estimated</b>: {sum.notes.estimated} Valuation: {sum.valuation.method}.
           </Callout>
 
           <Card title="Referral liabilities · excluded from Helm revenue" icon="gift">
@@ -235,7 +235,7 @@ function Revenue({ me }: { me: AdminMe }) {
                 <td data-label="Source" title={r.note}>{SOURCE_LABEL[r.source] ?? r.source}<div className="muted small">{NET_LABEL[r.network] ?? r.network}</div></td>
                 <td data-label="Launch">{r.launch ? <>{r.launch.name} <span className="muted">${r.launch.symbol}</span></> : <span className="muted">—</span>}</td>
                 <td className="r mono" data-label="Amount" title={r.amount_raw ? `${r.amount_raw} raw · ${r.decimals} decimals` : r.note}>
-                  {units(r.amount_raw, r.decimals)} {r.asset}{r.estimated && <div className="muted small">estimated</div>}</td>
+                  {r.status === "configured" ? "Not measured" : <>{units(r.amount_raw, r.decimals)} {r.asset}{r.estimated && <div className="muted small">estimated</div>}</>}</td>
                 <td data-label="Status"><div><StatusBadge status={r.status === "received" ? "confirmed" : r.status === "failed" ? "failed" : r.status === "claimable" ? "scheduled" : "pending"} label={r.status} /></div>
                   <div className="muted small">{r.reconciled_at ? `reconciled ${utc(r.reconciled_at)}` : "unreconciled"}</div></td>
                 <td className="hide-sm mono small">{r.destination ? <span className="row nowrap">{r.destination.slice(0, 6)}…{r.destination.slice(-4)}<CopyButton text={r.destination} /></span> : "—"}</td>

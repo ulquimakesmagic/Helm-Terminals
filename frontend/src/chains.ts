@@ -69,7 +69,7 @@ export function explorerUrl(network: string | null | undefined, type: "account" 
 export const PAD_NAMES: Record<string, string> = {
   pumpfun: "Pump.fun", letsbonk: "LetsBonk", "meteora-dbc": "Meteora DBC", bags: "Bags", printr: "Printr",
   surge: "Surge", anoncoin: "Anoncoin", stonkfun: "Stonk.fun", clanker: "Clanker", bankr: "Bankr",
-  "four-meme": "Four.meme", "flap-sh": "Flap.sh", "flap-sh-robinhood": "Flap.sh", "clanker-robinhood": "Clanker", pons: "Pons", "uniswap-v2": "Uniswap V2",
+  "four-meme": "Four.meme", "flap-sh": "Flap.sh", "flap-sh-base": "Flap.sh", "flap-sh-robinhood": "Flap.sh", "clanker-robinhood": "Clanker", pons: "Pons", "uniswap-v2": "Uniswap V2",
   sunpump: "SunPump", "meme-cooking": "Meme.Cooking", tolly: "Tolly", gaspump: "GasPump",
 };
 export const padName = (id: string) => PAD_NAMES[id] ?? id;
@@ -77,7 +77,7 @@ export const padName = (id: string) => PAD_NAMES[id] ?? id;
 export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string }
 
 /** Launchpads that need a token image to launch. */
-export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-robinhood", "four-meme", "meteora-dbc", "meme-cooking", "tolly"]);
+export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "four-meme", "meteora-dbc", "meme-cooking", "tolly"]);
 
 /** Launchpads grouped by chain, in display order. */
 export function padsByChain(pads: Pad[]) {

@@ -1,4 +1,4 @@
-"""Flap.sh adapter (BNB Chain and Robinhood Chain), talking to Flap's Portal contract directly.
+"""Flap.sh adapter (BNB Chain, Robinhood Chain and Base), using Flap's Portal contract directly.
 
 Launch:
   1. Upload the image and metadata to Flap's upload API, which pins them to IPFS and returns a CID.
@@ -33,6 +33,12 @@ MAX_UINT = 2**256 - 1
 
 # From docs.flap.sh "Deployed contract addresses". Standard-token implementations are listed in the order to try.
 FLAP_CHAINS = {
+    "base": {
+        "portal": "0x0000BC1c4fD15Dd79029AF8F5d77D68ae4490000",
+        "standard_impls": [],
+        "tax_impl": "0x777782e7EbB89802E2379E5fFcF7336538f43333",
+        "dex0": "Uniswap",
+    },
     "bsc": {
         "portal": "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0",
         "standard_impls": ["0x8b4329947e34b6d56d71a3385cac122bade7d78d", "0x88881b6f03090462a969eC7f48385744Eeb63333"],
@@ -50,6 +56,7 @@ FLAP_CHAINS = {
 # Enum values from Flap's IPortalTypes
 DEX_THRESH_FOUR_FIFTHS = 1
 MIGRATOR_V3 = 0
+MIGRATOR_V2 = 1
 DEX0 = 0
 LP_FEE_STANDARD = 0
 TOKEN_V2_PERMIT = 2
@@ -128,7 +135,8 @@ class FlapAdapter:
     @property
     def commission_receiver(self) -> str:
         """Flap's launchpad commission on tax tokens goes to this address: Helm's treasury for this chain (from the
-        platform settings) unless one was given explicitly. The commission is paid by Flap, not from the creator's tax."""
+        platform settings) unless one was given explicitly. Flap determines the commission; Helm's creator-share
+        setting does not determine this rate."""
         if self._commission is not None:
             return self._commission
         from ..services import platform_config as pc
@@ -139,10 +147,10 @@ class FlapAdapter:
         return {
             "fields": [
                 {"key": "dev_buy_sol", "type": "number", "min": 0, "label": "Dev buy (native coin)", "default": 0},
-                {"key": "tax_rate_pct", "type": "select", "options": [0, *TAX_RATES_PCT], "default": 0,
+                {"key": "tax_rate_pct", "type": "select", "options": ([0] if self.cfg["standard_impls"] else []) + list(TAX_RATES_PCT), "default": 0 if self.cfg["standard_impls"] else 1,
                  "label": "Trading tax (%)",
-                 "hint": "0 makes a standard token. A tax token charges this on every buy and sell for a year, "
-                         "paid to your dev wallet."},
+                 "hint": "A tax token charges this on buys and sells for a year, paid to your dev wallet. "
+                         "Base supports tax tokens only through Helm; 0 on other chains makes a standard token."},
                 {"key": "slippage_pct", "type": "number", "min": 0, "max": 50, "default": 10},
             ],
             "socials": ["twitter", "telegram", "website"],
@@ -154,6 +162,7 @@ class FlapAdapter:
         notes = {"token_type": f"tax token: {tax}% on every buy and sell for a year, paid to your dev wallet" if tax
                  else "standard token, no tax"}
         if tax and self.commission_receiver:
+            notes["commission_receiver"] = self.commission_receiver
             notes["commission"] = "Helm is this token's commission receiver on Flap and earns Flap's launchpad commission on it"
         return notes
 
@@ -189,9 +198,10 @@ class FlapAdapter:
     def _params(self, req: CreateRequest, cid: str, salt: bytes, tax_pct: int, value: int) -> tuple:
         tax_bps = tax_pct * 100
         taxed = tax_pct > 0
-        commission = self.commission_receiver if taxed and self.commission_receiver else ZERO
+        receiver = (req.options or {}).get("flap_commission_receiver", self.commission_receiver)
+        commission = receiver if taxed and receiver else ZERO
         return (
-            req.name, req.symbol, cid, DEX_THRESH_FOUR_FIFTHS, salt, MIGRATOR_V3, ZERO, value, req.dev_pubkey,
+            req.name, req.symbol, cid, DEX_THRESH_FOUR_FIFTHS, salt, MIGRATOR_V2 if taxed else MIGRATOR_V3, ZERO, value, req.dev_pubkey,
             b"", b"\x00" * 32, b"", DEX0, LP_FEE_STANDARD,
             tax_bps, tax_bps,
             365 * 86400 if taxed else 0,  # taxDuration
@@ -206,6 +216,8 @@ class FlapAdapter:
 
     async def prepare_create(self, req: CreateRequest) -> EvmPlan:
         tax_pct = int((req.options or {}).get("tax_rate_pct") or 0)
+        if not tax_pct and not self.cfg["standard_impls"]:
+            raise AdapterError("Flap on Base requires a tax token; choose a supported trading tax rate")
         if tax_pct and tax_pct not in TAX_RATES_PCT:
             raise AdapterError(f"Flap tax rate must be one of {', '.join(map(str, TAX_RATES_PCT))}%")
         value = int(round(req.dev_buy_sol * 10**18))
@@ -215,7 +227,8 @@ class FlapAdapter:
         last_error = None
         for impl in impls:
             salt, predicted = await asyncio.to_thread(grind_salt, self.portal, impl, suffix)
-            data = self.encode_create(self._params(req, cid, salt, tax_pct, value))
+            encoded_params = self._params(req, cid, salt, tax_pct, value)
+            data = self.encode_create(encoded_params)
             try:
                 ret = await self.rpc.call("eth_call", [{"from": req.dev_pubkey, "to": self.portal,
                                                         "value": hex(value), "data": "0x" + data.hex()}, "latest"])
@@ -227,7 +240,8 @@ class FlapAdapter:
                 notes = {"token_type": f"tax token, {tax_pct}% on buys and sells for a year, paid to your dev wallet"
                          if tax_pct else "standard token, no tax",
                          "graduates_to": f"{self.cfg['dex0']} when 80% of supply is sold on the curve"}
-                if tax_pct and self.commission_receiver:
+                if tax_pct and encoded_params[24] != ZERO:
+                    notes["commission_receiver"] = encoded_params[24]
                     notes["commission"] = ("Helm is this token's commission receiver on Flap, so Helm earns the launchpad "
                                           "commission Flap pays on tax tokens")
                 return EvmPlan(steps=[EvmStep("launch", self.portal, data, value)], token=predicted, notes=notes)

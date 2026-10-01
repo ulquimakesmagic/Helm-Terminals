@@ -31,7 +31,7 @@ EXPLORERS = {"solana": "https://solscan.io/account/", "base": "https://basescan.
              "bsc": "https://bscscan.com/address/", "ethereum": "https://etherscan.io/address/",
              "robinhood": "https://robinhoodchain.blockscout.com/address/"}
 SOURCES = ("trade_fee", "dex_trade_fee", "route_fee", "creator_share", "partner")
-STATUSES = ("received", "pending", "claimable", "failed")
+STATUSES = ("received", "pending", "claimable", "failed", "configured")
 
 
 def iso(dt: datetime | None) -> str | None:
@@ -173,9 +173,9 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
         s["by_asset"].setdefault(k, {"network": net, "asset": a, "decimals": dec, "received": 0, "pending": 0,
                                      "claimable": 0, "failed": 0, "estimated": 0,
                                      "estimated_by_status": {"received": 0, "pending": 0, "claimable": 0, "failed": 0}})
-        s["by_asset"][k][st] += measured_raw
+        s["by_asset"][k][st] = s["by_asset"][k].get(st, 0) + measured_raw
         s["by_asset"][k]["estimated"] += estimate_raw
-        s["by_asset"][k]["estimated_by_status"][st] += estimate_raw
+        s["by_asset"][k]["estimated_by_status"][st] = s["by_asset"][k]["estimated_by_status"].get(st, 0) + estimate_raw
     for s in by_source.values():
         s["by_asset"] = list(s["by_asset"].values())
     owed_rows = (await db.execute(select(FeeRecord.network, func.sum(FeeRecord.referral_lamports), func.count())
@@ -193,6 +193,7 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
                                 "added across assets",
                       "as_of": iso(utcnow())},
         "notes": {
+            "configured": "Provider commission recipient set at launch; no accrued or received amount verified.",
             "received": "Moved on-chain to a treasury address in a confirmed transaction Helm sent.",
             "pending": "In a transaction that hadn't confirmed when it was recorded.",
             "claimable": "Held by a provider (Relay, a launchpad fee locker, Bags, Flap) until claimed. Not received "

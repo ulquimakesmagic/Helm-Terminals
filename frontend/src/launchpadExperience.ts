@@ -28,6 +28,14 @@ const DEFAULT: LaunchpadExperience = {
 };
 
 export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
+  "flap-sh-base": {
+    mode: "Tax token", title: "Launch on Flap.sh for Base",
+    description: "Launch Flap's supported tax-token preset on Base, funded in ETH.",
+    features: ["Tax-token launch", "Creator tax to dev wallet", "Flap commission integration"],
+    settingsTitle: "Flap Base token economics", rewardTitle: "Flap commission & creator tax",
+    rewardCopy: "Creator tax goes to the dev wallet. Flap calculates a separate commission for Helm's configured treasury. This is not a 6% deduction from creator rewards; configured commission is not verified revenue.",
+    claimMode: "automatic", claimCopy: "Creator tax is paid to the dev wallet by Flap's mechanism; no Helm claim is needed.", accent: "#4d7cff",
+  },
   pumpfun: {
     mode: "Bonding curve", title: "Launch on Pump.fun",
     description: "Create on Pump.fun's bonding curve, with an optional creator buy and priority fee.",

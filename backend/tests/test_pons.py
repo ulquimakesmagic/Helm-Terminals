@@ -171,6 +171,10 @@ async def test_claims():
     node.pending_fees = 10**15
     plan = await a.prepare_claim(ClaimRequest(wallet_pubkey="0x" + "ab" * 20))
     assert plan.steps[0].to == FEE_ESCROW and plan.steps[0].data == selector("claim()")
+    # An old stored setting must never deduct a launch-specific share from wallet-wide rewards.
+    plan = await a.prepare_claim(ClaimRequest(wallet_pubkey="0x" + "ab" * 20,
+        options={"helm_creator_share": {"bps": 600, "recipient": "0x" + "cd" * 20}}))
+    assert len(plan.steps) == 1 and plan.steps[0].value == 0
 
 
 async def test_pons_through_the_api(client, fake_rpc):

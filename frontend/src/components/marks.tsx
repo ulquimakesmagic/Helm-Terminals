@@ -22,7 +22,7 @@ function asset(kind: "chains" | "launchpads", key: string): string | undefined {
 
 /** Launchpad ids that share one brand. The same launchpad on another chain keeps its own logo. */
 const PAD_BRAND: Record<string, string> = {
-  "meteora-dbc": "meteora", "uniswap-v2": "uniswap", "flap-sh": "flap", "flap-sh-robinhood": "flap",
+  "meteora-dbc": "meteora", "uniswap-v2": "uniswap", "flap-sh": "flap", "flap-sh-base": "flap", "flap-sh-robinhood": "flap",
   "clanker-robinhood": "clanker",
 };
 

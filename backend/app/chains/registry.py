@@ -50,6 +50,7 @@ def _clanker(launchpad_id: str, network: str):
 
 IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                "flap-sh": _flap("flap-sh", "bsc"), "flap-sh-robinhood": _flap("flap-sh-robinhood", "robinhood"),
+               "flap-sh-base": _flap("flap-sh-base", "base"),
                "pons": lambda: PonsAdapter(shared_evm("robinhood")),
                "uniswap-v2": lambda: UniswapV2Adapter(shared_evm("ethereum")),
                "four-meme": lambda: FourMemeAdapter(shared_evm("bsc")),

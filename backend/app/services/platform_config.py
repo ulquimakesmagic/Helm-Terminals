@@ -56,19 +56,24 @@ FEE_PATHS = [
      "networks": ["solana"], "supported": True, "lands": "claimable",
      "how": "After the token confirms, Helm creates pump.fun's native one-time sharing config. Creator and treasury "
             "are separate shareholders; either party can trigger the permissionless distribution."},
+    {"id": "creator_share_pons", "label": "Creator-reward share: Pons", "setting": None,
+     "networks": ["robinhood"], "supported": False, "lands": None,
+     "how": "Pons claims wallet-wide rewards. Helm does not deduct a share from that balance. A verified splitter "
+            "or attributable, recoverable collection flow is required before enabling this fee."},
     {"id": "creator_share_meteora", "label": "Creator-reward share: Meteora DBC", "setting": None,
      "networks": ["solana"], "supported": False, "lands": None,
      "how": "A split requires a Helm-owned Meteora DBC configuration with explicit partner and creator fee "
             "claimers. The current Jupiter Studio route does not expose that split."},
     {"id": "creator_share_other", "label": "Creator-reward share: other launchpads", "setting": None,
      "networks": [], "supported": False, "lands": None,
-     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, Pons, SunPump, Tolly, "
+     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, SunPump, Tolly, "
             "Meme.Cooking or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
             "rights and are not relabelled as creator rewards."},
     {"id": "partner_flap", "label": "Flap launchpad commission (tax tokens)", "setting": None,
-     "networks": ["bsc", "robinhood"], "supported": True, "lands": "claimable",
-     "how": "The treasury is set as the commission receiver on new Flap tax tokens; Flap pays its commission from its "
-            "own side, not from the creator's tax. Paid by Flap, not directly verifiable here."},
+     "networks": ["bsc", "robinhood", "base"], "supported": True, "lands": "configured",
+     "how": "The treasury is set as the commission receiver on new Flap tax tokens, using Flap's protocol-calculated "
+            "commission. A configured recipient is not proof of accrued or received revenue; "
+            "payouts require on-chain reconciliation. This is not Helm's 6% creator share."},
     {"id": "partner_bags", "label": "Bags partner share", "setting": None,
      "networks": ["solana"], "supported": True, "lands": "claimable",
      "how": "Configured with BAGS_PARTNER_WALLET / BAGS_PARTNER_CONFIG; paid by Bags, not directly verifiable here."},

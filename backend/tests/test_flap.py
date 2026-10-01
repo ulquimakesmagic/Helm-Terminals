@@ -3,6 +3,7 @@
 import json
 
 import httpx
+import pytest
 from eth_abi import decode as abi_decode
 from eth_abi import encode as abi_encode
 from eth_utils import keccak, to_checksum_address
@@ -121,6 +122,25 @@ async def test_tax_token_uses_7777_and_commission_receiver():
     (p,) = abi_decode(NEW_TOKEN_V6_TYPES, plan.steps[0].data[4:])
     assert plan.token.lower().endswith("7777") and p[25] == 6 and p[14] == p[15] == 300 and p[18] == 10_000
     assert p[24].lower() == "0x" + "cd" * 20 and "commission" in plan.notes
+    assert p[5] == 1  # Tax Token V3 must migrate through V2, not the standard V3 path.
+
+
+async def test_base_tax_launch_uses_official_addresses_and_frozen_receiver():
+    seen = []
+    a = FlapAdapter("flap-sh-base", "base", FlapNode("base"), commission_receiver="0x" + "cd" * 20,
+                    client=httpx.AsyncClient(transport=upload_transport(seen)))
+    tax = next(f for f in a.options_schema()["fields"] if f["key"] == "tax_rate_pct")
+    assert 0 not in tax["options"] and tax["default"] == 1
+    with pytest.raises(Exception, match="requires a tax token"):
+        await a.prepare_create(req())
+    assert not seen  # Rejected before an upload or chain call.
+    frozen = "0x" + "ef" * 20
+    plan = await a.prepare_create(req(options={"tax_rate_pct": 1, "flap_commission_receiver": frozen}))
+    (p,) = abi_decode(NEW_TOKEN_V6_TYPES, plan.steps[0].data[4:])
+    assert plan.steps[0].to == "0x0000BC1c4fD15Dd79029AF8F5d77D68ae4490000"
+    assert p[5] == 1 and p[25] == 6 and p[14] == p[15] == 100
+    assert p[24].lower() == frozen and plan.notes["commission_receiver"].lower() == frozen
+    assert plan.token.lower().endswith("7777")
 
 
 async def test_disabled_standard_tokens_give_a_clear_error_and_bad_tax_rejected():
