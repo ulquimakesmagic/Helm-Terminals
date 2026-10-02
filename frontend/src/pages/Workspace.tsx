@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Location, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl, isExtraChain } from "../chains";
 import { launchpadExperience } from "../launchpadExperience";
@@ -121,6 +121,9 @@ function WsTabs({ tabs, on, setOn }: { tabs: [string, string, React.ReactNode][]
 
 export default function Workspace() {
   const { id } = useParams();
+  // The launches list hands over what it already knows, so the header renders at once instead of
+  // after the workspace payload; a cold load (refresh, deep link) falls back to granular skeletons.
+  const cached: any | undefined = (useLocation().state as Location["state"])?.launch;
   const nav = useNavigate();
   const [search, setSearch] = useSearchParams();
   const tab = search.get("tab") ?? "wallets";
@@ -174,14 +177,52 @@ export default function Workspace() {
   }, [load]);
 
   if (!ws) {
+    const head = cached ? (
+      // Real identity from the list hand-over: the page reads as loaded before the payload arrives.
+      <div className="stack" aria-busy="true">
+        <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
+        <header className="page-head">
+          <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
+            <TokenImage launch={cached} size={52} />
+            <div style={{ minWidth: 0 }}>
+              <div className="row" style={{ gap: 10 }}>
+                <h1 className="truncate">{cached.name}</h1>
+                <span className="mono muted" style={{ fontSize: 14 }}>${cached.symbol}</span>
+                {cached.imported && <span className="badge violet">imported</span>}
+              </div>
+              <div className="row small muted" style={{ gap: 8, marginTop: 4 }}>
+                <ChainLabel network={cached.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={cached.launchpad} network={cached.network} size={18} />
+                {cached.mint_address && <><span aria-hidden="true">·</span><Address address={cached.mint_address} type="token" chars={6} network={cached.network} /></>}
+              </div>
+            </div>
+          </div>
+          <div className="actions"><Spinner /></div>
+        </header>
+        <Pipeline status={cached.status} />
+        <Skeleton h={92} style={{ borderRadius: "var(--radius)" }} />
+        <div className="grid g-main"><Skeleton h={320} style={{ borderRadius: "var(--radius)" }} /><Skeleton h={320} style={{ borderRadius: "var(--radius)" }} /></div>
+      </div>
+    ) : (
+      <div className="stack" aria-busy="true">
+        <Skeleton h={28} w={130} style={{ borderRadius: 6 }} />
+        <div className="row nowrap" style={{ gap: 14 }}>
+          <Skeleton h={52} w={52} style={{ borderRadius: 14 }} />
+          <div className="stack tight" style={{ gap: 8 }}><Skeleton h={22} w={280} /><Skeleton h={13} w={200} /></div>
+        </div>
+        <Skeleton h={40} w={320} style={{ borderRadius: 999 }} />
+        <Skeleton h={92} style={{ borderRadius: "var(--radius)" }} />
+        <div className="grid g-main">
+          <div className="stack tight"><Skeleton h={44} w={240} /><Skeleton h={280} style={{ borderRadius: "var(--radius)" }} /><Skeleton h={180} style={{ borderRadius: "var(--radius)" }} /></div>
+          <div className="stack tight"><Skeleton h={120} style={{ borderRadius: "var(--radius)" }} /><Skeleton h={200} style={{ borderRadius: "var(--radius)" }} /></div>
+        </div>
+      </div>
+    );
     return error ? (
       <div className="stack">
         <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start" }}><Icon name="arrowleft" size={14} />All launches</Link>
         <Callout tone="err"><b>This launch couldn't be loaded.</b> {error}</Callout>
       </div>
-    ) : (
-      <div className="stack" aria-busy="true"><Skeleton h={56} w={360} /><Skeleton h={76} /><div className="grid g-main"><Skeleton h={320} /><Skeleton h={320} /></div></div>
-    );
+    ) : head;
   }
   const l = ws.launch;
   const chain = chainOf(l.network);

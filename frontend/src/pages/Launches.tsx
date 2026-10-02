@@ -407,7 +407,9 @@ export default function Launches() {
             </button>
           )}
           {shown.map((l) => (
-            <div key={l.id} className="card lcard" role="link" tabIndex={0} onClick={() => nav(`/launches/${l.id}`)} onKeyDown={(e) => e.key === "Enter" && nav(`/launches/${l.id}`)}>
+            <div key={l.id} className="card lcard" role="link" tabIndex={0}
+              onClick={() => nav(`/launches/${l.id}`, { state: { launch: l } })}
+              onKeyDown={(e) => e.key === "Enter" && nav(`/launches/${l.id}`, { state: { launch: l } })}>
               <div className="row nowrap" style={{ gap: 12 }}>
                 <TokenImage launch={l} size={42} />
                 <div className="grow">
