@@ -6,6 +6,7 @@ import { launchpadExperience } from "../launchpadExperience";
 import MarketTerminal from "../components/Market";
 import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
+import DistributeSupply from "../components/DistributeSupply";
 import { DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
 import { PnlImage, downloadPnl, launchPnlFacts } from "../components/pnl";
@@ -15,7 +16,7 @@ import {
 } from "../components/ui";
 
 type Dialog = { title: string; path: string; body: Record<string, unknown> } | null;
-type Op = "claim" | "burn" | "send";
+type Op = "claim" | "burn" | "send" | "distribute";
 
 function launchSetting(key: string, value: unknown): string {
   const labels: Record<string, string> = {
@@ -48,12 +49,12 @@ function Pipeline({ status }: { status: string }) {
   );
 }
 
-function TransparencyPanel({ t, network, symbol }: { t: any; network: string; symbol: string }) {
+function TransparencyPanel({ t, network, symbol, actions }: { t: any; network: string; symbol: string; actions?: React.ReactNode }) {
   const hot = t.warnings.length > 0;
   const maxPct = Math.max(1, ...t.top_holders.map((h: any) => h.pct));
   const evm = network !== "solana";
   return (
-    <Card title="Supply transparency" icon="pie" sub="What your wallets hold, measured against the whole supply">
+    <Card title="Supply transparency" icon="pie" sub="What your wallets hold, measured against the whole supply" actions={actions}>
       <div className="stack">
         <div className="row between nowrap">
           <div>
@@ -149,6 +150,7 @@ export default function Workspace() {
   const [updated, setUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [mobileView, setMobileView] = useState<"chart" | "trade" | "activity">("chart");
+  const [supplyOpen, setSupplyOpen] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -231,7 +233,9 @@ export default function Workspace() {
   const claimUrl = l.launchpad === "bags" && l.quote ? "https://bags.fm/" : experience.claimUrl;
   const claimInApp = claimMode === "in-app";
   const effectiveOp: Op = op === "claim" && !claimInApp ? "burn" : op;
-  const opOptions: [Op, string][] = claimInApp ? [["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"]] : [["burn", "Burn"], ["send", "Send"]];
+  const opOptions: [Op, string][] = claimInApp
+    ? [["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"], ["distribute", "Distribute"]]
+    : [["burn", "Burn"], ["send", "Send"], ["distribute", "Distribute"]];
   const chosenSettings = Object.entries(l.settings ?? {});
   const cur = chain.native;
   const live = l.status === "live";
@@ -353,7 +357,12 @@ export default function Workspace() {
   ) : null;
   const transparencyCard = (
     <>
-          {ws.transparency ? <TransparencyPanel t={ws.transparency} network={l.network} symbol={l.symbol} /> : (
+          {ws.transparency ? <TransparencyPanel t={ws.transparency} network={l.network} symbol={l.symbol}
+            actions={live && l.mint_address && !extra ? (
+              <button className="btn sm secondary" onClick={() => setSupplyOpen(true)} title="Split this token from one wallet across every wallet of a folder">
+                <Icon name="send" size={14} />Distribute supply
+              </button>
+            ) : undefined} /> : (
             <Card title="Supply transparency" icon="pie"><p className="muted small">Measured once the token is live and chain data loads.</p></Card>
           )}
     </>
@@ -417,6 +426,14 @@ export default function Workspace() {
                     <button className="btn secondary block" disabled={!firstSel || sendTo.trim().length < 32 || !(+sendPct > 0) || +sendPct > 100} onClick={() => setDialog({ title: "Send tokens", path: `/launches/${id}/send`, body: { wallet_id: firstSel.id, recipient: sendTo.trim(), percent: +sendPct } })}>
                       <Icon name="send" size={15} />Review send</button>
                     <p className="muted small">To move tokens between your own wallets, use Disperse or Consolidate on the Wallets page; those wallets stay counted in transparency.</p>
+                  </>
+                )}
+                {effectiveOp === "distribute" && (
+                  <>
+                    <p className="muted small">Split ${l.symbol} from one wallet across every managed wallet of a folder — for example your holder wallets. Receiving wallets stay counted in the transparency panel, and locked allocation lines are checked in review.</p>
+                    <button className="btn block" disabled={!ws.wallets.length} onClick={() => setSupplyOpen(true)}>
+                      <Icon name="send" size={15} />Choose folder and amounts</button>
+                    {!ws.wallets.length && <p className="muted small">Attach wallets first.</p>}
                   </>
                 )}
               </div>
@@ -582,6 +599,10 @@ export default function Workspace() {
       )}
 
       {dialog && <SpendDialog {...dialog} network={l.network} onClose={() => setDialog(null)} onDone={load} />}
+      {supplyOpen && <DistributeSupply launch={l} wallets={allWallets}
+        devWalletId={ws.wallets.find((w: any) => w.role === "dev")?.id}
+        onClose={() => setSupplyOpen(false)}
+        onReview={(r) => { setSupplyOpen(false); setDialog(r); }} />}
     </>
   );
 }

@@ -1092,7 +1092,7 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
 .th-stat .v.na, .na { color: var(--faint); }
 .th-stat .s { color: var(--muted); font-size: var(--fs-2xs); }
 .th-src { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 10px 5px 14px; flex: 1 1 100%; border-top: 1px solid var(--line); }
-.th-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.th-stats { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .term-main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 10px; align-items: start; }
 .term-chart { border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .term-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

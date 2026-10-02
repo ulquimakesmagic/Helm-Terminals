@@ -11,7 +11,8 @@ interface MarketRes {
   network: string; token: string | null; whose: "launch" | "source"; symbol?: string;
   fetched_at?: number; stale?: boolean; error?: string; error_kind?: string; retry_after_s?: number; explorer_url?: string; gmgn_url?: string;
   pool: { address: string; dex: string | null; quote_address: string | null; quote_symbol: string | null; liquidity_usd: number | null } | null;
-  metrics: { price_usd: number | null; holder_count: number | null; price_change: Record<Win, number | null>;
+  metrics: { price_usd: number | null; holder_count: number | null; market_cap_usd: number | null; fdv_usd: number | null;
+    liquidity_usd: number | null; price_change: Record<Win, number | null>;
     volume_usd: Record<Win, number | null>; txns: Record<Win, { buys: number | null; sells: number | null; swaps: number | null }> } | null;
 }
 const usd = (v: number | null | undefined) => v == null ? null : `$${v.toLocaleString(undefined, { notation: v >= 100000 ? "compact" : "standard", maximumSignificantDigits: 5 })}`;
@@ -89,7 +90,8 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
       <div className="th-stats">
         <HeadStat label="Price USD" value={usd(metrics?.price_usd)} />
         <HeadStat label="24h change" value={pct(change)} tone={change != null && change >= 0 ? "good" : "bad"} title="Calculated from GMGN's current and 24h starting token prices" />
-        <HeadStat label="Main pool liq." value={usd(pool?.liquidity_usd)} />
+        <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title="GMGN price × circulating supply, as GMGN defines market cap" />
+        <HeadStat label="Main pool liq." value={usd(pool?.liquidity_usd ?? metrics?.liquidity_usd)} title="Liquidity in GMGN's biggest pool for this token" />
         <HeadStat label="24h token vol." value={usd(metrics?.volume_usd.h24)} />
         <HeadStat label="24h swaps" value={count(metrics?.txns.h24.swaps)} />
         <HeadStat label="Holders" value={count(metrics?.holder_count)} />

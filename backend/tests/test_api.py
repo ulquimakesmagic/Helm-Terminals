@@ -339,6 +339,22 @@ async def test_fund_and_withdraw(client, fake_rpc):
 
     secret = await enable_2fa(client, h)
     dest = funder["address"]
+
+    # Fixed amount per wallet: exactly amount_sol leaves each wallet, not the whole balance.
+    pre, r = await confirm(client, h, "/wallets/withdraw",
+                           {"wallet_ids": [a["id"], b["id"]], "destination": dest, "all": False, "amount_sol": 0.03},
+                           key="w2", totp=await totp_code(secret))
+    assert [f["sol"] for f in pre["preflight"]["from"]] == [0.03, 0.03]
+    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    assert all(sol_transfers(raw) == [(dest, 30_000_000)] for raw in fake_rpc.sent[-2:])
+
+    # A fixed amount above a balance previews with a per-wallet warning and refuses to confirm.
+    pre, r = await confirm(client, h, "/wallets/withdraw",
+                           {"wallet_ids": [a["id"]], "destination": dest, "all": False, "amount_sol": 500},
+                           key="w3", totp=await totp_code(secret))
+    assert any("too little SOL" in w for w in pre["preflight"]["warnings"])
+    assert r.status_code == 400 and "too little SOL" in r.json()["detail"]
+
     pre, r = await confirm(client, h, "/wallets/withdraw", {"wallet_ids": [a["id"], b["id"]], "destination": dest},
                            key="w1", totp=await totp_code(secret))
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"

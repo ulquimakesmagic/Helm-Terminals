@@ -25,6 +25,7 @@ QUOTE = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 def token_data(token=TOKEN):
     # Official token/info shape, independently checked against the public demo API.
     return {"address": token, "symbol": "WSOL", "holder_count": 120,
+            "circulating_supply": "1000000", "total_supply": "1200000", "liquidity": "160000",
             "price": {"address": token, "price": "120", "price_24h": "100", "volume_24h": "50000",
                       "buys_24h": 120, "sells_24h": 0, "swaps_24h": 120},
             "pool": {"pool_address": POOL, "base_address": token, "quote_address": QUOTE,
@@ -86,7 +87,8 @@ async def test_market_contract_and_no_other_provider(client, provider):
     assert metrics["price_usd"] == 120 and metrics["price_change"]["h24"] == pytest.approx(20)
     assert metrics["txns"]["h24"] == {"buys": 120, "sells": 0, "swaps": 120}
     assert metrics["volume_usd"]["h1"] is None and metrics["txns"]["h1"]["buys"] is None
-    assert "market_cap" not in metrics and "fdv" not in metrics
+    assert metrics["market_cap_usd"] == 120 * 1_000_000 and metrics["fdv_usd"] == 120 * 1_200_000
+    assert metrics["liquidity_usd"] == 160000
     assert "test-only-secret" not in r.text
     await client.get(f"/launches/{lid}/market", headers=h)
     assert len(p.requests) == 1
@@ -199,6 +201,19 @@ def test_missing_and_malformed_numbers_remain_missing(field, value):
     raw["price"][field] = value
     out = mk._normalize(raw, "solana", TOKEN)["metrics"]
     assert (out["price_usd"] if field == "price" else out["txns"]["h24"]["buys"]) is None
+
+
+def test_supply_derivations_degrade_to_missing():
+    raw = token_data()
+    for field in ("circulating_supply", "total_supply"):
+        data = copy.deepcopy(raw)
+        data.pop(field)
+        out = mk._normalize(data, "solana", TOKEN)["metrics"]
+        assert out["market_cap_usd" if field == "circulating_supply" else "fdv_usd"] is None
+    for bad in ("NaN", "Infinity", "-5", True, ""):
+        out = mk._normalize({**raw, "circulating_supply": bad}, "solana", TOKEN)["metrics"]
+        assert out["market_cap_usd"] is None
+    assert mk._normalize({**raw, "liquidity": None}, "solana", TOKEN)["metrics"]["liquidity_usd"] is None
 
 
 def test_mismatched_tokens_pools_and_links():

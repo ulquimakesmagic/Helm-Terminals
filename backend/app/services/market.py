@@ -2,6 +2,8 @@
 
 Contract: GMGNAI/gmgn-skills OpenApiClient and token field reference. No website scraping.
 Candles are rendered by GMGN's hosted embed, never constructed from market snapshots.
+Market cap = price × circulating_supply and FDV = price × total_supply, GMGN's own
+definitions, derived only from reported fields.
 """
 
 import asyncio
@@ -77,6 +79,13 @@ def _text(value) -> str | None:
     return value[:100] if isinstance(value, str) and value else None
 
 
+def _product(a, b) -> float | None:
+    if a is None or b is None or a <= 0 or b <= 0:
+        return None
+    result = a * b
+    return result if math.isfinite(result) else None
+
+
 def _normalize(raw: dict, network: str, token: str) -> dict:
     """Only published fields. Never derive FDV/market cap or invent a native price."""
     if not _same(raw.get("address"), token, network):
@@ -102,9 +111,15 @@ def _normalize(raw: dict, network: str, token: str) -> dict:
     link = _https((raw.get("link") or {}).get("gmgn")) if isinstance(raw.get("link"), dict) else None
     if link and urlsplit(link).hostname not in {"gmgn.ai", "www.gmgn.ai"}:
         link = None
+    # Market cap and FDV follow GMGN's own field reference (market cap = price × circulating_supply):
+    # derived strictly from reported fields, never extrapolated.
+    market_cap = _product(current, _num(raw.get("circulating_supply")))
+    fdv = _product(current, _num(raw.get("total_supply")))
     return {"state": "ok" if main_pool else "no_pool", "pool": main_pool,
             "symbol": _text(raw.get("symbol")), "gmgn_url": link,
             "metrics": {"price_usd": current, "holder_count": _count(raw.get("holder_count")),
+                        "market_cap_usd": market_cap, "fdv_usd": fdv,
+                        "liquidity_usd": _num(raw.get("liquidity")),
                         "price_change": changes,
                         "volume_usd": {w: _num(price.get(f"volume_{k}")) for w, k in WINDOWS.items()},
                         "txns": {w: {"buys": _count(price.get(f"buys_{k}")), "sells": _count(price.get(f"sells_{k}")),

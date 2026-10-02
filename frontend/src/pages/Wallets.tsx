@@ -322,6 +322,8 @@ export default function Wallets() {
   const [moving, setMoving] = useState(false);
   const [fundFrom, setFundFrom] = useState("");
   const [fundAmount, setFundAmount] = useState("0.05");
+  const [wdAll, setWdAll] = useState(true);
+  const [wdAmount, setWdAmount] = useState("");
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [exportWallet, setExportWallet] = useState<any>(null);
@@ -581,12 +583,34 @@ export default function Wallets() {
       )}
 
       {modal === "withdraw" && (
-        <Modal title={`Withdraw ${coin}`} sub={`Sweep all ${coin} on ${chainOf(selNet).name} from ${selManaged.length} wallet(s), keeping a little for fees`} onClose={() => setModal(null)}
+        <Modal title={`Withdraw ${coin}`} sub={wdAll
+          ? `Sweep all ${coin} on ${chainOf(selNet).name} from ${selManaged.length} wallet(s), keeping a little for fees`
+          : `Send a fixed amount of ${coin} from each of ${selManaged.length} wallet(s) on ${chainOf(selNet).name}`} onClose={() => setModal(null)}
           foot={<><button className="btn ghost" onClick={() => setModal(null)}>Cancel</button>
-            <button className="btn" disabled={evmSel ? !isEvmAddr(dest.trim()) : !isSolanaAddr(dest.trim())}
-              onClick={() => { setModal(null); setDialog({ title: `Withdraw ${coin}`, path: "/wallets/withdraw", network: selNet ?? "solana", body: { wallet_ids: selManaged, destination: dest.trim(), all: true } }); }}>
+            <button className="btn" disabled={(evmSel ? !isEvmAddr(dest.trim()) : !isSolanaAddr(dest.trim())) || (!wdAll && !(+wdAmount > 0))}
+              onClick={() => { setModal(null); setDialog({ title: `Withdraw ${coin}`, path: "/wallets/withdraw", network: selNet ?? "solana",
+                body: wdAll ? { wallet_ids: selManaged, destination: dest.trim(), all: true }
+                  : { wallet_ids: selManaged, destination: dest.trim(), all: false, amount_sol: +wdAmount } }); }}>
               Review<Icon name="arrowright" size={14} /></button></>}>
           <Field label="Destination address" hint="Double-check this. Transfers can't be reversed."><input className="mono" value={dest} onChange={(e) => setDest(e.target.value)} placeholder={evmSel ? "0x… your main wallet on " + chainOf(selNet).name : "Your main wallet address"} autoFocus /></Field>
+          <Field label="Amount">
+            <div className="seg full" role="group" aria-label="Withdrawal amount mode">
+              <button type="button" className={wdAll ? "on" : ""} onClick={() => setWdAll(true)}>Sweep all — exact maximum</button>
+              <button type="button" className={!wdAll ? "on" : ""} onClick={() => setWdAll(false)}>Fixed amount per wallet</button>
+            </div>
+          </Field>
+          {!wdAll && <>
+            <Field label={`Amount per wallet (${coin})`}>
+              <UnitInput unit={coin} value={wdAmount} onChange={(e) => setWdAmount(e.target.value)} placeholder="0.0" inputMode="decimal" />
+            </Field>
+            {balances && (() => {
+              const bals = selManaged.map((id) => all.find((w) => w.id === id)).filter((w) => w && typeof w.balance_sol === "number").map((w) => w!.balance_sol!);
+              return bals.length === selManaged.length && bals.length > 0
+                ? <p className="muted small">Lowest selected balance: <b className="num">{fmt(Math.min(...bals), 6)} {coin}</b> of {bals.length} wallet{bals.length === 1 ? "" : "s"}.</p>
+                : null;
+            })()}
+            <p className="muted small">Each selected wallet sends exactly this amount. To empty wallets (fees kept back), use “Sweep all”.</p>
+          </>}
           {evmSel && <Callout icon="info">Send to an address on {chainOf(selNet).name}. The same 0x address works on other EVM chains, but the {coin} only arrives on {chainOf(selNet).name}.</Callout>}
           <Callout tone="warn" icon="shield">Withdrawals need your 2FA code on the next step.</Callout>
         </Modal>
