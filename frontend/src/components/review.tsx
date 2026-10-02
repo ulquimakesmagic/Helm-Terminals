@@ -93,6 +93,14 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         next: ["One transfer per recipient, sent in order.", "All recipients are wallets on your account."],
       };
     }
+    case "swap":
+      return {
+        label: "Swap", value: `${pre.input} → ${pre.output}`, unit: "", sub: <>Through Jupiter on Solana from {pre.wallet ? short(pre.wallet) : "the wallet"}</>,
+        cells: [["Estimated out", pre.estimated_output ?? "—"], ["Route", pre.route ?? "—"], ["Price impact", pre.price_impact ?? "—"],
+          ["Slippage", pre.slippage ?? "—"], ["Platform fee", fee(pre.platform_fee)]], tone: "danger",
+        next: ["A fresh quote is taken when the swap executes; the final output is bounded by the slippage shown here.",
+          "Jupiter builds the transaction; Helm checks its signatures and simulates it before sending."],
+      };
     case "withdraw": {
       const from = list(pre.from);
       const total = sum(from, "sol") + sum(from, "amount");

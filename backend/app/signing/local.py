@@ -67,3 +67,13 @@ class LocalDevSigner:
         secret = self._f.decrypt(signer_ref[len(PREFIX) :].encode())
         kp = Keypair.from_bytes(secret)
         return bytes(kp.sign_message(message))
+
+    async def reveal_secret(self, signer_ref: str) -> str:
+        """Development export: decrypt the stored key in its ecosystem's standard form. Production
+        keys live in Turnkey and are exported through Turnkey's own flow, never through Helm."""
+        if signer_ref.startswith(EVM_PREFIX):
+            return "0x" + self._f.decrypt(signer_ref[len(EVM_PREFIX):].encode()).hex()
+        if signer_ref.startswith(PREFIX):
+            secret = self._f.decrypt(signer_ref[len(PREFIX) :].encode())
+            return str(Keypair.from_bytes(secret))  # base58 of the 64-byte Solana secret key
+        raise SigningError("this wallet's keys are not exportable through Helm")
