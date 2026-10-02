@@ -24,7 +24,7 @@ def relay_mock(seen: list, on_status, status: str = "success"):
                 "requestId": "0xfund",
                 "steps": [
                     {"id": "approve", "kind": "transaction", "items": [{"status": "incomplete", "data": {
-                        "to": BASE_USDC, "data": "0x095ea7b3" + "00" * 64, "value": "0", "chainId": 8453}}]},
+                        "to": BASE_USDC, "data": "0x095ea7b3" + "00" * 12 + "cd" * 20 + "00" * 32, "value": "0", "chainId": 8453}}]},
                     {"id": "deposit", "kind": "transaction", "requestId": "0xfund", "items": [{"status": "incomplete", "data": {
                         "to": "0x" + "cd" * 20, "data": "0xabcdef", "value": "0", "chainId": 8453}}]},
                 ],
