@@ -28,9 +28,11 @@ DEXSCREENER_API = "https://api.dexscreener.com"
 # OpenAPI token commands support more chains than the separately documented embed.
 API_CHAIN = {"solana": "sol", "bsc": "bsc", "base": "base", "ethereum": "eth",
              "robinhood": "robinhood", "arc": "arc"}
-# DexScreener's public API is keyless and not IP-filtered: it serves these chains with no configuration,
-# and covers the rest through GMGN when a key is set. Chains outside both maps stay "unsupported".
-DEX_CHAIN = {"solana": "solana", "bsc": "bsc", "base": "base", "ethereum": "ethereum"}
+# DexScreener's public API is keyless and not IP-filtered, and it indexes every chain Helm supports
+# (verified live: solana, bsc, base, ethereum, robinhood, arc). A configured GMGN key upgrades the panel
+# with holder counts and the GMGN page; DexScreener covers everything else, including fallbacks.
+DEX_CHAIN = {"solana": "solana", "bsc": "bsc", "base": "base", "ethereum": "ethereum",
+             "robinhood": "robinhood", "arc": "arc"}
 DEX_WINDOWS = ("m5", "h1", "h6", "h24")  # same windows GMGN reports
 CHART_CHAIN = {"solana": "sol", "bsc": "bsc", "ethereum": "eth"}
 CACHE_TTL, STALE_MAX, ERROR_TTL, CACHE_LIMIT = 60, 300, 15, 256
@@ -277,6 +279,7 @@ class Market:
                 else:
                     result = _normalize_dex(raw, network, token)
             entry = _Entry(time.monotonic(), {**result, "fetched_at": time.time()})
+            log.info("market_fetch provider=%s network=%s outcome=%s", provider, network, result.get("state"))
         except MarketError as exc:
             old = self._cache.get(key)
             if not exc.retry_until:
@@ -284,6 +287,7 @@ class Market:
             entry = _Entry(old.at if old else time.monotonic(), old.value if old else None,
                            exc, exc.retry_until)
             self._remember(key, entry)
+            log.info("market_fetch network=%s outcome=error kind=%s", network, exc.kind)
             if entry.value and time.monotonic() - entry.at < STALE_MAX:
                 return self._answer(entry, stale=True)
             raise

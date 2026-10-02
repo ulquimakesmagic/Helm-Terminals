@@ -137,12 +137,15 @@ async def test_without_a_key_dexscreener_serves_indexed_chains(client, provider)
     h, lid = await launch(client)
     body = (await client.get(f"/launches/{lid}/market", headers=h)).json()
     assert body["source"] == "DexScreener" and body["state"] == "ok"
-    # Chains DexScreener doesn't index stay GMGN-only: without a key they are not configured.
+    # Robinhood and Arc are indexed by DexScreener too, so a key covers no chain that DexScreener can't.
     for network in ("robinhood", "arc"):
-        assert (await m.snapshot(network, "0x" + "ab" * 20))["state"] == "not_configured"
+        p.dex = [{**dex_pair("0x" + "ab" * 20), "pairAddress": "0x" + "cd" * 20}]
+        res = await m.snapshot(network, "0x" + "ab" * 20)
+        assert res["state"] == "ok" and res["provider"] == "DexScreener"
+        assert p.dex_requests[-1].url.path.startswith(f"/tokens/v1/{network}/")
     for chain in ("tron", "near", "ton", "unknown"):
         assert (await m.snapshot(chain, "unimportant"))["state"] == "unsupported"
-    assert not p.requests and len(p.dex_requests) == 1
+    assert not p.requests and len(p.dex_requests) == 3
 
 
 async def test_gmgn_denial_falls_back_to_dexscreener_and_keeps_kind_when_dex_fails(provider):
@@ -350,9 +353,9 @@ async def test_access_denial_survives_cooldown_across_tokens_and_recovers(client
     assert caught.value.kind == "access_denied"
     assert caught.value.details()["retry_after_s"] == 40
     assert len(p.requests) == 1
-    logs = [r for r in caplog.records if r.name == "app.services.market"]
-    assert len(logs) == 1 and f"http_status={status}" in logs[0].message
-    assert "test-only-secret" not in logs[0].message
+    diagnostics = [r for r in caplog.records if r.name == "app.services.market" and "http_status=" in r.message]
+    assert len(diagnostics) == 1 and f"http_status={status}" in diagnostics[0].message
+    assert "test-only-secret" not in diagnostics[0].message
     clock[0] += 41
     p.status, p.code = 200, 0
     recovered = (await client.get(f"/launches/{lid}/market", headers=h)).json()
@@ -406,10 +409,10 @@ async def test_diagnostics_only_include_safe_fields(caplog, payload):
         with pytest.raises(MarketError) as error:
             await Market(client=client, api_key="test-only-secret").snapshot("solana", TOKEN)
     assert error.value.kind == "access_denied"
-    logs = [r.message for r in caplog.records if r.name == "app.services.market"]
-    assert len(logs) == 1 and "http_status=403" in logs[0]
-    assert f"response_format={'non_json' if payload is None else 'json'}" in logs[0]
-    assert "test-only-secret" not in logs[0] and "private contents" not in logs[0]
+    diagnostics = [r.message for r in caplog.records if r.name == "app.services.market" and "http_status=" in r.message]
+    assert len(diagnostics) == 1 and "http_status=403" in diagnostics[0]
+    assert f"response_format={'non_json' if payload is None else 'json'}" in diagnostics[0]
+    assert all("test-only-secret" not in m and "private contents" not in m for m in diagnostics)
 
 
 @pytest.mark.parametrize("status,configured,exit_code", [(200, True, 0), (403, True, 1), (200, False, 1)])
