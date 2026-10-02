@@ -74,10 +74,14 @@ async def route(body: RouteBody, user: User = Depends(current_user), db: AsyncSe
         warnings.append(f"{src.label or src.address[:8]} needs about {need_native:.6f} {native_coin(src.network)} "
                         f"on {chain_name(src.network)} for network fees"
                         + (" plus the amount" if body.from_asset == "native" else "") + ".")
+    # Largest amount that passes these balance checks right now: the whole stablecoin balance (gas is paid in
+    # the native coin) or the native balance minus the fee reserve. The client's MAX button fills this.
+    max_send = max(native_bal - gas, 0.0) if body.from_asset == "native" else bal / 10**dec
     summary = {
         "from": {"label": src.label or "Wallet", "address": src.address}, "from_chain": chain_name(src.network),
         "to": {"label": dst.label or "Wallet", "address": dst.address}, "to_chain": chain_name(dst.network),
         "send": body.amount, "send_asset": from_sym, "receive_asset": to_sym, "slippage_pct": body.slippage_pct,
+        "max_send": round(max_send, 12),
         "provider": "Relay (relay.link)", "own_wallets_only": True,
         "platform_fee": ex.relay.fee_note,
     }

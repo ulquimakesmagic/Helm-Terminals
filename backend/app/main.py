@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager, suppress
 
 import httpx
@@ -53,8 +54,12 @@ async def lifespan(app: FastAPI):
 _REPLICA_LOCK_KEY = 0x48454C4D  # stable PostgreSQL advisory-lock key identifying the Helm API singleton
 
 
-async def _acquire_single_replica_lock(settings):
+async def _acquire_single_replica_lock(settings, wait_s: float = 90.0, poll_s: float = 1.0):
     """Hold a PostgreSQL session lock so a second API process fails fast instead of duplicating local workers.
+
+    Deploys overlap: the platform starts the new container while the old one still runs, so rather than
+    crash-looping until the old replica stops, wait briefly for the lock to free up. Session-level advisory
+    locks release when the holder disconnects, so a bounded wait can never deadlock.
 
     SQLite is used only for local development/tests and has no multi-process production worker support.
     """
@@ -65,15 +70,25 @@ async def _acquire_single_replica_lock(settings):
     from .db import get_engine
 
     conn = await get_engine().connect()
-    try:
-        acquired = await conn.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": _REPLICA_LOCK_KEY})
-    except Exception as exc:
-        await conn.close()
-        raise RuntimeError("could not verify the Helm single-replica PostgreSQL lock") from exc
-    if not acquired:
-        await conn.close()
-        raise RuntimeError("another Helm API replica already holds the PostgreSQL singleton lock")
-    return conn
+    deadline = time.monotonic() + wait_s
+    announced = False
+    while True:
+        try:
+            acquired = await conn.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": _REPLICA_LOCK_KEY})
+        except Exception as exc:
+            await conn.close()
+            raise RuntimeError("could not verify the Helm single-replica PostgreSQL lock") from exc
+        if acquired:
+            return conn
+        if not announced:
+            logging.getLogger("helm.runtime").info(
+                "another Helm replica holds the singleton lock; waiting up to %gs for it to stop", wait_s)
+            announced = True
+        if time.monotonic() >= deadline:
+            await conn.close()
+            raise RuntimeError("another Helm API replica still holds the PostgreSQL singleton lock "
+                               f"after waiting {wait_s:g}s")
+        await asyncio.sleep(poll_s)
 
 
 async def _release_single_replica_lock(conn) -> None:
