@@ -457,7 +457,8 @@ export default function Wallets() {
                     </div></td>
                     <td data-label="Chain"><ChainLabel network={w.network} size={16} /></td>
                     <td data-label="Address"><Address address={w.address} network={w.network} /></td>
-                    <td className="hide-sm"><StatusBadge status={w.kind} label={w.kind === "managed" ? "managed" : w.kind === "connected" ? `your wallet (${OWN_APP[extras.find((n) => n.id === w.network)?.family ?? (w.network.startsWith("ton") ? "ton" : "evm")]})` : "watch-only"} /></td>
+                    {/* managed is the default kind: a chip on every row is noise, deviations are the signal */}
+                    <td className="hide-sm">{w.kind !== "managed" && <StatusBadge status={w.kind} label={w.kind === "connected" ? `your wallet (${OWN_APP[extras.find((n) => n.id === w.network)?.family ?? (w.network.startsWith("ton") ? "ton" : "evm")]})` : "watch-only"} />}</td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
                     <td className="r num" data-label="Balance">{isExtraChain(w.network) ? (
                       <span className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>
