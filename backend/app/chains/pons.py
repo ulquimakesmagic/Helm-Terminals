@@ -14,7 +14,8 @@ buy(amountIn, minTokensOut, recipient) with ETH as msg.value; sell(tokensIn, min
 approving the curve for exactly tokensIn. Minimum outputs come from simulating the same call with eth_call.
 After graduation the token trades on a Uniswap V4 pool, which Helm doesn't route yet.
 
-Creator fees accrue in ETH to the creator-fee recipient (the dev wallet) in Pons' fee escrow: claim().
+Creator fees accrue in ETH in Pons' fee escrow. Legacy launches use the dev wallet; enabled new launches
+use an immutable per-launch reward splitter with a fixed 94/6 split. Both use the recipient's claim().
 
 Sources: ponsfamily.com; the pons-mcp client's docs/PROTOCOL.md; verified ABIs on Sourcify (chain 4663).
 """
@@ -79,7 +80,7 @@ class PonsAdapter:
                 {"key": "dev_buy_sol", "type": "number", "min": 0, "label": "Dev buy (ETH)", "default": 0},
                 {"key": "creator_tax_pct", "type": "select", "options": list(CREATOR_TAX_PCT), "default": 0,
                  "label": "Creator tax (%)",
-                 "hint": "Charged on trades on top of Pons' 1% curve fee and paid to your dev wallet. 0 for none."},
+                 "hint": "Added to Pons' curve fee. The launch preview shows the recipient and any Helm reward split. 0 for no extra tax."},
                 {"key": "slippage_pct", "type": "number", "min": 0, "max": 50, "default": 10},
             ],
             "socials": ["twitter", "telegram", "website"],
@@ -88,7 +89,9 @@ class PonsAdapter:
 
     def deploy_notes(self, params: dict) -> dict:
         ct = int(params.get("creator_tax_pct") or 0)
-        return {"creator_tax": f"{ct}% on trades, paid to your dev wallet" if ct else "none",
+        split = (params.get("helm_creator_share") or {}).get("bps") == 600
+        return {"creator_tax": (f"{ct}% on trades; included in the 94/6 creator-reward split" if split else
+                                f"{ct}% on trades, paid to your dev wallet") if ct else "none",
                 "graduates_to": "a Uniswap V4 pool at 4.2 ETH raised"}
 
     async def launch_fee(self) -> int:
@@ -104,6 +107,18 @@ class PonsAdapter:
 
     async def prepare_create(self, req: CreateRequest) -> EvmPlan:
         opts = req.options or {}
+        rewards = opts.get("pons_rewards")
+        recipient = req.dev_pubkey
+        if rewards:
+            from .pons_rewards import verify
+            await verify(self.rpc, rewards)
+            share = opts.get("helm_creator_share") or {}
+            if (rewards["creator"].lower() != req.dev_pubkey.lower() or share.get("bps") != 600
+                    or share.get("recipient", "").lower() != rewards["treasury"].lower()):
+                raise AdapterError("Pons reward recipients do not match the approved launch terms")
+            recipient = rewards["splitter"]
+        elif (opts.get("helm_creator_share") or {}).get("bps"):
+            raise AdapterError("Missing Pons per-launch reward recipient")
         tax_pct = int(opts.get("creator_tax_pct") or 0)
         if tax_pct not in CREATOR_TAX_PCT:
             raise AdapterError(f"Pons creator tax must be one of {', '.join(map(str, CREATOR_TAX_PCT))}%")
@@ -123,10 +138,12 @@ class PonsAdapter:
         salt = keccak(f"{req.name} {req.symbol} {os.urandom(8).hex()}".encode())
         params = (req.name, req.symbol, logo, (req.description or "")[:500],
                   (s.get("twitter") or "", s.get("telegram") or "", "", s.get("website") or "", ""),
-                  req.dev_pubkey, tax_pct * 100, False, economics, salt)
+                  recipient, tax_pct * 100, False, economics, salt)
         dev_buy = int(round(req.dev_buy_sol * 10**18))
         notes = {"launch_fee_wei": fee, "creator_tax": f"{tax_pct}% to your dev wallet" if tax_pct else "none",
                  "graduates_to": "a Uniswap V4 pool at 4.2 ETH raised"}
+        if rewards:
+            notes.update(pons_rewards=rewards, creator_tax=f"{tax_pct}%; creator rewards split 94% creator / 6% Helm")
 
         if dev_buy <= 0:
             data = selector(LAUNCH_TOKEN) + abi_encode([PARAMS_T, "uint256", "address"], [params, CONFIG_ID, ZERO])
@@ -174,7 +191,7 @@ class PonsAdapter:
     async def launched(self, token: str) -> dict:
         ret = await self._call(FACTORY, selector("getLaunchedToken(address)") + abi_encode(["address"], [token]))
         t = abi_decode([LAUNCHED_TOKEN_T], bytes.fromhex(ret[2:]))[0]
-        return {"token": t[0], "curve": to_checksum_address(t[1]), "pair": t[4], "creator_tax_bps": t[8],
+        return {"token": t[0], "curve": to_checksum_address(t[1]), "recipient": t[3], "pair": t[4], "creator_tax_bps": t[8],
                 "phase": t[10], "exists": t[14]}
 
     async def _tradeable_curve(self, token: str) -> str:
@@ -237,6 +254,21 @@ class PonsAdapter:
     # --- creator fees -------------------------------------------------------------------------
 
     async def prepare_claim(self, req: ClaimRequest) -> EvmPlan:
+        rewards = (req.options or {}).get("pons_rewards")
+        if rewards:
+            from .pons_rewards import distribution_data, verify
+            await verify(self.rpc, rewards)
+            pending = _word(await self._call(FEE_ESCROW, selector("balanceOf(address)")
+                                             + abi_encode(["address"], [rewards["splitter"]])))
+            if not pending and not await self.rpc.get_balance(rewards["splitter"]):
+                raise AdapterError("no Pons rewards are waiting for this launch")
+            data = distribution_data(rewards)
+            # A successful dry run verifies counterfactual deployment, escrow claim and payout execution.
+            try:
+                await self._call(rewards["factory"], data, req.wallet_pubkey)
+            except EvmRPCError as e:
+                raise AdapterError(f"Pons reward claim simulation failed: {explain(e)}") from e
+            return EvmPlan([EvmStep("claim", rewards["factory"], data)], notes={"pons_rewards": rewards})
         pending = _word(await self._call(FEE_ESCROW, selector("balanceOf(address)")
                                          + abi_encode(["address"], [req.wallet_pubkey])))
         if not pending:

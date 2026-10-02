@@ -57,9 +57,10 @@ FEE_PATHS = [
      "how": "After the token confirms, Helm creates pump.fun's native one-time sharing config. Creator and treasury "
             "are separate shareholders; either party can trigger the permissionless distribution."},
     {"id": "creator_share_pons", "label": "Creator-reward share: Pons", "setting": None,
-     "networks": ["robinhood"], "supported": False, "lands": None,
-     "how": "Pons claims wallet-wide rewards. Helm does not deduct a share from that balance. A verified splitter "
-            "or attributable, recoverable collection flow is required before enabling this fee."},
+     "networks": ["robinhood"], "supported": True, "lands": "configured",
+     "how": "Fixed 6% via a separate immutable reward splitter for each new native-ETH launch. Disabled until "
+            "PONS_REWARDS_ENABLED and a verified PONS_REWARDS_FACTORY are configured. Configuration is not income; "
+            "only confirmed treasury payouts through Helm enter received revenue. Legacy claims stay unsplit."},
     {"id": "creator_share_meteora", "label": "Creator-reward share: Meteora DBC", "setting": None,
      "networks": ["solana"], "supported": False, "lands": None,
      "how": "A split requires a Helm-owned Meteora DBC configuration with explicit partner and creator fee "
@@ -81,6 +82,7 @@ FEE_PATHS = [
 
 CREATOR_SHARE_LAUNCHPADS = {
     "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood",
+    "pons": "robinhood",
 }
 
 
@@ -161,6 +163,15 @@ def creator_share(launchpad: str) -> dict:
         return {"bps": 0, "recipient": "", "supported": False,
                 "note": "Helm takes no share of creator rewards on this launchpad"}
     recipient = treasury_for(network)
+    if launchpad == "pons":
+        s = get_settings()
+        # An explicit enable must fail closed at preflight if its factory/treasury is missing, not silently
+        # create a launch with no revenue split. Actual addresses and bytecode are checked before confirmation.
+        active = s.pons_rewards_enabled
+        return {"bps": 600 if active else 0, "recipient": recipient if active else "", "supported": True,
+                "note": ("Fixed split: 94% of native creator rewards to you; 6% to Helm, including creator tax. "
+                         "Recipients cannot be changed through Helm. Pons retains its timelocked override."
+                         if active else "Pons reward splitting is not enabled; rewards go to your dev wallet")}
     setting = current().settings.get("creator_share_bps", {})
     if setting.get("source") != "admin" and not launchpad.startswith("clanker"):
         # Before the dashboard only Clanker had a share (CLANKER_PLATFORM_REWARD_BPS); other launchpads stay at 0

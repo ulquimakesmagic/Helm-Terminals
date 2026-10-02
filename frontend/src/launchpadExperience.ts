@@ -104,9 +104,9 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     mode: "Bonding curve", title: "Launch on Pons",
     description: "Configure the creator tax before the token starts on Pons' Robinhood Chain curve.",
     features: ["Optional creator tax", "Creator tax escrow", "Uniswap V4 graduation"],
-    settingsTitle: "Pons curve settings", rewardTitle: "Pons creator tax",
-    rewardCopy: "Pons supports one creator-tax recipient in Helm's current adapter, so the tax stays with the creator rather than passing through Helm.",
-    claimMode: "in-app", claimCopy: "Collect the creator wallet's accrued tax from the Pons fee escrow.", accent: "#caff35",
+    settingsTitle: "Pons curve settings", rewardTitle: "Pons creator rewards",
+    rewardCopy: "The launch preview shows whether rewards go directly to the creator or to a permanent 94% creator / 6% Helm splitter. The split includes any creator tax and only applies to new launches where enabled.",
+    claimMode: "in-app", claimCopy: "Legacy launches claim the selected wallet's combined Pons rewards with no Helm deduction.", accent: "#caff35",
   },
   "four-meme": {
     mode: "Bonding curve", title: "Launch on Four.meme",
