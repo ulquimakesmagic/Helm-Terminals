@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr
 from solders.pubkey import Pubkey
 from sqlalchemy import func, select
@@ -13,15 +13,17 @@ from ..deps import (
     SpendConfirm, begin_spend, current_user, web_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
     two_fa_warnings, valid_address, valid_address_for,
 )
-from ..models import Folder, Funder, Job, Transaction, User, Wallet
+from ..models import AdminAudit, Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single, send_evm_tracked, submit_tracked
 from ..services import portfolio
+from ..services.admin import request_context
 from ..services.chain_balances import STABLE_DECIMALS, native_coin, stable_for
 from ..services.preflight import build_preflight
 from ..chains.evm import EVM_CHAINS, WEI
+from ..chains.jupiter import Jupiter
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
-from ..services.guard import check_password, check_totp_once
+from ..services.guard import check_password, check_totp_once, ensure_not_locked, record_attempt
 from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
 from ..signing.base import SigningError, parse_private_key
 
@@ -615,5 +617,125 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
                 results.append(res)
             _finish(j, results)
             await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
+# --- private-key export ---------------------------------------------------------------------------
+
+EXPORT_LIMIT = 5  # attempts per user per 15-minute window
+
+
+class ExportKeyBody(BaseModel):
+    password: SecretStr
+    totp: str = Field(max_length=12)
+
+
+@router.post("/wallets/{wallet_id}/export-key")
+async def export_key(wallet_id: str, body: ExportKeyBody, request: Request, user: User = Depends(web_user),
+                     db: AsyncSession = Depends(get_db)):
+    """One-time private-key export for a managed wallet: web app only, password + a fresh 2FA code,
+    throttled and audited. The secret crosses the wire exactly once, in this response, and never
+    appears in a log, an activity feed or any GET. Turnkey-held keys export through Turnkey instead."""
+    throttle = f"export:{user.id}"
+    await ensure_not_locked(db, throttle, EXPORT_LIMIT)
+    await record_attempt(db, throttle)
+    if not user.totp_enabled:
+        raise HTTPException(403, "enable 2FA before exporting keys")
+    if not await check_password(db, user, body.password.get_secret_value(), throttle):
+        raise HTTPException(400, "wrong password")
+    if not await check_totp_once(db, user, body.totp):
+        raise HTTPException(401, "totp_required: provide a fresh 2FA code")
+    w = await owned_wallet(db, user, wallet_id)
+    if w.kind != "managed" or not w.signer_ref:
+        raise HTTPException(400, "only managed wallets can export")
+    signer = get_signer()
+    if not hasattr(signer, "reveal_secret"):
+        raise HTTPException(400, "this deployment keeps keys in Turnkey; export them through Turnkey's own flow")
+    try:
+        secret = await signer.reveal_secret(w.signer_ref)
+    except SigningError as e:
+        raise HTTPException(400, str(e)) from e
+    db.add(AdminAudit(actor_user_id=user.id, action="wallet.key_exported", target=w.id, changes={},
+                      context={**request_context(request), "network": w.network}))
+    await log_activity(db, user.id, "wallet.key_exported", "wallet", w.id, {"network": w.network})
+    await db.commit()
+    return {"wallet_id": w.id, "network": w.network, "address": w.address, "secret": secret}
+
+
+# --- Jupiter swaps (Solana) -----------------------------------------------------------------------
+
+WSOL = "So11111111111111111111111111111111111111112"
+
+
+class SwapBody(SpendConfirm):
+    wallet_id: str
+    input_mint: str = "native"  # "native" = SOL; anything else is a token mint address
+    output_mint: str  # "native" or a mint address
+    amount: float = Field(gt=0)
+    slippage_pct: float = Field(default=1.0, ge=0.01, le=50)
+
+
+@router.post("/wallets/swap")
+async def swap(body: SwapBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+               rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
+    """Swap through Jupiter's aggregator: quote -> preflight -> confirm -> a fresh quote and an
+    unsigned transaction Helm signs for the wallet (tx_guard checks the signers, the executor
+    simulates before broadcast). Solana only; cross-chain conversion keeps using Relay routes."""
+    if (prior := await find_replay(db, user, body)):
+        return prior
+    w = await owned_wallet(db, user, body.wallet_id)
+    if w.network != "solana":
+        raise HTTPException(400, "Jupiter swaps are Solana-only; use a route for cross-chain conversion")
+    if w.kind != "managed":
+        raise HTTPException(400, "watch-only and connected wallets can't sign")
+
+    jup = Jupiter()
+    in_mint = WSOL if body.input_mint == "native" else body.input_mint
+    out_mint = WSOL if body.output_mint == "native" else body.output_mint
+    if in_mint == out_mint:
+        raise HTTPException(400, "input and output are the same token")
+    in_meta = {"symbol": "SOL", "decimals": 9} if body.input_mint == "native" else await jup.token(in_mint)
+    out_meta = {"symbol": "SOL", "decimals": 9} if body.output_mint == "native" else await jup.token(out_mint)
+    if not in_meta or not out_meta:
+        raise HTTPException(400, "one of these tokens isn't on Jupiter's list; check the mint address")
+    amount_raw = int(round(body.amount * 10 ** int(in_meta["decimals"])))
+    slippage_bps = int(body.slippage_pct * 100)
+
+    async def quote():
+        return await jup.quote(in_mint, out_mint, amount_raw, slippage_bps)
+
+    q = await quote()
+    out_dec = int(out_meta["decimals"])
+    out_amount = int(q["outAmount"]) / 10 ** out_dec
+    min_out = int(q["otherAmountThreshold"]) / 10 ** out_dec
+    route = " → ".join(dict.fromkeys(
+        (s.get("swapInfo") or {}).get("label") or "pool" for s in q.get("routePlan") or [])) or "Jupiter"
+    impact = float(q.get("priceImpactPct") or 0)
+    warnings = []
+    if impact >= 0.1:
+        warnings.append(f"price impact is {impact * 100:.1f}% — check the route before confirming")
+    warnings += two_fa_warnings(user, "swap")
+    pf = build_preflight("swap", {
+        "wallet": w.address, "network": "solana",
+        "input": f"{body.amount:g} {in_meta['symbol']}",
+        "output": f"at least {min_out:g} {out_meta['symbol']}",
+        "estimated_output": f"{out_amount:g} {out_meta['symbol']}",
+        "route": route, "price_impact": f"{impact * 100:.2f}%", "slippage": f"{body.slippage_pct:g}%",
+        "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "swap", None, {
+        "wallet_id": w.id, "input_mint": in_mint, "output_mint": out_mint, "amount_raw": amount_raw,
+        "slippage_bps": slippage_bps,
+    })
+    if created:
+        async def work(session, j):
+            fresh = await quote()  # quotes expire; a new one is taken at execution time
+            raw = await jup.swap_tx(fresh, w.address)
+            await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""})
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}

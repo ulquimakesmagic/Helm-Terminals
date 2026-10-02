@@ -5,6 +5,8 @@ import { useSession } from "../session";
 import Distribute from "../components/Distribute";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
+import ExportKeyDialog from "../components/ExportKeyDialog";
+import SwapDialog from "../components/SwapDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain } from "../chains";
 import { isEvmAddr, isSolanaAddr } from "../validate";
 import {
@@ -322,6 +324,22 @@ export default function Wallets() {
   const [fundAmount, setFundAmount] = useState("0.05");
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [exportWallet, setExportWallet] = useState<any>(null);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [launchTokens, setLaunchTokens] = useState<{ mint: string; symbol: string }[]>([]);
+
+  const openSwap = () => {
+    setSwapOpen(true);
+    api<any[]>("/launches").then((ls) => {
+      const tokens: Record<string, { mint: string; symbol: string }> = {};
+      for (const l of ls ?? []) {
+        if (l.network === "solana" && l.mint_address && l.status !== "archived") {
+          tokens[l.mint_address] = { mint: l.mint_address, symbol: l.symbol };
+        }
+      }
+      setLaunchTokens(Object.values(tokens));
+    }).catch(() => { });
+  };
   const [folio, setFolio] = useState<any>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [extras, setExtras] = useState<ExtraNet[]>([]);
@@ -488,6 +506,8 @@ export default function Wallets() {
                       : balances ? <span className="state unavailable" title="This balance couldn't be read. Refresh balances to retry."><Icon name="xcircle" size={12} />Unavailable</span>
                       : <span className="muted" title="Load balances to see">—<span className="sr-only"> not loaded</span></span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>
+                      {w.kind === "managed" && w.network === "solana" && <button className="btn sm ghost row-action" onClick={openSwap} aria-label={`Swap from ${w.label || w.address}`}>Swap</button>}
+                      {w.kind === "managed" && <button className="btn sm ghost row-action" onClick={() => setExportWallet(w)} aria-label={`Export the private key of ${w.label || w.address}`}>Export key</button>}
                       {w.kind === "managed" && !fu && <button className="btn sm ghost row-action" onClick={() => makeFunder(w)} aria-label={`Make ${w.label || w.address} a funder`}>Make funder</button>}
                     </td>
                   </tr>
@@ -579,6 +599,17 @@ export default function Wallets() {
 
 
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => { setSelected(new Set()); load(true); }} />}
+      {exportWallet && <ExportKeyDialog wallet={exportWallet} onClose={() => setExportWallet(null)}
+        onExported={() => { toast("good", "Private key exported. It was shown once and will not be shown again."); }} />}
+      {swapOpen && <SwapDialog wallets={managed.filter((w) => w.network === "solana")}
+        tokens={[{ mint: "native", symbol: "SOL" },
+          { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC" },
+          { mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", symbol: "USDT" },
+          ...launchTokens]}
+        initialWallet={managed.find((w) => w.network === "solana" && selected.has(w.id))?.id}
+        onClose={() => setSwapOpen(false)}
+        onSwap={(req) => { setSwapOpen(false); setDialog(req); }}
+        key={swapOpen ? "open" : "closed"} />}
     </>
   );
 }
