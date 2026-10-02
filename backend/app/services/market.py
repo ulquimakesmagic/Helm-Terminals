@@ -1,9 +1,12 @@
-"""GMGN-only display data. Never used by execution, signing or confirmation services.
+"""Display-only token market data. Never used by execution, signing or confirmation services.
 
-Contract: GMGNAI/gmgn-skills OpenApiClient and token field reference. No website scraping.
+Providers: GMGN's OpenAPI (keyed; adds holder counts and the GMGN page) and DexScreener's public API
+(keyless, not IP-filtered). A configured GMGN key is primary; when it is missing or GMGN denies access,
+the same published shape is served from DexScreener.
+Contract: GMGNAI/gmgn-skills OpenApiClient, DexScreener tokens/v1 reference. No website scraping.
 Candles are rendered by GMGN's hosted embed, never constructed from market snapshots.
-Market cap = price × circulating_supply and FDV = price × total_supply, GMGN's own
-definitions, derived only from reported fields.
+Market cap and FDV are provider-reported (DexScreener) or derived from GMGN's reported fields exactly
+as GMGN's own field reference defines them (price × circulating/total supply).
 """
 
 import asyncio
@@ -21,9 +24,14 @@ import httpx
 from ..config import get_settings
 
 GMGN_API = "https://openapi.gmgn.ai"
+DEXSCREENER_API = "https://api.dexscreener.com"
 # OpenAPI token commands support more chains than the separately documented embed.
 API_CHAIN = {"solana": "sol", "bsc": "bsc", "base": "base", "ethereum": "eth",
              "robinhood": "robinhood", "arc": "arc"}
+# DexScreener's public API is keyless and not IP-filtered: it serves these chains with no configuration,
+# and covers the rest through GMGN when a key is set. Chains outside both maps stay "unsupported".
+DEX_CHAIN = {"solana": "solana", "bsc": "bsc", "base": "base", "ethereum": "ethereum"}
+DEX_WINDOWS = ("m5", "h1", "h6", "h24")  # same windows GMGN reports
 CHART_CHAIN = {"solana": "sol", "bsc": "bsc", "ethereum": "eth"}
 CACHE_TTL, STALE_MAX, ERROR_TTL, CACHE_LIMIT = 60, 300, 15, 256
 WINDOWS = {"m5": "5m", "h1": "1h", "h6": "6h", "h24": "24h"}
@@ -116,7 +124,7 @@ def _normalize(raw: dict, network: str, token: str) -> dict:
     market_cap = _product(current, _num(raw.get("circulating_supply")))
     fdv = _product(current, _num(raw.get("total_supply")))
     return {"state": "ok" if main_pool else "no_pool", "pool": main_pool,
-            "symbol": _text(raw.get("symbol")), "gmgn_url": link,
+            "symbol": _text(raw.get("symbol")), "gmgn_url": link, "provider": "GMGN",
             "metrics": {"price_usd": current, "holder_count": _count(raw.get("holder_count")),
                         "market_cap_usd": market_cap, "fdv_usd": fdv,
                         "liquidity_usd": _num(raw.get("liquidity")),
@@ -124,6 +132,50 @@ def _normalize(raw: dict, network: str, token: str) -> dict:
                         "volume_usd": {w: _num(price.get(f"volume_{k}")) for w, k in WINDOWS.items()},
                         "txns": {w: {"buys": _count(price.get(f"buys_{k}")), "sells": _count(price.get(f"sells_{k}")),
                                      "swaps": _count(price.get(f"swaps_{k}"))} for w, k in WINDOWS.items()}}}
+
+
+def _dex_best_pair(pairs, network: str, token: str) -> dict | None:
+    """The token's most liquid pair on this chain, among pairs whose base token is the token asked for."""
+    best, best_liq = None, -1.0
+    for p in pairs if isinstance(pairs, list) else []:
+        if not isinstance(p, dict) or not _same((p.get("baseToken") or {}).get("address"), token, network):
+            continue
+        liq = _num((p.get("liquidity") or {}).get("usd")) if isinstance(p.get("liquidity"), dict) else None
+        if (liq or 0) > best_liq:
+            best, best_liq = p, liq or 0
+    return best
+
+
+def _normalize_dex(pair: dict, network: str, token: str) -> dict:
+    """DexScreener pair -> the same published shape as GMGN's. DexScreener reports market cap and FDV
+    directly; it has no holder count and no GMGN page link."""
+    if not _same((pair.get("baseToken") or {}).get("address"), token, network):
+        raise MarketError("invalid_response", "DexScreener returned data for a different token.")
+    pool_addr = pair.get("pairAddress")
+    main_pool = None
+    if pool_addr:
+        if not valid_address(network, pool_addr):
+            raise MarketError("invalid_response", "DexScreener returned an inconsistent pool.")
+        quote = pair.get("quoteToken") or {}
+        liq = _num(pair["liquidity"].get("usd")) if isinstance(pair.get("liquidity"), dict) else None
+        main_pool = {"address": pool_addr, "dex": _text(pair.get("dexId")),
+                     "quote_address": quote.get("address") if valid_address(network, quote.get("address") or "") else None,
+                     "quote_symbol": _text(quote.get("symbol")), "liquidity_usd": liq}
+    txns = {}
+    for w in DEX_WINDOWS:
+        t = (pair.get("txns") or {}).get(w) or {}
+        buys, sells = _count(t.get("buys")), _count(t.get("sells"))
+        total = buys + sells if buys is not None and sells is not None else None
+        txns[w] = {"buys": buys, "sells": sells, "swaps": total}
+    return {"state": "ok" if main_pool else "no_pool", "pool": main_pool,
+            "symbol": _text((pair.get("baseToken") or {}).get("symbol")), "gmgn_url": None,
+            "provider": "DexScreener",
+            "metrics": {"price_usd": _num(pair.get("priceUsd")), "holder_count": None,
+                        "market_cap_usd": _num(pair.get("marketCap")), "fdv_usd": _num(pair.get("fdv")),
+                        "liquidity_usd": main_pool["liquidity_usd"] if main_pool else None,
+                        "price_change": {w: _num((pair.get("priceChange") or {}).get(w), signed=True) for w in DEX_WINDOWS},
+                        "volume_usd": {w: _num((pair.get("volume") or {}).get(w)) for w in DEX_WINDOWS},
+                        "txns": txns}}
 
 
 @dataclass
@@ -181,7 +233,8 @@ class Market:
             return {"state": "unsupported", "pool": None, "metrics": None}
         if not valid_address(network, token):
             raise MarketError("invalid_token", "The launch token address is not valid for this chain.")
-        if not self.api_key:
+        # DexScreener needs no configuration; only chains it doesn't index require a GMGN key.
+        if not self.api_key and network not in DEX_CHAIN:
             return {"state": "not_configured", "pool": None, "metrics": None}
         key = (network, token if network == "solana" else token.lower())
         entry, now = self._cache.get(key), time.monotonic()
@@ -208,13 +261,21 @@ class Market:
 
     async def _load(self, key, network, token):
         try:
-            raw = await self._get(API_CHAIN[network], token)
-            if raw is None or raw == {}:
-                result = {"state": "no_pool", "pool": None, "metrics": None}
-            elif not isinstance(raw, dict):
-                raise MarketError("invalid_response", "GMGN returned an unexpected data format.")
+            raw, provider = await self._fetch(network, token)
+            if provider == "GMGN":
+                if raw is None or raw == {}:
+                    result = {"state": "no_pool", "pool": None, "metrics": None, "provider": provider}
+                elif not isinstance(raw, dict):
+                    raise MarketError("invalid_response", "GMGN returned an unexpected data format.")
+                else:
+                    result = _normalize(raw, network, token)
             else:
-                result = _normalize(raw, network, token)
+                if raw in (None, {}):
+                    result = {"state": "no_pool", "pool": None, "metrics": None, "provider": "DexScreener"}
+                elif not isinstance(raw, dict):
+                    raise MarketError("invalid_response", "DexScreener returned an unexpected data format.")
+                else:
+                    result = _normalize_dex(raw, network, token)
             entry = _Entry(time.monotonic(), {**result, "fetched_at": time.time()})
         except MarketError as exc:
             old = self._cache.get(key)
@@ -228,6 +289,50 @@ class Market:
             raise
         self._remember(key, entry)
         return self._answer(entry)
+
+    async def _fetch(self, network, token):
+        """(raw provider payload, provider name). A configured GMGN key stays primary — it adds holder counts
+        and the GMGN page — but on an access denial (an invalid, expired or IP-blocked key, the common
+        failure) the same data comes from DexScreener. Without a key, DexScreener is the source."""
+        if self.api_key:
+            try:
+                return await self._get(API_CHAIN[network], token), "GMGN"
+            except MarketError as e:
+                if e.kind != "access_denied" or network not in DEX_CHAIN:
+                    raise
+                try:
+                    return await self._get_dex(network, token), "DexScreener"
+                except MarketError:
+                    raise e from None  # the GMGN denial is the root cause; keep its kind and guidance
+        return await self._get_dex(network, token), "DexScreener"
+
+    async def _get_dex(self, network, token):
+        # No GMGN backoff here: the fallback must run even while GMGN is cooling down.
+        now = time.monotonic()
+        while self._calls and now - self._calls[0] >= 60:
+            self._calls.popleft()
+        if len(self._calls) >= get_settings().gmgn_requests_per_minute:
+            raise MarketError("request_budget", "Helm's market-data request budget is reached. Updates will resume shortly.",
+                              retry_until=self._calls[0] + 60)
+        self._calls.append(now)
+        try:
+            response = await self.client.get(f"{DEXSCREENER_API}/tokens/v1/{DEX_CHAIN[network]}/{token}",
+                headers={"Accept": "application/json", "User-Agent": "HelmTerminals/1.0"})
+        except httpx.HTTPError:
+            raise MarketError("unavailable", "DexScreener could not be reached. Please try again later.") from None
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if response.status_code == 429:
+            delay = max(60, _num(response.headers.get("retry-after")) or 0)
+            raise MarketError("rate_limited", "DexScreener has paused requests due to its rate limit. Updates will resume after the cooldown.",
+                              retry_until=time.monotonic() + delay)
+        if response.status_code >= 300 or not isinstance(body, list):
+            # DexScreener is keyless, so failures here are transient; no secrets can be echoed.
+            raise MarketError("unavailable", "DexScreener did not return market data. Please try again later.")
+        pair = _dex_best_pair(body, network, token)
+        return pair or {}
 
     async def _get(self, chain, token):
         now = time.monotonic()

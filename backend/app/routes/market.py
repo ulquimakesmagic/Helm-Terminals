@@ -41,16 +41,16 @@ async def launch_market(launch_id: str, user: User = Depends(current_user), db: 
                         market: Market = Depends(get_market)):
     l = await _owned_launch(db, user, launch_id)
     network, token, whose = _target(l)
-    base = {"note": NOTE, "network": network, "token": token, "whose": whose, "source": "GMGN",
+    base = {"note": NOTE, "network": network, "token": token, "whose": whose,
             "chart_chain": CHART_CHAIN.get(network) if token and valid_address(network, token) else None,
             "explorer_url": _explorer(network, token) if token else None}
     if not token:
-        return {**base, "state": "no_token", "pool": None, "metrics": None}
+        return {**base, "state": "no_token", "source": None, "pool": None, "metrics": None}
     try:
         res = await market.snapshot(network, token)
     except MarketError as e:
-        return {**base, "state": "error", **e.details(), "pool": None, "metrics": None}
-    return {**base, **res}
+        return {**base, "state": "error", "source": None, **e.details(), "pool": None, "metrics": None}
+    return {**base, "source": res.get("provider"), **res}
 
 
 @router.get("/launches/{launch_id}/market/candles")

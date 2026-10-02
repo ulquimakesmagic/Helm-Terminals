@@ -180,6 +180,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [job, setJob] = useState<any>(null);
   const [jobId, setJobId] = useState("");
   const [lost, setLost] = useState(false);
+  const [route, setRoute] = useState<any>(null);
   const key = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -188,6 +189,26 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       .catch((e) => { setError(errMsg(e)); setPhase("error"); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A bridge job ends when the origin transaction is settled; Relay's destination fill continues on its own.
+  // Keep asking for the route status so the result shows the second leg (or its refund) instead of stopping early.
+  useEffect(() => {
+    if (phase !== "done" || pre?.kind !== "bridge" || !jobId) return;
+    let live = true, tries = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const r = await api<any>(`/bridge/${jobId}`);
+        if (!live) return;
+        setRoute(r);
+        if (["success", "failure", "refund"].includes(r.route_status) || tries >= 11) return;
+      } catch { if (!live) return; }
+      tries += 1;
+      timer = setTimeout(poll, 5000);
+    };
+    void poll();
+    return () => { live = false; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, pre?.kind, jobId]);
 
   async function confirm() {
     setPhase("submitting");
@@ -221,7 +242,6 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const blocked = warnings.length > 0;
   const danger = kind === "burn" || kind === "withdraw" || kind === "send_tokens";
   const summary = summarize(pre, network);
-
   const foot =
     phase === "done" || phase === "error" ? <button className="btn" onClick={onClose}>Close</button> :
     phase === "loading" ? <button className="btn ghost" onClick={onClose}>Cancel</button> : (
@@ -279,6 +299,16 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
             : <><b>Submitted.</b> Signed and sent; waiting for the chain to confirm. You can close this window: the result will show in the Transactions tab.</>}
           {jobId && <span className="muted small"> · job {jobId.slice(0, 8)}</span>}
         </Callout>
+      )}
+      {phase === "done" && job && kind === "bridge" && (
+        route?.route_status === "success" ? (
+          <Callout icon="checkcircle"><b>Filled on {String(pre?.to_chain ?? "the destination chain")}.</b> Relay credited the destination wallet
+            {route.destination_txs?.length ? <> · destination transaction <span className="mono">{String(route.destination_txs[0]).slice(0, 18)}…</span></> : null}.</Callout>
+        ) : route?.route_status === "failure" || route?.route_status === "refund" ? (
+          <Callout tone="warn"><b>Relay reported {route.route_status}.</b> The route didn't complete; the amount is refunded to the source wallet. Nothing more is retried automatically.</Callout>
+        ) : (
+          <Callout tone="info"><b>The origin leg is settled; Relay is filling on {String(pre?.to_chain ?? "the destination chain")}.</b> This panel follows the fill{job.status !== "confirmed" ? "" : " — you can close the window and check the Transactions tab later"}.</Callout>
+        )
       )}
       {phase === "done" && job && (
         <>

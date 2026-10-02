@@ -33,6 +33,18 @@ def token_data(token=TOKEN):
             "link": {"gmgn": f"https://gmgn.ai/sol/token/{token}"}}
 
 
+def dex_pair(token=TOKEN):
+    # DexScreener tokens/v1 pair shape (public docs).
+    return {"chainId": "solana", "dexId": "raydium", "pairAddress": POOL,
+            "baseToken": {"address": token, "name": "Wrapped SOL", "symbol": "WSOL"},
+            "quoteToken": {"address": QUOTE, "symbol": "USDC"},
+            "priceUsd": "120.5", "marketCap": 120_500_000, "fdv": 144_600_000,
+            "liquidity": {"usd": 150000, "base": 1, "quote": 2},
+            "priceChange": {"m5": 0.5, "h1": -1.2, "h6": 3.4, "h24": 20.0},
+            "volume": {"h24": 50000, "h6": 12000, "h1": 3000, "m5": 100},
+            "txns": {"h24": {"buys": 120, "sells": 80}, "h1": {"buys": 10, "sells": 5}}}
+
+
 class Provider:
     def __init__(self):
         self.data = token_data()
@@ -40,8 +52,16 @@ class Provider:
         self.code = 0
         self.headers = {}
         self.requests = []
+        self.dex = None          # list of DexScreener pairs to serve; None answers 500
+        self.dex_requests = []
 
     async def handle(self, request):
+        if request.url.host == "api.dexscreener.com":
+            self.dex_requests.append(request)
+            await asyncio.sleep(0)
+            if self.dex is None:
+                return httpx.Response(500)
+            return httpx.Response(200, json=self.dex)
         self.requests.append(request)
         assert request.url.host == "openapi.gmgn.ai"
         assert request.url.path == "/v1/token/info" and request.method == "GET"
@@ -99,15 +119,80 @@ async def test_market_contract_and_no_other_provider(client, provider):
     assert (await client.get(f"/launches/{lid}/market", headers=other)).status_code == 404
 
 
-async def test_missing_key_keeps_chart_and_unknown_chains_make_no_calls(client, provider):
+async def test_without_a_key_dexscreener_serves_indexed_chains(client, provider):
     p, m = provider
     m.api_key = ""
+    p.dex = [dex_pair()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["state"] == "ok" and res["provider"] == "DexScreener" and not p.requests
+    assert p.dex_requests[-1].url.path == f"/tokens/v1/solana/{TOKEN}"
+    metrics = res["metrics"]
+    assert metrics["price_usd"] == 120.5 and metrics["market_cap_usd"] == 120_500_000
+    assert metrics["fdv_usd"] == 144_600_000 and metrics["liquidity_usd"] == 150000
+    assert metrics["holder_count"] is None and res["gmgn_url"] is None
+    assert metrics["price_change"]["h24"] == 20.0 and metrics["volume_usd"]["h1"] == 3000
+    assert metrics["txns"]["h24"] == {"buys": 120, "sells": 80, "swaps": 200}
+    assert metrics["txns"]["h1"]["swaps"] == 15
+    assert res["pool"]["dex"] == "raydium" and res["pool"]["quote_symbol"] == "USDC"
     h, lid = await launch(client)
-    r = (await client.get(f"/launches/{lid}/market", headers=h)).json()
-    assert r["state"] == "not_configured" and r["chart_chain"] == "sol" and r["metrics"] is None
+    body = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+    assert body["source"] == "DexScreener" and body["state"] == "ok"
+    # Chains DexScreener doesn't index stay GMGN-only: without a key they are not configured.
+    for network in ("robinhood", "arc"):
+        assert (await m.snapshot(network, "0x" + "ab" * 20))["state"] == "not_configured"
     for chain in ("tron", "near", "ton", "unknown"):
         assert (await m.snapshot(chain, "unimportant"))["state"] == "unsupported"
-    assert not p.requests
+    assert not p.requests and len(p.dex_requests) == 1
+
+
+async def test_gmgn_denial_falls_back_to_dexscreener_and_keeps_kind_when_dex_fails(provider):
+    p, m = provider
+    p.status = 403            # non-JSON 403: what a Cloudflare-style IP block looks like
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "access_denied" and len(p.dex_requests) == 1  # dex tried, also down (500)
+    p.dex = [dex_pair()]
+    m._cache.clear(); m._backoff_error = None; m._backoff_until = 0
+    res = await m.snapshot("solana", TOKEN)
+    # With the backoff cleared GMGN is retried once (403 again), then DexScreener answers.
+    assert res["state"] == "ok" and res["provider"] == "DexScreener" and len(p.requests) == 2
+    # Non-401/403 GMGN failures keep GMGN semantics (negative cache, backoff) without a fallback.
+    p.status, p.code, p.dex = 200, 500, None
+    dex_before = len(p.dex_requests)
+    m._cache.clear(); m._backoff_error = None; m._backoff_until = 0
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "unavailable" and len(p.dex_requests) == dex_before
+
+
+async def test_dexscreener_malformed_and_mismatched_payloads(provider):
+    p, m = provider
+    m.api_key = ""
+    p.dex = {"unexpected": "shape"}
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "unavailable"
+    m._cache.clear()  # the failed fetch is negatively cached; clear it to exercise the next payload
+    p.dex = [{**dex_pair(), "baseToken": {"address": QUOTE, "symbol": "USDC"}}]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["state"] == "no_pool" and res["metrics"] is None
+    m._cache.clear()
+    p.dex = [{**dex_pair(), "pairAddress": "not-an-address"}]
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "invalid_response"
+
+
+async def test_missing_key_keeps_chart_and_unknown_chains_make_no_calls(client, provider):
+    p, m = provider
+    m.api_key = ""   # no GMGN key: DexScreener serves the indexed chains keylessly
+    p.dex = [dex_pair()]
+    h, lid = await launch(client)
+    r = (await client.get(f"/launches/{lid}/market", headers=h)).json()
+    assert r["state"] == "ok" and r["chart_chain"] == "sol"  # keyless DexScreener serves the panel
+    for chain in ("tron", "near", "ton", "unknown"):
+        assert (await m.snapshot(chain, "unimportant"))["state"] == "unsupported"
+    assert not p.requests and len(p.dex_requests) == 1  # the one DexScreener call served the route
 
 
 async def test_new_token_draft_and_copied_source(client, provider):

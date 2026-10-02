@@ -8,7 +8,7 @@ type Win = "m5" | "h1" | "h6" | "h24";
 const WINS: [Win, string][] = [["m5", "5m"], ["h1", "1h"], ["h6", "6h"], ["h24", "24h"]];
 interface MarketRes {
   state: "ok" | "no_pool" | "no_token" | "unsupported" | "not_configured" | "error";
-  network: string; token: string | null; whose: "launch" | "source"; symbol?: string;
+  network: string; token: string | null; whose: "launch" | "source"; symbol?: string; source?: string | null;
   fetched_at?: number; stale?: boolean; error?: string; error_kind?: string; retry_after_s?: number; explorer_url?: string; gmgn_url?: string;
   pool: { address: string; dex: string | null; quote_address: string | null; quote_symbol: string | null; liquidity_usd: number | null } | null;
   metrics: { price_usd: number | null; holder_count: number | null; market_cap_usd: number | null; fdv_usd: number | null;
@@ -84,13 +84,13 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
 
   return <section className={`term terminal-view-${mobileView}`} aria-label="GMGN market">
     <div className="term-head">
-      <div className="th-pool"><span className="term-kicker"><Icon name="trend" size={12} />GMGN · indicative market data</span>
+      <div className="th-pool"><span className="term-kicker"><Icon name="trend" size={12} />{res?.source ?? "GMGN"} · indicative market data</span>
         <b className="th-poolname">{res?.symbol ?? symbol} <span className="muted">/ {chainOf(chartNetwork).name}</span></b>
       </div>
       <div className="th-stats">
         <HeadStat label="Price USD" value={usd(metrics?.price_usd)} />
         <HeadStat label="24h change" value={pct(change)} tone={change != null && change >= 0 ? "good" : "bad"} title="Calculated from GMGN's current and 24h starting token prices" />
-        <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title="GMGN price × circulating supply, as GMGN defines market cap" />
+        <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title={res?.source === "DexScreener" ? "Reported by DexScreener" : "GMGN price × circulating supply, as GMGN defines market cap"} />
         <HeadStat label="Main pool liq." value={usd(pool?.liquidity_usd ?? metrics?.liquidity_usd)} title="Liquidity in GMGN's biggest pool for this token" />
         <HeadStat label="24h token vol." value={usd(metrics?.volume_usd.h24)} />
         <HeadStat label="24h swaps" value={count(metrics?.txns.h24.swaps)} />
@@ -98,7 +98,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
       </div>
       <div className="th-src">
         <span className={`fresh ${stale || expired ? "stale" : ""}`}>
-          {res?.fetched_at ? `${expired ? "Expired · " : stale ? "Stale · " : ""}GMGN metrics fetched ${new Date(res.fetched_at * 1000).toLocaleTimeString()}` : "GMGN metrics · awaiting data"}
+          {res?.fetched_at ? `${expired ? "Expired · " : stale ? "Stale · " : ""}${res.source ?? "GMGN"} metrics fetched ${new Date(res.fetched_at * 1000).toLocaleTimeString()}` : "Market metrics · awaiting data"}
         </span>
         <button className="btn sm ghost" onClick={() => setRevision((r) => r + 1)} disabled={busy || retrySeconds > 0} aria-label={retrySeconds > 0 ? `Refresh available in ${retrySeconds} seconds` : "Refresh market data"}>
           {busy ? <Spinner /> : <Icon name="refresh" size={13} />}{retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Refresh"}
@@ -114,7 +114,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
       <div className="term-analysis">
         <GmgnChart key={`${chartNetwork}:${chartToken}`} network={chartNetwork} token={chartToken} symbol={res?.symbol ?? symbol} explorer={explorer} />
         <div className="term-panel gmgn-pool" aria-label="GMGN main pool">
-          <div className="tp-head"><b>Main pool</b><span className="muted small">Selected by GMGN</span></div>
+          <div className="tp-head"><b>Main pool</b><span className="muted small">Selected by {res?.source ?? "GMGN"}</span></div>
           {!res && !error ? <Skeleton h={90} /> : pool ? <dl className="pool-facts">
             <div><dt>DEX</dt><dd>{dexName(pool.dex)}</dd></div>
             <div><dt>Pool address</dt><dd><Address address={pool.address} network={chartNetwork} chars={5} /></dd></div>
@@ -126,7 +126,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
       <div className="term-side">
         {ticket}
         <div className="term-panel gmgn-activity" role="group" aria-label="GMGN token activity">
-          <div className="tp-head"><b>Token activity</b><span className="muted small">GMGN · token-wide</span></div>
+          <div className="tp-head"><b>Token activity</b><span className="muted small">{res?.source ?? "GMGN"} · token-wide</span></div>
           <div className="win-tabs" role="group" aria-label="Activity time window">
             {WINS.map(([key, label]) => <button key={key} type="button" aria-pressed={win === key} className={win === key ? "on" : ""} onClick={() => setWin(key)}>
               <span>{label}</span><b className={`num ${metrics?.price_change[key] == null ? "na" : metrics.price_change[key]! >= 0 ? "good" : "bad"}`}>{pct(metrics?.price_change[key]) ?? "—"}</b>
@@ -139,10 +139,10 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
             </div>
             <div className="tp-row"><span className="k">Token volume</span><span className="v num">{usd(metrics?.volume_usd[win]) ?? "—"}</span></div>
           </div>
-          {!metrics && <Empty icon="activity" title="Activity unavailable" text="Counts appear once GMGN data is available." />}
+          {!metrics && <Empty icon="activity" title="Activity unavailable" text="Counts appear once market data is available." />}
         </div>
       </div>
     </div>
-    <p className="market-note">Charts and market metrics from <a href="https://gmgn.ai" target="_blank" rel="noreferrer">GMGN</a>. Indicative only. Token activity is not limited to the main pool. These values never feed Helm's wallet balances, trade previews, quotes or execution.</p>
+    <p className="market-note">Chart from <a href="https://gmgn.ai" target="_blank" rel="noreferrer">GMGN</a>; token metrics from {res?.source ?? "GMGN"}. Indicative only. Token activity is not limited to the main pool. These values never feed Helm's wallet balances, trade previews, quotes or execution.</p>
   </section>;
 }
