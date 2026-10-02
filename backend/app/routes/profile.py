@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..chains.evm import EVM_CHAINS
 from ..chains.solana import LAMPORTS_PER_SOL
 from ..db import get_db
 from ..deps import current_user, log_activity, web_user
@@ -21,6 +22,7 @@ from ..models import (
     Activity, FeeRecord, Job, Launch, Profile, ReferralLink, Session, TelegramLink, Transaction, User, Wallet,
     Watch, utcnow,
 )
+from ..services.portfolio import coin_prices
 from .misc import referral_summary
 
 router = APIRouter(tags=["profile"])
@@ -85,11 +87,15 @@ async def profile(user: User = Depends(current_user), db: AsyncSession = Depends
         .join(Job, Job.id == Transaction.job_id)
         .where(Job.user_id == user.id, Transaction.status == "confirmed", Transaction.kind.in_(("buy", "sell")))
     )).all()
-    flow = (await db.execute(
-        select(func.coalesce(func.sum(Transaction.sol_delta_lamports), 0))
+    # Flows per chain: deltas are recorded per transaction and joined to the wallet's network, so the
+    # summary becomes all-chain as soon as a chain records native deltas (EVM deltas are the known gap).
+    flow_rows = (await db.execute(
+        select(Wallet.network, func.coalesce(func.sum(Transaction.sol_delta_lamports), 0))
         .join(Job, Job.id == Transaction.job_id)
-        .where(Job.user_id == user.id, Transaction.status == "confirmed")
-    )).scalar_one()
+        .join(Wallet, Wallet.id == Transaction.wallet_id)
+        .where(Job.user_id == user.id, Transaction.status == "confirmed", Transaction.sol_delta_lamports.is_not(None))
+        .group_by(Wallet.network)
+    )).all()
     fees = (await db.execute(
         select(func.coalesce(func.sum(FeeRecord.platform_lamports + FeeRecord.referral_lamports), 0))
         .where(FeeRecord.payer_user_id == user.id, FeeRecord.status == "confirmed")
@@ -128,6 +134,22 @@ async def profile(user: User = Depends(current_user), db: AsyncSession = Depends
             networks.setdefault(net, {"network": net, "launches": 0, "wallets": 0})["wallets"] += 1
 
     referral = await referral_summary(db, user)
+
+    # Net flow valued in USD: each chain's measured native delta at its own coin's price. A chain
+    # without a price right now is left out of the sum and reported, never valued at another coin's price.
+    prices = await coin_prices()
+    flows = []
+    for net, delta in flow_rows:
+        if not delta:
+            continue
+        symbol = EVM_CHAINS[net]["native"] if net in EVM_CHAINS else "SOL"
+        amount = int(delta) / LAMPORTS_PER_SOL
+        price = prices.get(symbol)
+        flows.append({"network": net, "symbol": symbol, "amount": amount,
+                      "usd": amount * price if price else None})
+    priced = bool(flows) and all(f["usd"] is not None for f in flows)
+    net_flow_usd = sum(f["usd"] for f in flows if f["usd"] is not None)
+
     live_networks = {l.network for l in own if l.deployed_at}
     milestones = [
         {"id": "secured", "label": "Account secured", "hint": "Two-factor authentication on", "done": user.totp_enabled},
@@ -153,7 +175,11 @@ async def profile(user: User = Depends(current_user), db: AsyncSession = Depends
             "trades": {"count": len(trades), "buys": sum(1 for k, _ in trades if k == "buy"),
                        "sells": sum(1 for k, _ in trades if k == "sell"),
                        "volume_sol": sum(abs(d or 0) for _, d in trades) / LAMPORTS_PER_SOL},
-            "net_sol_flow": int(flow) / LAMPORTS_PER_SOL,
+            "net_sol_flow": sum(int(d) for _, d in flow_rows) / LAMPORTS_PER_SOL,
+            "net_flow": {"usd": net_flow_usd if flows else None, "priced": priced,
+                         "flows": flows,
+                         "note": "Measured coin in and out of your wallets, valued in USD at each chain's coin price. "
+                                 "Chains without recorded flows aren't included."},
             "fees_paid_sol": int(fees) / LAMPORTS_PER_SOL,
             "wallets": {"managed": sum(1 for k, _ in wallets if k == "managed"),
                         "watch": sum(1 for k, _ in wallets if k == "watch")},

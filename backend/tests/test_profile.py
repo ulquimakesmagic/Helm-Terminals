@@ -64,3 +64,20 @@ async def test_profile_edit_is_web_only(client):
         await s.commit()
     assert (await client.patch("/profile", json={"bio": "x"}, headers=h)).status_code == 403
     assert (await client.get("/profile", headers=h)).status_code == 200
+
+
+async def test_profile_net_flow_is_usd_valued_per_chain(client, fake_rpc):
+    """The headline net flow is USD-valued per chain at each chain's own coin price, with the
+    per-chain amounts kept beside it; chains without recorded flows are simply absent."""
+    h = await signup(client, "flow@example.com", main=False)
+    await live_launch(client, h, fake_rpc)
+    d = (await client.get("/profile", headers=h)).json()
+    nf = d["stats"]["net_flow"]
+    assert nf["flows"], "the launch's dev buy records a measured flow"
+    sol = next(f for f in nf["flows"] if f["network"] == "solana")
+    assert sol["symbol"] == "SOL" and sol["amount"] < 0 and sol["usd"] is not None
+    assert nf["priced"] and isinstance(nf["usd"], (int, float))
+    assert abs(nf["usd"] - sum(f["usd"] for f in nf["flows"])) < 1e-9
+    assert abs(sum(f["amount"] for f in nf["flows"]) - d["stats"]["net_sol_flow"]) < 1e-9
+    # No chain's flow is ever valued at another chain's coin price: EVM deltas aren't recorded yet.
+    assert all(f["network"] == "solana" for f in nf["flows"])
