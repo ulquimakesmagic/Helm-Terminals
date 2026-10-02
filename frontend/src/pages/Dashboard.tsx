@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt, usd } from "../api";
+import { Reveal, Ticker } from "../components/motion";
 import AreaChart from "../components/Chart";
 import ReferralCard from "../components/Referrals";
 import SpendDialog from "../components/SpendDialog";
@@ -130,7 +131,7 @@ export default function Dashboard() {
           </div>
           {folio ? (
             folio.wallets === 0 ? <div className="figure figure-text muted">No wallets yet</div>
-              : <div className="figure" aria-live="polite">{total == null ? "Unavailable" : usd(total)}{total != null && !totalComplete && <small>at least</small>}</div>
+              : <div className="figure" aria-live="polite">{total == null ? "Unavailable" : <Ticker value={total} format={usd} />}{total != null && !totalComplete && <small>at least</small>}</div>
           ) : folioErr ? <div className="figure figure-text muted">Unavailable</div> : <Skeleton h={34} w={220} style={{ marginTop: 10 }} />}
           <p className="sub">
             {folioErr ? <>Balances couldn't be read: {folioErr}</>
@@ -153,14 +154,17 @@ export default function Dashboard() {
       </section>
       {error && <Callout tone="err">Dashboard figures couldn't be loaded: {error}</Callout>}
 
+      <Reveal delay={40}>
       <Metrics label="Key figures" items={[
         { label: "Tracked stablecoins", value: folio?.wallets > 0 ? <PortfolioValue value={folio.totals.stable_usd} complete={stableComplete} /> : folioErr ? "Unavailable" : "—", tone: folio && !stableComplete ? "warn" : undefined, hint: folio?.wallets === 0 ? "no wallets yet" : "USDC / USDG · valued at $1" },
         { label: "Network coins", value: folio?.wallets > 0 ? <PortfolioValue value={folio.totals.native_usd} complete={nativeComplete} /> : folioErr ? "Unavailable" : "—", tone: folio && !nativeComplete ? "warn" : undefined, hint: folio?.wallets === 0 ? "no wallets yet" : "Priced native balances only" },
         { label: "Launches", value: launches.data ? String(launches.data.length) : launches.error ? "Unavailable" : "—", hint: launches.data ? `${live.length} live` : " " },
         { label: "Managed wallets", value: wallets.data ? String(managed.length) : wallets.error ? "Unavailable" : "—", hint: wallets.data ? `${wallets.data.length - managed.length} connected / watch-only excluded` : " " },
       ]} />
+      </Reveal>
 
       {(decisions.length > 0 || setup.length > 0) && (
+        <Reveal delay={80}>
         <Card title="Next actions" icon="zap" sub={decisions.length ? `${decisions.length} need${decisions.length === 1 ? "s" : ""} a decision` : "Finish setting up"} flush>
           <div className="next-list">
             {decisions.map((a) => <NextRow key={a.key} a={a} />)}
@@ -177,10 +181,11 @@ export default function Dashboard() {
             )}
           </div>
         </Card>
+        </Reveal>
       )}
 
       <div className="grid g-main">
-        <div className="col">
+        <Reveal className="col" delay={120}>
           <Card title="Balances by chain" icon="globe" sub="Coins and stablecoins in your managed wallets"
             foot={folio && <>{folio.note}{!totalComplete && " Totals only include amounts that could be read and valued."}</>} flush>
             {folioErr ? <LoadError what="Balances" error={folioErr} onRetry={() => loadFolio(true)} busy={folioBusy} /> : !folio ? <Loading rows={5} />
@@ -248,9 +253,9 @@ export default function Dashboard() {
               <Empty icon="trend" title="No confirmed transactions in this period" text="Deploys, trades and transfers show up here once confirmed." />
             ) : <AreaChart points={data.series.map((p: any) => ({ date: p.date, total: p.cumulative_usd ?? 0, day: p.daily_usd ?? 0 }))} height={220} />}
           </Card>
-        </div>
+        </Reveal>
 
-        <div className="col">
+        <Reveal className="col" delay={160}>
           <Card title="Recent activity" icon="activity" sub="Sign-ins are left out here" flush actions={<Link to="/activity" className="btn sm ghost">All<Icon name="arrowright" size={13} /></Link>}>
             {feed.error && !feed.data ? <LoadError what="Activity" error={feed.error} onRetry={feed.load} busy={feed.busy} />
               : !feed.data ? <Loading /> : recent.length === 0 ? <Empty icon="activity" title="Nothing yet" text="Launches, trades and transfers are logged here." /> : (
@@ -288,7 +293,7 @@ export default function Dashboard() {
           </Card>
 
           <ReferralCard data={data?.referral ?? null} onChange={load} />
-        </div>
+        </Reveal>
       </div>
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => loadFolio(true)} />}
     </>
@@ -309,7 +314,7 @@ function NextRow({ a }: { a: NextAction }) {
 }
 
 function PortfolioValue({ value, complete }: { value: number | null; complete: boolean }) {
-  return value == null ? <>Unavailable</> : <>{usd(value)}{!complete && <small>partial</small>}</>;
+  return value == null ? <>Unavailable</> : <><Ticker value={value} format={usd} />{!complete && <small>partial</small>}</>;
 }
 
 /** Keep provider diagnostics out of the main balance table, including with an older API response. */

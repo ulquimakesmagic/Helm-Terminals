@@ -168,9 +168,9 @@ export default function Profile() {
         <Stat label="Trades" icon="trend" value={s ? s.trades.count : "–"}
           hint={s ? `${fmt(s.trades.volume_sol, 3)} SOL volume · ${s.trades.buys} buys, ${s.trades.sells} sells` : undefined} />
         <Stat label="Net flow · Solana" icon="coins" value={s ? `${s.net_sol_flow > 0 ? "+" : ""}${fmt(s.net_sol_flow)}` : "–"} unit={s ? "SOL" : undefined}
-          tone={s && s.net_sol_flow > 0 ? "good" : s && s.net_sol_flow < 0 ? "bad" : undefined} hint="All time · confirmed transactions" />
+          tone={s && s.net_sol_flow > 0 ? "good" : s && s.net_sol_flow < 0 ? "bad" : undefined} hint="All time · Solana transactions only; other chains aren't summed yet" />
         <Stat label="Platform fees paid" icon="pie" value={s ? fmt(s.fees_paid_sol, 4) : "–"} unit={s ? "SOL" : undefined}
-          hint={s ? `${s.wallets.managed} managed wallets · ${s.wallets.watch} watch-only` : undefined} />
+          hint={s ? `Solana trades only · ${s.wallets.managed} managed wallets, ${s.wallets.watch} watch-only` : undefined} />
       </div>
 
       <div className="grid g-main">

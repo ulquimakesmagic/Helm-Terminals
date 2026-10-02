@@ -223,6 +223,9 @@ export default function Workspace() {
   const sel = [...selected].filter((wid) => ws.wallets.some((w: any) => w.id === wid));
   const toggle = (wid: string) => setSelected((s) => { const n = new Set(s); n.has(wid) ? n.delete(wid) : n.add(wid); return n; });
   const attached = new Set(ws.wallets.map((w: any) => w.id));
+  // "Unavailable ≠ zero": sums are only shown when every attached wallet's balance was actually read.
+  const nativeKnown = ws.wallets.length > 0 && ws.wallets.every((w: any) => w.sol != null);
+  const tokensKnown = ws.wallets.length > 0 && ws.wallets.every((w: any) => w.tokens != null);
   const totalSol = ws.wallets.reduce((s: number, w: any) => s + (w.sol ?? 0), 0);
   const totalTok = ws.wallets.reduce((s: number, w: any) => s + (w.tokens ?? 0), 0);
   const supply = ws.transparency?.total_supply ?? 0;
@@ -270,7 +273,7 @@ export default function Workspace() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr><td className="m-hide" /><td className="span">Total</td><td className="hide-sm" /><td className="r num">{fmt(totalSol, 4)}</td><td className="r num">{compact(totalTok)}</td>{supply > 0 && <td className="r num hide-sm">{fmt((totalTok / supply) * 100, 2)}%</td>}</tr></tfoot>
+                <tfoot><tr><td className="m-hide" /><td className="span">Total</td><td className="hide-sm" /><td className="r num">{nativeKnown ? fmt(totalSol, 4) : "—"}</td><td className="r num">{tokensKnown ? compact(totalTok) : "—"}</td>{supply > 0 && tokensKnown && <td className="r num hide-sm">{fmt((totalTok / supply) * 100, 2)}%</td>}</tr></tfoot>
               </table></TableWrap>
             )}
           </Card>
@@ -434,8 +437,8 @@ export default function Workspace() {
       <Metrics label="Launch figures" items={[
         { label: `Net ${cur} flow`, value: signed(flow), unit: cur, tone: flow > 0 ? "good" : flow < 0 ? "bad" : undefined, hint: `${ws.pnl.confirmed_txs} confirmed tx${ws.pnl.confirmed_txs === 1 ? "" : "s"}` },
         { label: "Supply you hold", value: ws.transparency ? `${fmt(ws.transparency.controlled_pct, 2)}%` : "—", tone: ws.transparency?.warnings?.length ? "warn" : undefined, hint: ws.transparency ? "across attached wallets" : "once the token is live" },
-        { label: "Tokens held", value: compact(totalTok), hint: `$${l.symbol}` },
-        { label: `${cur} in wallets`, value: fmt(totalSol, 4), unit: cur, hint: "for trades and gas" },
+        { label: "Tokens held", value: tokensKnown ? compact(totalTok) : "—", hint: tokensKnown ? `$${l.symbol}` : ws.wallets.length ? "load balances to total" : "attach wallets to total" },
+        { label: `${cur} in wallets`, value: nativeKnown ? fmt(totalSol, 4) : "—", unit: nativeKnown ? cur : undefined, hint: nativeKnown ? "for trades and gas" : ws.wallets.length ? "balances not read yet" : "attach wallets to trade and track" },
         { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
       ]} />
   );
