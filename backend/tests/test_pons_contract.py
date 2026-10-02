@@ -10,7 +10,7 @@ from eth_utils import to_canonical_address
 
 from app.chains.pons_rewards import ESCROW, FACTORY_ARTIFACT, calldata
 
-HELPERS = json.loads((Path(__file__).parent / "fixtures/pons-reward-helpers.json").read_text())
+HELPERS = json.loads((Path(__file__).parent / "fixtures/reward-helpers.json").read_text())
 
 
 @pytest.fixture

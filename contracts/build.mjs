@@ -8,26 +8,40 @@ function artifact(url, value) {
     }
   } else fs.writeFileSync(url, contents);
 }
-const source = fs.readFileSync(new URL('./HelmPonsRewards.sol', import.meta.url), 'utf8');
-const input = { language: 'Solidity', sources: { 'HelmPonsRewards.sol': { content: source },
-  'RewardTestHelpers.sol': { content: fs.readFileSync(new URL('./RewardTestHelpers.sol', import.meta.url), 'utf8') }
-}, settings: {
+const source = (name) => fs.readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+const settings = {
   optimizer: { enabled: true, runs: 200 }, evmVersion: 'paris',
   outputSelection: { '*': { '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object'] } }
-} };
-const output = JSON.parse(solc.compile(JSON.stringify(input)));
-for (const error of output.errors ?? []) console.error(error.formattedMessage);
-if (output.errors?.some(e => e.severity === 'error')) process.exit(1);
-for (const name of ['HelmPonsRewards', 'HelmPonsRewardsFactory']) {
-  const c = output.contracts['HelmPonsRewards.sol'][name];
-  artifact(new URL(`../backend/app/chains/contracts/${name}.json`, import.meta.url), {
-    compiler: solc.version(), settings: input.settings, abi: c.abi,
-    bytecode: c.evm.bytecode.object, deployedBytecode: c.evm.deployedBytecode.object
-  });
+};
+const CONTRACTS = {
+  'HelmPonsRewards.sol': ['HelmPonsRewards', 'HelmPonsRewardsFactory'],
+  'HelmRewardsSplitter.sol': ['HelmRewardsSplitter', 'HelmRewardsSplitterFactory'],
+};
+
+// Each launchpad contract compiles in its own solc invocation: solc's metadata hash covers every
+// source in the input, so a shared compilation would change one contract's bytes whenever another
+// file is added — invalidating a reviewed artifact or an explorer verification for no reason.
+function compile(sources) {
+  const output = JSON.parse(solc.compile(JSON.stringify({ language: 'Solidity', sources, settings })));
+  for (const error of output.errors ?? []) console.error(error.formattedMessage);
+  if (output.errors?.some(e => e.severity === 'error')) process.exit(1);
+  return output.contracts;
 }
-const helpers = output.contracts['RewardTestHelpers.sol'];
+
+for (const [file, names] of Object.entries(CONTRACTS)) {
+  const contracts = compile({ [file]: { content: source(file) },
+    'RewardTestHelpers.sol': { content: source('RewardTestHelpers.sol') } });
+  for (const name of names) {
+    const c = contracts[file][name];
+    artifact(new URL(`../backend/app/chains/contracts/${name}.json`, import.meta.url), {
+      compiler: solc.version(), settings, abi: c.abi,
+      bytecode: c.evm.bytecode.object, deployedBytecode: c.evm.deployedBytecode.object
+    });
+  }
+}
 fs.mkdirSync(new URL('../backend/tests/fixtures/', import.meta.url), { recursive: true });
-artifact(new URL('../backend/tests/fixtures/pons-reward-helpers.json', import.meta.url),
-  Object.fromEntries(Object.entries(helpers).map(([name, c]) => [name, {
-    bytecode: c.evm.bytecode.object, deployedBytecode: c.evm.deployedBytecode.object
-  }])));
+artifact(new URL('../backend/tests/fixtures/reward-helpers.json', import.meta.url),
+  Object.fromEntries(Object.entries(compile({ 'RewardTestHelpers.sol': { content: source('RewardTestHelpers.sol') } })['RewardTestHelpers.sol'])
+    .map(([name, c]) => [name, {
+      bytecode: c.evm.bytecode.object, deployedBytecode: c.evm.deployedBytecode.object
+    }])));
