@@ -91,5 +91,5 @@ async def test_configured_commission_does_not_count_as_received_or_claimable(cli
     assert bucket["unknown_amount_entries"] == 1
     ledger = await client.get("/admin/revenue/ledger?status=configured", headers=h)
     assert ledger.status_code == 200
-    assert "pons" not in pc.CREATOR_SHARE_LAUNCHPADS
-    assert next(p for p in pc.FEE_PATHS if p["id"] == "creator_share_pons")["supported"] is False
+    assert pc.creator_share("pons")["bps"] == 0  # disabled until a reviewed factory is configured
+    assert next(p for p in pc.FEE_PATHS if p["id"] == "creator_share_pons")["lands"] == "configured"

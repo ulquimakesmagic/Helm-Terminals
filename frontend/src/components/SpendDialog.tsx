@@ -33,6 +33,7 @@ const LABELS: Record<string, string> = {
   covers: "Covers", helm_creator_share: "Helm's share of your creator rewards", helm_fees: "All Helm fees",
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
   commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
+  pons_rewards: "Pons reward recipients", reward_terms: "Permanent reward terms",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -44,6 +45,14 @@ const isAddr = (v: unknown): v is string => typeof v === "string" && (/^[1-9A-HJ
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
   const coin = chainOf(network).native;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
+  if (k === "pons_rewards" && v && typeof v === "object") {
+    const r = v as { creator: string; treasury: string; splitter: string };
+    return <div className="stack tight">
+      <span>Creator 94% <Address address={r.creator} network={network} /></span>
+      <span>Helm 6% <Address address={r.treasury} network={network} /></span>
+      <span>Launch reward address <Address address={r.splitter} network={network} /></span>
+    </div>;
+  }
   if (Array.isArray(v)) {
     return (
       <div className="stack tight" style={{ alignItems: "flex-end" }}>

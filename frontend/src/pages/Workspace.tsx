@@ -358,8 +358,16 @@ export default function Workspace() {
                 <Seg full value={effectiveOp} onChange={setOp} options={opOptions} />
                 {effectiveOp === "claim" && claimInApp && (
                   <>
-                    <p className="muted small">{experience.claimCopy}</p>
-                    <Field label="Creator wallet">
+                    <p className="muted small">{l.pons_rewards
+                      ? "This launch's ETH rewards are split permanently: 94% to the creator and 6% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract."
+                      : experience.claimCopy}</p>
+                    {l.pons_rewards && <div className="stack tight small">
+                      <span>Creator (94%) <Address address={l.pons_rewards.creator} network={l.network} /></span>
+                      <span>Helm (6%) <Address address={l.pons_rewards.treasury} network={l.network} /></span>
+                      <span>Reward address <Address address={l.pons_rewards.splitter} network={l.network} /></span>
+                      <span className="muted">Each party can withdraw independently. Failed payments stay claimable at the reward address. Pons retains its timelocked authority over future reward routing.</span>
+                    </div>}
+                    <Field label={l.pons_rewards ? "Wallet paying gas" : "Creator wallet"}>
                       <select value={claimWallet} onChange={(e) => setClaimWallet(e.target.value)}>
                         <option value="">Choose…</option>
                         {ws.wallets.map((w: any) => <option key={w.id} value={w.id}>{w.label || short(w.address)}{w.role === "dev" ? " (dev)" : ""}</option>)}

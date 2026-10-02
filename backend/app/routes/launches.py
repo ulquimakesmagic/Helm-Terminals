@@ -62,6 +62,7 @@ def _launch_out(l: Launch) -> dict:
         "deploy_error": (l.launchpad_params or {}).get("deploy_error"),
         "deploy_note": (l.launchpad_params or {}).get("deploy_note"),
         "creator_share_setup": (l.launchpad_params or {}).get("creator_share_setup"),
+        "pons_rewards": (l.launchpad_params or {}).get("pons_rewards"),
     }
 
 
@@ -401,16 +402,21 @@ async def _note_creator_share(session, launch: Launch, job: Job, share: dict) ->
     from ..models import RevenueEvent
     from ..services.platform_config import CREATOR_SHARE_LAUNCHPADS
 
+    if launch.launchpad == "pons":
+        await session.execute(select(Launch.id).where(Launch.id == launch.id).with_for_update())
     existing = (await session.execute(select(RevenueEvent).where(
         RevenueEvent.source == "creator_share", RevenueEvent.launch_id == launch.id,
     ))).scalars().first()
     if existing is None:
         session.add(RevenueEvent(
             source="creator_share", network=CREATOR_SHARE_LAUNCHPADS.get(launch.launchpad, launch.network),
-            asset="various", amount_raw=None, decimals=0, estimated=True, status="claimable",
+            asset="various", amount_raw=None, decimals=0, estimated=True,
+            status="configured" if launch.launchpad == "pons" else "claimable",
             destination=share["recipient"], launch_id=launch.id, job_id=job.id, payer_user_id=launch.user_id,
             reference=launch.mint_address,
-            note=(f"{share['bps'] / 100:g}% of this launch's creator rewards on {launch.launchpad}; accrues and is "
+            note=("Pons 94/6 splitter recipient configured; no revenue booked until a treasury payout confirms."
+                  if launch.launchpad == "pons" else
+                  f"{share['bps'] / 100:g}% of this launch's creator rewards on {launch.launchpad}; accrues and is "
                   "claimed on the launchpad, so the amount isn't directly verifiable from Helm")))
     params = {**(launch.launchpad_params or {}), "helm_creator_share": share}
     if launch.launchpad == "pumpfun":
@@ -752,6 +758,9 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
                          rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
     """For a deploy that was sent but not confirmed in time: reconcile its saved transaction on-chain."""
     l = await _owned_launch(db, user, launch_id)
+    if l.launchpad == "pons" and l.status == "live":
+        from ..services.pons_revenue import reconcile
+        await reconcile(db, l, ex.evm(l.network).rpc)
     if l.launchpad in IMPLEMENTED and is_extra(get_adapter(l.launchpad)):
         from ..services import extra_launch
 
@@ -839,7 +848,7 @@ async def recheck_deploy(launch_id: str, user: User = Depends(current_user), db:
 # Token resolvers of EVM deploys that timed out, kept in this process so a late receipt can still name the token.
 _EVM_RESOLVERS: dict = {}
 DEPLOY_TRACKING = ("evm_deploy_tx", "unconfirmed_since", "predicted_token", "deploy_error", "deploy_note",
-                   "archived_while_deploying", "deploy_started_at", "flap_commission")
+                   "archived_while_deploying", "deploy_started_at", "flap_commission", "pons_rewards")
 
 
 async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: User) -> None:
@@ -873,6 +882,8 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
         return
     token = None
     resolver = _EVM_RESOLVERS.pop(l.id, None)
+    if l.launchpad == "pons" and resolver is None:
+        resolver = get_adapter("pons")._resolver([])  # receipt events survive a process restart
     if resolver:
         try:
             token = await resolver(receipt.get("logs") or [])
@@ -885,6 +896,10 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
                                                         "check the explorer"}
     await log_activity(db, user.id, "launch.confirmed_late", "launch", l.id, {"tx": h, "token": token})
     await _note_flap_partner(db, l)
+    if l.launchpad == "pons" and params.get("pons_rewards") and token:
+        job = await db.get(Job, params["pons_rewards"]["job_id"])
+        if job:
+            await _note_creator_share(db, l, job, params.get("helm_creator_share") or {})
     await db.commit()
 
 
@@ -913,7 +928,26 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
         raise HTTPException(400, f"that wallet is on {w.network}, not {l.network}")
     claim_summary = {"launch_id": l.id, "wallet": w.address, "network": l.network, "platform_fee": "none"}
     if l.launchpad == "pons":
-        claim_summary["claim_scope"] = "All Pons rewards for this wallet, across launches; no Helm deduction."
+        rewards = (l.launchpad_params or {}).get("pons_rewards")
+        if rewards:
+            if l.status != "live" or not l.mint_address:
+                raise HTTPException(409, "launch is not live")
+            claim_summary.update(pons_rewards=rewards,
+                claim_scope="This launch's native reward address: 94% creator / 6% Helm. Selected wallet pays gas only.",
+                platform_fee="6% of creator rewards; paid from the splitter, never from this wallet's balance")
+            from ..services.evm_exec import EvmCall, GAS_HEADROOM
+            from ..chains.evm import EvmRPCError
+            try:
+                preview = await adapter.prepare_claim(ClaimRequest(wallet_pubkey=w.address, mint=l.mint_address,
+                                                                  options=dict(l.launchpad_params or {})))
+                step = preview.steps[0]
+                sender = ex.evm(l.network)
+                gas_limit = int(await sender.estimate(w.address, EvmCall(step.to, step.data, step.value)) * GAS_HEADROOM)
+                claim_summary["max_gas"] = await sender.max_gas_cost(gas_limit) / WEI
+            except (AdapterError, EvmRPCError, EvmRPCUnavailable) as e:
+                raise HTTPException(400, f"Pons claim is not ready: {e}") from e
+        else:
+            claim_summary["claim_scope"] = "All Pons rewards for this wallet, across launches; no Helm deduction."
     pf = build_preflight("claim_fees", claim_summary)
     if not body.confirm:
         return pf
@@ -927,7 +961,11 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
                 j.status, j.params = "failed", {**j.params, "error": str(e)}
                 await session.commit()
                 return
-            await run_evm_plan(session, ex, j, w, "claim_fees", plan)
+            res = await run_evm_plan(session, ex, j, w, "claim_fees", plan)
+            if l.launchpad == "pons" and (l.launchpad_params or {}).get("pons_rewards") and res.status == "confirmed":
+                from ..services.pons_revenue import record_payout
+                await record_payout(session, l, j, res.signature, {"status": "0x1", "logs": res.logs or []})
+                await session.commit()
 
         await run_job(job.id, work)
     elif created:
@@ -1128,10 +1166,15 @@ AWAITING_WALLET = {"external_transfer", "ton_transfer"}  # jobs waiting on the u
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
-                  rpc: SolanaRPC = Depends(get_rpc)):
+                  rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
     j = await db.get(Job, job_id)
     if not j or j.user_id != user.id:
         raise HTTPException(404, "job not found")
+    if j.kind == "claim_fees" and j.launch_id and j.status in ("confirmed", "unconfirmed"):
+        launch = await db.get(Launch, j.launch_id)
+        if launch and launch.launchpad == "pons":
+            from ..services.pons_revenue import reconcile
+            await reconcile(db, launch, ex.evm(launch.network).rpc, j.id)
     last_tx = (await db.execute(select(func.max(Transaction.created_at)).where(Transaction.job_id == j.id))).scalar()
     quiet_since = max(j.updated_at, last_tx) if last_tx else j.updated_at
     if j.status in ("pending", "submitted") and quiet_since < utcnow() - STALE_JOB \
@@ -1240,11 +1283,24 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     if adapter.options_schema().get("requires_image") and not l.image_blob:
         warnings.append(f"{l.launchpad} needs a token image. Add one to the launch first.")
     share = _creator_share_terms(l.launchpad, params, dev.address)
+    rewards = None
+    if l.launchpad == "pons" and share.get("bps"):
+        from ..chains.pons_rewards import configuration, verify
+        try:
+            rewards = configuration(l.id, dev.address, share, get_settings().pons_rewards_factory)
+            await verify(sender.rpc, rewards)
+        except (AdapterError, ValueError) as e:
+            raise HTTPException(400, str(e)) from e
     summary = {
         "launch_id": l.id, "network": l.network, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "max_gas": gas / WEI,
         "platform_fee": "none on deploy", "helm_creator_share": share,
     }
+    if rewards:
+        summary["pons_rewards"] = rewards
+        summary["reward_terms"] = ("94% creator / 6% Helm, including creator tax. Native ETH only. The recipients "
+            "are permanent in Helm's splitter; recipient transfers and buyback controls are unavailable. "
+            "Pons retains a timelocked power to redirect future rewards. First claim also deploys the splitter.")
     if hasattr(adapter, "deploy_notes"):
         summary.update(adapter.deploy_notes({**params, "helm_creator_share": share}))
     if hasattr(adapter, "deploy_warnings"):
@@ -1280,6 +1336,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
                 return
             opts = {**params, "helm_creator_share": share}
+            if rewards:
+                opts["pons_rewards"] = rewards
             if l.launchpad.startswith("flap-sh"):
                 opts["flap_commission_receiver"] = summary.get("commission_receiver", "")
             if l.image_blob:
@@ -1303,6 +1361,10 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 receiver = (plan.notes or {}).get("commission_receiver")
                 launch.launchpad_params = {**(launch.launchpad_params or {}),
                                           "flap_commission": {"recipient": receiver, "job_id": j.id}}
+            if rewards:
+                launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share,
+                                          "pons_rewards": {**rewards, "job_id": j.id}}
+                await session.commit()  # save recipient terms before broadcasting, including no-dev-buy launches
             if plan.token:
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "predicted_token": plan.token}
                 await session.commit()
