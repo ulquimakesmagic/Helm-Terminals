@@ -27,8 +27,10 @@ interface Net { id: ExtraChainId; name: string; family: string; native: string; 
   enabled: boolean; notes: string; capabilities: Record<string, string>; sources: string[]; explorer: Record<string, string> }
 interface Chains { core: { id: string; name: string; capabilities: string }[]; extra: Net[]; note: string }
 const CAP_LABEL: Record<string, string> = {
-  wallets: "Wallets & signing", balances: "Balances", token_metadata: "Token metadata", history: "History",
-  transfers: "Transfers & confirmations", launches: "Launches", swaps: "Swaps", market_data: "Market data", cross_chain: "Cross-chain routes",
+  // Compact column heads so the matrix fits a desktop width; the full meaning is in each badge's
+  // tooltip and in the "why" list below the table.
+  wallets: "Signing", balances: "Balances", token_metadata: "Metadata", history: "History",
+  transfers: "Transfers", launches: "Launches", swaps: "Swaps", market_data: "Market", cross_chain: "Bridging",
 };
 
 function Cap({ text }: { text: string }) {
