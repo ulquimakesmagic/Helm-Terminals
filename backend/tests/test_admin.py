@@ -10,9 +10,9 @@ from app.config import get_settings
 from app.db import get_sessionmaker
 from app.models import AdminAudit, AdminRole, FeeRecord, RevenueEvent, Session, User
 from app.services import platform_config as pc
-from app.services.admin import SUPERADMIN_EMAIL
 
-from .conftest import SOL, enable_2fa, signup, totp_code
+
+from .conftest import OWNER_EMAIL, SOL, enable_2fa, signup, totp_code
 from .test_api import confirm, live_launch, sol_transfers
 
 PW = "correct-horse-battery"
@@ -21,8 +21,8 @@ EVM_TREASURY = "0x52908400098527886E0F7030069857D2E4169EE7"  # a valid EIP-55 ch
 
 async def boss(client):
     """The designated superadmin, signed in with 2FA on. Returns (headers, 2FA secret)."""
-    h = await signup(client, SUPERADMIN_EMAIL, main=False)
-    get_settings().superadmin_user_id = await uid_of(SUPERADMIN_EMAIL)
+    h = await signup(client, OWNER_EMAIL, main=False)
+    get_settings().superadmin_user_id = await uid_of(OWNER_EMAIL)
     await client.get("/auth/me", headers=h)  # bind only after the test's configured user ID is in place
     secret = await enable_2fa(client, h)
     return h, secret
@@ -45,9 +45,9 @@ ADMIN_GETS = ["/admin/me", "/admin/config", "/admin/revenue/summary", "/admin/re
 
 
 async def test_superadmin_needs_a_configured_user_id_and_2fa(client):
-    h = await signup(client, "  MalikSucess@Gmail.com ".strip(), main=False)  # stored lowercased
+    h = await signup(client, " Owner@Example.com ".strip(), main=False)  # stored lowercased, matching the configured email
     assert (await client.get("/admin/me", headers=h)).status_code == 403  # no 2FA yet
-    uid = await uid_of(SUPERADMIN_EMAIL)
+    uid = await uid_of(OWNER_EMAIL)
     get_settings().superadmin_user_id = uid
     await enable_2fa(client, h)
     r = await client.get("/admin/me", headers=h)
@@ -69,7 +69,7 @@ async def test_admin_configuration_diagnostics_return_presence_only(client):
 
 
 async def test_designated_email_cannot_bind_superadmin_without_a_pin(client):
-    h = await signup(client, SUPERADMIN_EMAIL, main=False)
+    h = await signup(client, OWNER_EMAIL, main=False)
     await enable_2fa(client, h)
     assert (await client.get("/admin/me", headers=h)).status_code == 403
     assert (await client.get("/auth/me", headers=h)).json()["admin_role"] is None
@@ -93,12 +93,12 @@ async def test_nobody_else_can_reach_any_admin_route(client):
 
 async def test_the_role_stays_with_the_original_account_id(client):
     h, _ = await boss(client)
-    first = await uid_of(SUPERADMIN_EMAIL)
+    first = await uid_of(OWNER_EMAIL)
     # Even if the bound account's email changed in the database, a new account registering the email gets nothing.
     async with get_sessionmaker()() as db:
         await db.execute(update(User).where(User.id == first).values(email="renamed@example.com"))
         await db.commit()
-    h2 = await signup(client, SUPERADMIN_EMAIL, main=False)
+    h2 = await signup(client, OWNER_EMAIL, main=False)
     await enable_2fa(client, h2)
     assert (await client.get("/admin/me", headers=h2)).status_code == 403
     r = await client.get("/admin/me", headers=h)
@@ -107,7 +107,7 @@ async def test_the_role_stays_with_the_original_account_id(client):
 
 async def test_a_pinned_user_id_must_match(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "superadmin_user_id", "someone-else")
-    h = await signup(client, SUPERADMIN_EMAIL, main=False)
+    h = await signup(client, OWNER_EMAIL, main=False)
     await enable_2fa(client, h)
     assert (await client.get("/admin/me", headers=h)).status_code == 403
 
@@ -119,7 +119,7 @@ async def test_the_telegram_bot_session_never_gets_admin(client):
     from app.security import new_token, token_hash
 
     await boss(client)
-    uid = await uid_of(SUPERADMIN_EMAIL)
+    uid = await uid_of(OWNER_EMAIL)
     tok = new_token()
     async with get_sessionmaker()() as db:
         db.add(Session(user_id=uid, token_hash=token_hash(tok), channel="bot",
@@ -149,7 +149,7 @@ async def test_a_viewer_can_look_but_not_change_anything(client):
     assert (await client.post(f"/admin/roles/{vid}/viewer", json={"reason": "promote me", "confirm": step},
                               headers=hv)).status_code == 403
     assert (await client.post("/admin/revenue/reconcile", json={"ids": ["x"]}, headers=hv)).status_code == 403
-    bid = await uid_of(SUPERADMIN_EMAIL)
+    bid = await uid_of(OWNER_EMAIL)
     assert (await client.post(f"/admin/users/{bid}/suspend", json={"reason": "takeover", "confirm": step},
                               headers=hv)).status_code == 403
     # emails are masked for viewers
@@ -159,7 +159,7 @@ async def test_a_viewer_can_look_but_not_change_anything(client):
 
 async def test_the_superadmin_role_cant_be_granted_or_taken(client):
     hb, sb = await boss(client)
-    bid = await uid_of(SUPERADMIN_EMAIL)
+    bid = await uid_of(OWNER_EMAIL)
     for path in (f"/admin/roles/{bid}/revoke", f"/admin/users/{bid}/suspend", f"/admin/roles/{bid}/viewer"):
         r = await client.post(path, json={"reason": "just testing", "confirm": await proof(sb)}, headers=hb)
         assert r.status_code == 400, path

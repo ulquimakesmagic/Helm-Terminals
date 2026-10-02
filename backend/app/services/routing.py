@@ -45,8 +45,10 @@ async def asset_balance(ex: Executor, network: str, asset: str, address: str) ->
 
 
 async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
-                    kind: str = "bridge") -> SubmitResult:
-    """Send one Relay step item from wallet `w`."""
+                    kind: str = "bridge", max_allowance: int | None = None) -> SubmitResult:
+    """Send one Relay step item from wallet `w`. `max_allowance` caps provider-built ERC-20 approvals
+    at the quoted need (tx_guard), so a compromised Relay response can't grant a route's spender more
+    than the route was quoted for."""
     if w.network == "solana":
         ixs = [Instruction(Pubkey.from_string(i["programId"]), bytes.fromhex(i.get("data") or ""),
                            [AccountMeta(Pubkey.from_string(k["pubkey"]), bool(k.get("isSigner")),
@@ -68,8 +70,9 @@ async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
                    value=int(data.get("value") or 0))
     sender = ex.evm(w.network)
     if job is None:
-        return await sender.send(w.address, w.signer_ref or "", call)
-    return await send_evm_tracked(sender, job, w, kind, call)
+        return await sender.send(w.address, w.signer_ref or "", call, max_allowance=max_allowance,
+                                 require_contract_recipients=True)
+    return await send_evm_tracked(sender, job, w, kind, call, max_allowance=max_allowance)
 
 
 async def quote(ex: Executor, src: Wallet, dst: Wallet, from_asset: str, to_asset: str, amount_raw: int,
@@ -128,7 +131,7 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
             if item.get("status") == "complete":
                 continue
             tx_kind = kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
-            res = await send_item(ex, src, item.get("data") or {}, job, tx_kind)
+            res = await send_item(ex, src, item.get("data") or {}, job, tx_kind, max_allowance=amount_raw)
             await _record(session, job, src, tx_kind, res, None)
             await session.commit()
             last = res

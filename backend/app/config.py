@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     clanker_platform_reward_bps: int = 0
     # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
+    # The owner account's email. Superadmin binds only when BOTH this email and the user ID above match
+    # the signing-in account; either left empty or mismatched leaves the deployment without a superadmin.
+    superadmin_email: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
     referral_share_bps: int = 2500
     referral_code_max_uses: int = 1000

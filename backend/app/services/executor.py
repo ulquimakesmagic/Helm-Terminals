@@ -92,6 +92,11 @@ class Executor:
         """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
         endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
         transaction is still tracked on-chain by its fee payer's signature."""
+        from .tx_guard import check_solana_signers
+
+        held = set(refs) | {str(k.pubkey()) for k in extra or []}
+        if reason := check_solana_signers(raw, held, allow_missing=submit_via is not None):
+            return SubmitResult(None, "failed", f"refused before signing: {reason}")
         try:
             signed = await sign_versioned(raw, self.signer, refs, extra or [], allow_missing=submit_via is not None)
         except SigningError as e:
@@ -218,11 +223,13 @@ async def submit_tracked(
     return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist)
 
 
-async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call) -> SubmitResult:
+async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call,
+                           max_allowance: int | None = None) -> SubmitResult:
     async def persist(signature: str) -> None:
         await _persist_pending_transaction(job, wallet, kind, signature)
 
-    return await sender.send(wallet.address, wallet.signer_ref or "", call, on_signed=persist)
+    return await sender.send(wallet.address, wallet.signer_ref or "", call, on_signed=persist,
+                             max_allowance=max_allowance)
 
 
 def _finish(job: Job, results: list[SubmitResult]) -> None:

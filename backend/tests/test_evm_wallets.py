@@ -41,9 +41,13 @@ class FakeEvm:
         self.nonces: dict[str, int] = {}
         self.sent: list[dict] = []
         self.revert = False
+        self.no_code: set[str] = set()  # addresses that behave like plain EOAs, not contracts
 
     async def get_balance(self, a):
         return self.balances.get(a.lower(), 0)
+
+    async def get_code(self, a):
+        return "0x" if a.lower() in self.no_code else "0x6080"
 
     async def base_fee(self):
         return 10**9 if self.eip1559 else None

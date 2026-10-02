@@ -27,6 +27,8 @@ from app.signing import get_signer  # noqa: E402
 
 SOL = 1_000_000_000
 
+OWNER_EMAIL = "owner@example.com"  # the deployment's configured superadmin email for tests
+
 
 class FakeRPC:
     def __init__(self):
@@ -119,8 +121,10 @@ async def client(fake_rpc):
     await dbmod.create_all()
 
     settings = get_settings()
-    saved = (settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id)
+    saved = (settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id,
+             settings.superadmin_email)
     settings.superadmin_user_id = ""
+    settings.superadmin_email = OWNER_EMAIL  # what a configured deployment looks like
     registry._cache["pumpfun"] = FakeAdapter()
     app.dependency_overrides[get_rpc] = lambda: fake_rpc
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer())
@@ -128,7 +132,8 @@ async def client(fake_rpc):
         yield c
     app.dependency_overrides.clear()
     registry._cache.pop("pumpfun", None)
-    settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id = saved
+    settings.platform_fee_bps, settings.platform_fee_wallet = saved[0], saved[1]
+    settings.superadmin_user_id, settings.superadmin_email = saved[2], saved[3]
 
 
 async def signup(client, email="a@example.com", password="correct-horse-battery", main=True):

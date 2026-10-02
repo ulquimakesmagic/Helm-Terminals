@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, fmt, short } from "../api";
 import { chainOf, stableOf } from "../chains";
+import { isEvmAddr, isSolanaAddr } from "../validate";
 import { ChainLabel } from "./marks";
 import { Callout, Field, Icon, Modal, UnitInput } from "./ui";
 
@@ -37,7 +38,7 @@ export default function Distribute({ mode: initial, network, wallets, selected, 
   const unit = asset === "native" ? chain.native : asset === "stable" ? stable
     : asset === CUSTOM ? "tokens" : `$${tokens.find((l) => l.mint_address === asset)?.symbol ?? "tokens"}`;
   const assetValue = asset === CUSTOM ? customToken.trim() : asset;
-  const tokenOk = asset !== CUSTOM || (network === "solana" ? assetValue.length >= 32 : /^0x[0-9a-fA-F]{40}$/.test(assetValue));
+  const tokenOk = asset !== CUSTOM || (network === "solana" ? isSolanaAddr(assetValue) : isEvmAddr(assetValue));
   const label = (w?: Wal) => w ? `${w.label || "Wallet"} · ${short(w.address)}` : "";
 
   const ready = !!hub && others.length > 0 && tokenOk && (mode === "consolidate" ? +percent > 0 && +percent <= 100

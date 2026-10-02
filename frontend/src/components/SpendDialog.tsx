@@ -1,6 +1,7 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg, fmt } from "../api";
 import { chainOf, explorerUrl } from "../chains";
+import { isAddress as isAddr } from "../validate";
 import { ReviewHero, summarize } from "./review";
 import {
   Address, Callout, Icon, Modal, Spinner, StatusBadge, TableWrap,
@@ -40,7 +41,6 @@ const KIND_LABEL: Record<string, string> = {
   disperse: "disperse", consolidate: "consolidate", bridge: "route",
 };
 
-const isAddr = (v: unknown): v is string => typeof v === "string" && (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v) || /^0x[0-9a-fA-F]{40}$/.test(v));
 
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
   const coin = chainOf(network).native;

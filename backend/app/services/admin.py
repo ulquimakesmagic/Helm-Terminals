@@ -26,7 +26,6 @@ from ..deps import web_user
 from ..models import AdminAudit, AdminRole, User, utcnow
 from .guard import check_password, check_totp_once
 
-SUPERADMIN_EMAIL = "maliksucess@gmail.com"
 ROLES = ("superadmin", "viewer")
 
 
@@ -37,14 +36,16 @@ def normalize_email(email: str) -> str:
 async def role_of(db: AsyncSession, user: User) -> str | None:
     """The user's admin role. The superadmin fails closed unless its exact user ID is configured."""
     row = (await db.execute(select(AdminRole).where(AdminRole.user_id == user.id))).scalar_one_or_none()
-    pinned = get_settings().superadmin_user_id.strip()
+    settings = get_settings()
+    pinned = settings.superadmin_user_id.strip()
     if row:
         if row.role == "superadmin" and (not pinned or row.user_id != pinned):
             return None  # missing or mismatched pin overrides any historical binding
         return row.role
     if not pinned:
         return None
-    if normalize_email(user.email) != SUPERADMIN_EMAIL:
+    email = settings.superadmin_email.strip().lower()
+    if not email or normalize_email(user.email) != email:
         return None
     if pinned != user.id:
         return None

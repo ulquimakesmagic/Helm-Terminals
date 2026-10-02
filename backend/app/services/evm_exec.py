@@ -94,7 +94,14 @@ class EvmSender:
         return encode_transaction(unsigned, (y + 35 + 2 * self.rpc.chain_id, r, s))
 
     async def send(self, address: str, signer_ref: str, call: EvmCall,
-                   on_signed: Callable[[str], Awaitable[None]] | None = None) -> EvmResult:
+                   on_signed: Callable[[str], Awaitable[None]] | None = None,
+                   max_allowance: int | None = None,
+                   require_contract_recipients: bool = False) -> EvmResult:
+        from .tx_guard import check_evm_call
+
+        if reason := await check_evm_call(self.rpc, call, address, max_allowance=max_allowance,
+                                          require_contract_recipients=require_contract_recipients):
+            return EvmResult(None, "failed", f"refused before signing: {reason}")
         key = (self.rpc.chain_id, address.lower())
         lock = _locks.setdefault(key, asyncio.Lock())
         async with lock:  # one transaction at a time per wallet, so nonces never collide
