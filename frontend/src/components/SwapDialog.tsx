@@ -1,8 +1,9 @@
 /*
  * Solana swaps through Jupiter. This dialog only collects the trade (wallet, tokens, amount,
  * slippage) and shows the live estimate; confirmation goes through the standard SpendDialog
- * pipeline, so a fresh quote is taken again at execution time. Cross-chain conversion stays on
- * Relay routes (Route funds), which this dialog points to rather than imitating.
+ * pipeline, so a fresh quote is taken again at execution time. Cross-chain conversion (and
+ * same-chain conversion on EVM chains) is the separate Bridge dialog on Relay, which this
+ * dialog points to rather than imitating.
  */
 import { useEffect, useState } from "react";
 import { api, errMsg, fmt } from "../api";
@@ -98,8 +99,8 @@ export default function SwapDialog({ wallets, tokens, initialWallet, onClose, on
         </button>
       </div>
       <p className="muted small" style={{ margin: 0 }}>
-        Converting <b>between chains</b>? Use <b>Disperse / Consolidate / Route funds</b> in the
-        selection bar above — cross-chain conversion runs on Relay, not Jupiter.
+        Converting <b>between chains</b>, or into a coin on another chain? Use the <b>Bridge</b> button in the
+        selection bar — cross-chain conversion runs on Relay, not Jupiter. Jupiter only trades on Solana.
       </p>
     </Modal>
   );

@@ -7,6 +7,7 @@ import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import ExportKeyDialog from "../components/ExportKeyDialog";
 import SwapDialog from "../components/SwapDialog";
+import BridgeDialog from "../components/BridgeDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain } from "../chains";
 import { isEvmAddr, isSolanaAddr } from "../validate";
 import {
@@ -328,6 +329,7 @@ export default function Wallets() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [exportWallet, setExportWallet] = useState<any>(null);
   const [swapOpen, setSwapOpen] = useState(false);
+  const [bridgeOpen, setBridgeOpen] = useState(false);
   const [launchTokens, setLaunchTokens] = useState<{ mint: string; symbol: string }[]>([]);
 
   const openSwap = () => {
@@ -532,6 +534,7 @@ export default function Wallets() {
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("disperse")} title="Split a coin or token from one wallet across the selected wallets"><Icon name="send" size={14} />Disperse</button>
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("consolidate")} title="Gather a coin or token from the selected wallets into one"><Icon name="download" size={14} />Consolidate</button>
+          <button className="btn sm secondary" onClick={() => setBridgeOpen(true)} title="Bridge value to another chain through Relay"><Icon name="globe" size={14} />Bridge</button>
           <button className="btn sm secondary" onClick={() => { setMoveTo(""); setMoveNew(""); setModal("move"); }}><Icon name="folder" size={14} />Move to folder</button>
           <button className="btn sm ghost" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
@@ -634,6 +637,11 @@ export default function Wallets() {
         onClose={() => setSwapOpen(false)}
         onSwap={(req) => { setSwapOpen(false); setDialog(req); }}
         key={swapOpen ? "open" : "closed"} />}
+      {bridgeOpen && <BridgeDialog wallets={managed}
+        initialFromId={managed.find((w) => selected.has(w.id))?.id}
+        onClose={() => setBridgeOpen(false)}
+        onReview={(req) => { setBridgeOpen(false); setDialog(req); }}
+        key={bridgeOpen ? "open" : "closed"} />}
     </>
   );
 }
