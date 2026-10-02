@@ -52,6 +52,8 @@ async def register(body: Register, request: Request, db: AsyncSession = Depends(
     await ensure_not_locked(db, signup_key, SIGNUP_LIMIT)
     await record_attempt(db, signup_key)
     email = body.email.lower()
+    password_hash = hash_password(body.password)  # before the existence check: a duplicate must take the
+    # same Argon2 time as a fresh account, or registration latency reveals which emails are registered
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(409, "email already registered")
     ref = None
@@ -59,7 +61,7 @@ async def register(body: Register, request: Request, db: AsyncSession = Depends(
         ref = (await db.execute(select(Referral).where(Referral.code == body.referral_code.strip().upper()))).scalar_one_or_none()
         if not ref or ref.uses >= ref.max_uses:
             raise HTTPException(400, "referral code is invalid or used up")
-    user = User(email=email, password_hash=hash_password(body.password))
+    user = User(email=email, password_hash=password_hash)
     db.add(user)
     await db.flush()
     if ref:

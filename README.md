@@ -37,7 +37,7 @@ Withdrawals and token sends need 2FA (set it up under Settings first). Buys plac
 ## Test
 
 ```bash
-cd backend && pytest            # 47 tests, no network needed
+cd backend && pytest            # ~400 tests, no network needed (contract tests run real bytecode in a local EVM)
 cd ../frontend && npm run build # type-check + production build
 ```
 

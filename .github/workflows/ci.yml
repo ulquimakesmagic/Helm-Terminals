@@ -1,0 +1,85 @@
+# Tests, builds and reproducibility checks on every push and PR.
+# The backend jobs install from requirements.lock (exact pins of the environment tests are known to
+# pass on); requirements.txt keeps the human-readable ranges. The audit job is advisory until its
+# findings are triaged: it fails the job, not the build.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.lock
+      - run: pytest -q --ignore=tests/test_pons_contract.py
+        working-directory: backend
+
+  contract-tests:
+    # The Solidity bytecode tests run real EVM simulation and are slow enough to warrant their own job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.lock
+      - run: pytest tests/test_pons_contract.py -q
+        working-directory: backend
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: contracts
+      # Rebuild the artifacts, then demand they match what is checked in: source/artifact drift fails CI.
+      - run: npm run build && npm run check
+        working-directory: contracts
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build && npm test
+        working-directory: frontend
+
+  audit:
+    # Known-vulnerability scan against the exact locked environment. Advisory: findings need triage,
+    # but a red audit job should not block a green test build.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit && pip-audit -r backend/requirements.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm audit --omit=dev
+        working-directory: frontend

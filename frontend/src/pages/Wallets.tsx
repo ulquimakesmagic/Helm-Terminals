@@ -6,6 +6,7 @@ import Distribute from "../components/Distribute";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain } from "../chains";
+import { isEvmAddr, isSolanaAddr } from "../validate";
 import {
   Address, Callout, Empty, Field, Icon, LoadError, Loading, Metrics, Modal, PageHeader, SearchInput, Spinner, StatusBadge, TableWrap, UnitInput, useToast,
 } from "../components/ui";
@@ -548,7 +549,7 @@ export default function Wallets() {
       {modal === "withdraw" && (
         <Modal title={`Withdraw ${coin}`} sub={`Sweep all ${coin} on ${chainOf(selNet).name} from ${selManaged.length} wallet(s), keeping a little for fees`} onClose={() => setModal(null)}
           foot={<><button className="btn ghost" onClick={() => setModal(null)}>Cancel</button>
-            <button className="btn" disabled={evmSel ? !/^0x[0-9a-fA-F]{40}$/.test(dest.trim()) : dest.trim().length < 32}
+            <button className="btn" disabled={evmSel ? !isEvmAddr(dest.trim()) : !isSolanaAddr(dest.trim())}
               onClick={() => { setModal(null); setDialog({ title: `Withdraw ${coin}`, path: "/wallets/withdraw", network: selNet ?? "solana", body: { wallet_ids: selManaged, destination: dest.trim(), all: true } }); }}>
               Review<Icon name="arrowright" size={14} /></button></>}>
           <Field label="Destination address" hint="Double-check this. Transfers can't be reversed."><input className="mono" value={dest} onChange={(e) => setDest(e.target.value)} placeholder={evmSel ? "0x… your main wallet on " + chainOf(selNet).name : "Your main wallet address"} autoFocus /></Field>
