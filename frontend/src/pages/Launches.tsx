@@ -322,8 +322,8 @@ export function DeleteDraft({ id, name, onDeleted, compact }: { id: string; name
   const [err, setErr] = useState("");
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   if (!ask) return (
-    <button type="button" className={`btn ${compact ? "sm" : ""} ghost danger-text`} onClick={(e) => { stop(e); setAsk(true); }} onKeyDown={stop}
-      aria-label={`Delete draft ${name}`}><Icon name="trash" size={13} />{compact ? "Delete" : "Delete draft"}</button>
+    <button type="button" className={`btn ${compact ? "sm ghost del-icon" : "ghost danger-text"}`} onClick={(e) => { stop(e); setAsk(true); }} onKeyDown={stop}
+      aria-label={`Delete draft ${name}`} title="Delete draft"><Icon name="trash" size={13} />{compact ? <span className="sr-only">Delete draft</span> : "Delete draft"}</button>
   );
   return (
     <span className="row nowrap confirm-del" onClick={stop} onKeyDown={stop} role="group" aria-label={`Confirm deleting ${name}`}>
