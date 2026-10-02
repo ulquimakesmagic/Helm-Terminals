@@ -8,6 +8,7 @@ import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
 import { DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
+import { PnlImage, downloadPnl, launchPnlFacts } from "../components/pnl";
 import { ChainLabel, PadLabel } from "../components/marks";
 import {
   Address, Callout, Card, Empty, Field, Icon, Metrics, parseDate, relTime, Seg, Skeleton, Spinner, StatusBadge, TableWrap, TokenImage, UnitInput, useToast,
@@ -90,30 +91,6 @@ function TransparencyPanel({ t, network, symbol }: { t: any; network: string; sy
       )}
     </Card>
   );
-}
-
-function downloadPnlCard(launch: any, pnl: any) {
-  const unit = chainOf(launch.network).native;
-  const up = pnl.net_sol_flow >= 0;
-  const c = document.createElement("canvas");
-  c.width = 1200; c.height = 630;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#06090b"; g.fillRect(0, 0, 1200, 630);
-  g.strokeStyle = "rgba(120,170,160,0.07)"; g.lineWidth = 1;
-  for (let x = 0; x <= 1200; x += 40) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 630); g.stroke(); }
-  for (let y = 0; y <= 630; y += 40) { g.beginPath(); g.moveTo(0, y); g.lineTo(1200, y); g.stroke(); }
-  g.fillStyle = "#35d0a0"; g.fillRect(70, 70, 4, 110);
-  g.fillStyle = "#e4ecee"; g.font = "600 56px 'IBM Plex Sans', sans-serif"; g.fillText(launch.name, 96, 128);
-  g.fillStyle = "#6f8087"; g.font = "500 32px 'IBM Plex Mono', monospace"; g.fillText(`$${launch.symbol}`, 96, 176);
-  g.fillStyle = up ? "#3dcf8a" : "#ef6b6b"; g.font = "500 120px 'IBM Plex Mono', monospace";
-  g.fillText(`${signed(pnl.net_sol_flow, 3)} ${unit}`, 70, 380);
-  g.fillStyle = "#a7b5ba"; g.font = "28px 'IBM Plex Sans', sans-serif";
-  g.fillText(`Net ${unit} flow on ${chainOf(launch.network).name} · ${pnl.confirmed_txs} confirmed transactions`, 70, 440);
-  g.fillStyle = "#6f8087"; g.font = "24px 'IBM Plex Sans', sans-serif";
-  g.fillText("Unsold tokens are not valued. Fees included.", 70, 480);
-  g.fillStyle = "#35d0a0"; g.font = "600 28px 'IBM Plex Sans', sans-serif"; g.fillText("Helm Terminals", 70, 570);
-  const a = document.createElement("a");
-  a.download = `${launch.symbol}-pnl.png`; a.href = c.toDataURL("image/png"); a.click();
 }
 
 const BUY_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
@@ -405,7 +382,8 @@ export default function Workspace() {
             </Card>
   ) : null;
   const perfCard = (
-          <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnlCard(l, ws.pnl)}><Icon name="download" size={13} />Share card</button>}>
+          <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnl(launchPnlFacts(l, ws.pnl), `${l.symbol}-pnl.png`)}><Icon name="download" size={13} />Share card</button>}>
+            <PnlImage facts={launchPnlFacts(l, ws.pnl)} alt={`P&L card for ${l.name}`} />
             <div className={`num ${flow > 0 ? "good" : flow < 0 ? "bad" : ""}`} style={{ font: "500 26px var(--mono)" }}>
               {signed(flow)} <span className="muted" style={{ fontSize: 14 }}>{cur}</span>
             </div>

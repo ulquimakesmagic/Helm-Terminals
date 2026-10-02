@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, errMsg, fmt } from "../api";
+import { api, errMsg, fmt, usd } from "../api";
 import { chainOf } from "../chains";
 import { ChainMark, PadLabel } from "../components/marks";
+import { PnlImage, downloadPnl } from "../components/pnl";
+import { Reveal } from "../components/motion";
 import ReferralCard from "../components/Referrals";
 import { AVATAR_HUES, avatarBg, Heatmap, PadBars, PadRow, ProfileAvatar } from "../components/profile";
 import {
@@ -24,6 +26,7 @@ interface ProfileData {
     networks: { network: string; launches: number; wallets: number }[];
     trades: { count: number; buys: number; sells: number; volume_sol: number };
     net_sol_flow: number; fees_paid_sol: number;
+    net_flow?: { usd: number | null; priced: boolean; flows: { network: string; symbol: string; amount: number; usd: number | null }[]; note: string };
     wallets: { managed: number; watch: number }; tracked: number;
   };
   heatmap: { start: string; days: number[]; total: number; active_days: number; streak: number };
@@ -118,14 +121,22 @@ export default function Profile() {
   const [d, setD] = useState<ProfileData | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
+  const [flow, setFlow] = useState<any>(null);
 
   const load = () => api<ProfileData>("/profile").then((x) => { setD(x); setError(""); }).catch((e) => setError(errMsg(e)));
   useEffect(() => { load(); }, []);
+  // The account P&L card is drawn from the same measured net-flow series as the dashboard chart.
+  useEffect(() => { api<any>("/dashboard").then(setFlow).catch(() => { }); }, []);
 
   const p = d?.profile;
   const s = d?.stats;
   const publicUrl = p?.public_path ? `${window.location.origin}${p.public_path}` : null;
   const done = d?.milestones.filter((m) => m.done).length ?? 0;
+  const nf = s?.net_flow;
+  const flowValue = nf?.usd != null ? `${usd(nf.usd)}${nf.priced ? "" : " at least"}` : "–";
+  const flowHint = nf?.flows?.length
+    ? `${nf.flows.map((f) => `${f.amount >= 0 ? "+" : ""}${fmt(f.amount, 3)} ${f.symbol}`).join(" · ")} · measured chains only`
+    : "No measured flows yet; EVM chains do not record native deltas yet";
 
   return (
     <>
@@ -167,8 +178,9 @@ export default function Profile() {
           hint={s ? `${s.launches.live} live · ${s.launches.failed} failed${s.launches.imported ? ` · ${s.launches.imported} imported` : ""}` : undefined} />
         <Stat label="Trades" icon="trend" value={s ? s.trades.count : "–"}
           hint={s ? `${fmt(s.trades.volume_sol, 3)} SOL volume · ${s.trades.buys} buys, ${s.trades.sells} sells` : undefined} />
-        <Stat label="Net flow · Solana" icon="coins" value={s ? `${s.net_sol_flow > 0 ? "+" : ""}${fmt(s.net_sol_flow)}` : "–"} unit={s ? "SOL" : undefined}
-          tone={s && s.net_sol_flow > 0 ? "good" : s && s.net_sol_flow < 0 ? "bad" : undefined} hint="All time · Solana transactions only; other chains aren't summed yet" />
+        <Stat label="Net flow" icon="coins" value={s ? flowValue : "–"}
+          tone={s && (nf?.usd ?? 0) > 0 ? "good" : s && (nf?.usd ?? 0) < 0 ? "bad" : undefined}
+          hint={s ? flowHint : undefined} />
         <Stat label="Platform fees paid" icon="pie" value={s ? fmt(s.fees_paid_sol, 4) : "–"} unit={s ? "SOL" : undefined}
           hint={s ? `Solana trades only · ${s.wallets.managed} managed wallets, ${s.wallets.watch} watch-only` : undefined} />
       </div>
@@ -222,6 +234,28 @@ export default function Profile() {
               </div>
             )}
           </Card>
+
+          {flow && flow.net_usd_flow != null && (
+            <Reveal delay={60}>
+              <Card title="Performance" icon="trend"
+                actions={<button className="btn sm secondary"
+                  onClick={() => downloadPnl({
+                    title: p?.display_name || "Helm creator", symbolLine: p?.handle ? `@${p.handle}` : d?.account.email ?? "",
+                    value: `${flow.net_usd_flow >= 0 ? "+" : ""}${usd(flow.net_usd_flow)}`, tone: flow.net_usd_flow >= 0 ? "up" : "down",
+                    caption: `Net flow across your wallets · ${d?.stats.trades.count ?? 0} confirmed trades`,
+                    foot: "Measured coin, valued in USD. Unsold tokens are not valued.",
+                  }, "helm-net-flow.png")}>
+                  <Icon name="download" size={13} />Share card</button>}>
+                <PnlImage alt="Your net flow P&L card" facts={{
+                  title: p?.display_name || "Helm creator", symbolLine: p?.handle ? `@${p.handle}` : d?.account.email ?? "",
+                  value: `${flow.net_usd_flow >= 0 ? "+" : ""}${usd(flow.net_usd_flow)}`, tone: flow.net_usd_flow >= 0 ? "up" : "down",
+                  caption: `Net flow across your wallets · ${d?.stats.trades.count ?? 0} confirmed trades`,
+                  foot: "Measured coin, valued in USD. Unsold tokens are not valued.",
+                }} />
+                <p className="muted small" style={{ marginTop: 8 }}>{flow.note}</p>
+              </Card>
+            </Reveal>
+          )}
 
           <Card title="Account" icon="user" actions={<Link to="/settings" className="btn sm ghost">Settings<Icon name="arrowright" size={13} /></Link>}>
             {!d ? <Loading /> : (
