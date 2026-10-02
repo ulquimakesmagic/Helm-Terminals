@@ -352,11 +352,23 @@ export default function Wallets() {
   };
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return all.filter((w) =>
+    const filtered = all.filter((w) =>
       (chainF === "all" || (w.network ?? "solana") === chainF) &&
       (folderFilter === "all" || (folderFilter === "none" ? !w.folder_id : w.folder_id === folderFilter)) &&
       (!s || w.label.toLowerCase().includes(s) || w.address.toLowerCase().includes(s)));
+    // One EVM key legitimately holds several per-chain rows; keep them adjacent so the repeats read
+    // as one wallet across chains instead of duplication.
+    const group = new Map<string, number>();
+    return filtered
+      .map((w) => ({ w, rank: group.has(w.address) ? group.get(w.address)! : group.set(w.address, group.size).get(w.address)! }))
+      .sort((a, b) => a.rank - b.rank)
+      .map((x) => x.w);
   }, [all, folderFilter, q, chainF]);
+  const sharedKey = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const w of shown) count.set(w.address, (count.get(w.address) ?? 0) + 1);
+    return new Set([...count].filter(([, n]) => n > 1).map(([a]) => a));
+  }, [shown]);
   const unread = balances ? all.filter((w) => w.kind === "managed" && typeof w.balance_sol !== "number") : [];
   const sel = [...selected];
   const selManaged = sel.filter((id) => managed.some((w) => w.id === id));
@@ -456,7 +468,8 @@ export default function Wallets() {
                       {w.kind !== "managed" && <span className="badge show-sm">{w.kind === "connected" ? "your wallet" : "watch-only"}</span>}
                     </div></td>
                     <td data-label="Chain"><ChainLabel network={w.network} size={16} /></td>
-                    <td data-label="Address"><Address address={w.address} network={w.network} /></td>
+                    <td data-label="Address"><span className="row nowrap" style={{ gap: 8 }}><Address address={w.address} network={w.network} />
+                      {sharedKey.has(w.address) && <span className="muted" style={{ fontSize: 11 }} title="Same key as the other rows with this address — one wallet, balances held per chain.">shared key</span>}</span></td>
                     {/* managed is the default kind: a chip on every row is noise, deviations are the signal */}
                     <td className="hide-sm">{w.kind !== "managed" && <StatusBadge status={w.kind} label={w.kind === "connected" ? `your wallet (${OWN_APP[extras.find((n) => n.id === w.network)?.family ?? (w.network.startsWith("ton") ? "ton" : "evm")]})` : "watch-only"} />}</td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>

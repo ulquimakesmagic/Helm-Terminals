@@ -335,10 +335,17 @@ export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const [closing, setClosing] = useState(false);
+  // Close through a short exit animation, then really unmount; `lock` (a spend in flight) still refuses.
+  const close = useCallback(() => {
+    if (lock || closing) return;
+    setClosing(true);
+    window.setTimeout(() => onClose(), 150);
+  }, [lock, closing, onClose]);
   // Escape closes; Tab stays inside the dialog; focus returns to whatever opened it.
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !lock) onClose();
+      if (e.key === "Escape" && !lock) close();
       if (e.key !== "Tab" || !ref.current) return;
       const f = [...ref.current.querySelectorAll<HTMLElement>("a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])")]
         .filter((el) => el.offsetParent !== null);
@@ -349,7 +356,7 @@ export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [onClose, lock]);
+  }, [close, lock]);
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     const el = ref.current;
@@ -360,14 +367,14 @@ export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
     return () => { opener?.focus?.(); };
   }, []);
   return (
-    <div className="modal-bg" onMouseDown={lock ? undefined : onClose}>
-      <div ref={ref} tabIndex={-1} className={`modal ${wide ? "wide" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <div className={`modal-bg ${closing ? "out" : ""}`} onMouseDown={lock ? undefined : close}>
+      <div ref={ref} tabIndex={-1} className={`modal ${wide ? "wide" : ""} ${closing ? "out" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
           <div style={{ minWidth: 0 }}>
             <h2 id={titleId}>{title}</h2>
             {sub && <div className="muted small" style={{ marginTop: 2 }}>{sub}</div>}
           </div>
-          <button className="icon-btn" onClick={onClose} disabled={lock} aria-label="Close"><Icon name="x" size={16} /></button>
+          <button className="icon-btn" onClick={close} disabled={lock} aria-label="Close"><Icon name="x" size={16} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {foot && <div className="modal-foot">{foot}</div>}
