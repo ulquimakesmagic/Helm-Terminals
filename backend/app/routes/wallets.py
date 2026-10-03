@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import math
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
 from solders.pubkey import Pubkey
 from sqlalchemy import func, select
@@ -22,10 +23,11 @@ from ..services.preflight import build_preflight
 from ..chains.base import AdapterError
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.jupiter import Jupiter
-from ..services.routing import ROUTE_GAS, currency as route_currency, send_item
+from ..chains.relay import DONE
+from ..services.routing import ROUTE_GAS, execute_route, currency as route_currency, send_item
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
-from ..services.guard import check_password, check_totp_once, ensure_not_locked, record_attempt
+from ..services.guard import check_password, check_totp_once
 from ..services.main_wallet import ensure_main_wallets, main_wallet_ids
 from ..signing.base import SigningError, parse_private_key
 
@@ -444,6 +446,88 @@ class FundBody(SpendConfirm):
     allocations: list[Allocation] = Field(min_length=1, max_length=20)
 
 
+class FundCashBody(SpendConfirm):
+    wallet_id: str  # destination, managed, on any supported chain
+    amount: float = Field(gt=0)  # in the destination chain's own coin
+
+
+@router.post("/wallets/fund-cash")
+async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                    ex: Executor = Depends(get_executor)):
+    """Fund a wallet from your cash balance: the USDC (USDG on Robinhood Chain) sitting in any of your
+    wallets. Helm picks the wallet that can cover it best — the destination's own USDC first, then its
+    chain, then main wallets — and routes stable to the destination's coin through Relay, same chain or
+    across chains. The source is a decision the server makes from live balances and is shown in full
+    before anything is confirmed."""
+    from ..services import auto_fund
+
+    if (prior := await find_replay(db, user, body)):
+        return prior
+    dst = await owned_wallet(db, user, body.wallet_id)
+    _core_only(dst.network)
+    coin = native_coin(dst.network)
+    price = (await portfolio.coin_prices()).get(coin)
+    if not price:
+        raise HTTPException(400, f"{coin}'s price couldn't be read, so a cash route can't be sized right now.")
+    amount_raw = int(round(body.amount * 10 ** (9 if dst.network == "solana" else 18)))
+    wallets = list((await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.kind == "managed"))).scalars())
+    mains = await main_wallet_ids(db, user.id)
+    ordered = sorted(wallets, key=lambda w: (w.id != dst.id, w.id not in mains, w.network != dst.network))[:60]
+    _, src, usd = await auto_fund.find_cash_source(ex, ordered, set(mains), dst, amount_raw, price)
+    warnings: list[str] = []
+    if src is None:
+        usd_needed = math.ceil(body.amount * price * auto_fund.BUFFER / (1 - ex.relay.fee_bps / 10_000) + auto_fund.FLAT_USD)
+        warnings.append(f"Your cash balance can't cover {body.amount:g} {coin} (about ${usd_needed} with fees and "
+                        "headroom). Add USDC to any wallet and try again.")
+    summary = {
+        "network": dst.network,
+        "to": {"label": dst.label or "Wallet", "address": dst.address}, "to_chain": chain_name(dst.network),
+        "send": (f"{usd} {stable_for(src.network)[0]}" if src else None),
+        "receive": f"{body.amount:g} {coin}",
+        "provider": "Relay (relay.link)",
+        "route_fee": ex.relay.fee_note,
+        "funding_detail": {"covers": f"{body.amount:g} {coin} in the destination wallet"},
+        "own_wallets_only": True,
+        "platform_fee": "none",
+    }
+    if src is not None:
+        summary.update({
+            "from": {"label": src.label or "Wallet", "address": src.address}, "from_chain": chain_name(src.network),
+            "amount_usd": usd, "quote": None,
+        })
+    pf = build_preflight("fund_cash", summary, warnings)
+    if src is not None:
+        try:
+            q = await ex.relay.quote(user=src.address, recipient=dst.address, from_network=src.network,
+                                     to_network=dst.network, from_currency=route_currency(src.network, "stable")[1],
+                                     to_currency=route_currency(dst.network, "native")[1],
+                                     amount=int(usd) * 10 ** STABLE_DECIMALS[src.network],
+                                     slippage_pct=auto_fund.SLIPPAGE_PCT)
+            pf["preflight"]["quote"] = ex.relay.summarize(q)
+        except AdapterError as e:
+            pf["preflight"]["warnings"].append(str(e))
+    if not body.confirm:
+        return pf
+    if pf["preflight"]["warnings"]:
+        raise HTTPException(400, pf["preflight"]["warnings"][0])
+    job, created = await begin_spend(db, user, body, pf, "fund_cash", None,
+                                     {**pf["preflight"], "network": dst.network, "source_wallet_id": src.id,
+                                      "amount_usd": usd, "need_raw": amount_raw})
+    if created:
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            amount_usd_raw = int(usd) * 10 ** STABLE_DECIMALS[src.network]
+            res, status = await execute_route(session, ex, j, src, dst, "stable", "native", amount_usd_raw,
+                                              auto_fund.SLIPPAGE_PCT, kind="fund_route", key="funding")
+            if res.status == "confirmed" and status not in DONE:
+                j.error = f"Relay reported the route as {status}; check the destination wallet's balance."
+            _finish(j, [res])
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
 class WithdrawBody(SpendConfirm):
     wallet_ids: list[str] = Field(min_length=1, max_length=50)
     destination: str
@@ -621,75 +705,6 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
             await session.commit()
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
-
-
-# --- private-key export ---------------------------------------------------------------------------
-
-EXPORT_LIMIT = 5  # attempts per user per 15-minute window
-
-
-class ExportKeyBody(BaseModel):
-    password: SecretStr
-    totp: str = Field(max_length=12)
-
-
-@router.get("/wallets/export-capability")
-async def export_capability(user: User = Depends(current_user)):
-    """Whether private-key export can work on this deployment, and why not when it can't.
-
-    Config-derived only; never touches wallets, keys or secrets. The wallets page uses this to explain
-    up front instead of offering a dialog that can only fail. Note the ordering trap it avoids: the
-    export endpoint checks password and 2FA before the signer kind, so on a Turnkey deployment every
-    attempt looked like a rejection of the user's credentials rather than a policy."""
-    try:
-        signer = get_signer()
-    except RuntimeError as e:
-        return {"available": False, "reason": str(e)}
-    if hasattr(signer, "reveal_secret"):
-        return {"available": True, "reason": None}
-    return {"available": False,
-            "reason": "wallets created on this deployment keep their keys in Turnkey, so Helm never sees "
-                      "them and can't export them. Use Turnkey's own export tooling, or move the funds "
-                      "with a withdrawal."}
-
-
-@router.post("/wallets/{wallet_id}/export-key")
-async def export_key(wallet_id: str, body: ExportKeyBody, request: Request, user: User = Depends(web_user),
-                     db: AsyncSession = Depends(get_db)):
-    """One-time private-key export for a managed wallet: web app only, password + a fresh 2FA code,
-    throttled and audited. The secret crosses the wire exactly once, in this response, and never
-    appears in a log, an activity feed or any GET. Turnkey-held keys export through Turnkey instead."""
-    # Capability before credentials: on a Turnkey deployment this is a policy refusal, not a login
-    # failure, so it must not consume one of the throttled export attempts (or look like one).
-    try:
-        signer = get_signer()
-    except RuntimeError as e:
-        raise HTTPException(400, str(e)) from e
-    if not hasattr(signer, "reveal_secret"):
-        raise HTTPException(400, "keys for this wallet are held by Turnkey, so Helm never sees them and "
-                                 "can't export them. Use Turnkey's own export tooling, or move the funds "
-                                 "with a withdrawal.")
-    throttle = f"export:{user.id}"
-    await ensure_not_locked(db, throttle, EXPORT_LIMIT)
-    await record_attempt(db, throttle)
-    if not user.totp_enabled:
-        raise HTTPException(403, "enable 2FA before exporting keys")
-    if not await check_password(db, user, body.password.get_secret_value(), throttle):
-        raise HTTPException(400, "wrong password")
-    if not await check_totp_once(db, user, body.totp):
-        raise HTTPException(401, "totp_required: provide a fresh 2FA code")
-    w = await owned_wallet(db, user, wallet_id)
-    if w.kind != "managed" or not w.signer_ref:
-        raise HTTPException(400, "only managed wallets can export")
-    try:
-        secret = await signer.reveal_secret(w.signer_ref)
-    except SigningError as e:
-        raise HTTPException(400, str(e)) from e
-    db.add(AdminAudit(actor_user_id=user.id, action="wallet.key_exported", target=w.id, changes={},
-                      context={**request_context(request), "network": w.network}))
-    await log_activity(db, user.id, "wallet.key_exported", "wallet", w.id, {"network": w.network})
-    await db.commit()
-    return {"wallet_id": w.id, "network": w.network, "address": w.address, "secret": secret}
 
 
 # --- Jupiter swaps (Solana) -----------------------------------------------------------------------

@@ -15,6 +15,7 @@ Sources: see networks.SOURCES["tron"].
 import asyncio
 import hashlib
 import time
+from contextlib import asynccontextmanager
 
 import httpx
 from eth_abi import decode as abi_decode
@@ -218,6 +219,16 @@ def address_from_word(word_hex: str) -> str:
 
 # --- client --------------------------------------------------------------------------------------------
 
+# TronGrid rate-limits unauthenticated requests per IP, and a balance refresh fans out across every
+# wallet at once — so all clients share one small concurrency gate regardless of configuration.
+_tron_gate = asyncio.Semaphore(2)
+
+
+@asynccontextmanager
+async def _tron_throttle():
+    async with _tron_gate:
+        yield
+
 
 class TronClient:
     """TronGrid HTTP API with timeouts, bounded retries on 429/5xx/network errors, and URL-free errors."""
@@ -235,7 +246,9 @@ class TronClient:
         tries = self.retries if retries is None else retries
         for attempt in range(tries + 1):
             try:
-                r = await self._client.request(method, self.base + path, json=body, params=params, headers=self.headers)
+                async with _tron_throttle():
+                    r = await self._client.request(method, self.base + path, json=body, params=params,
+                                                   headers=self.headers)
             except httpx.HTTPError as e:
                 last = type(e).__name__
             else:
@@ -251,7 +264,7 @@ class TronClient:
                     except ValueError:
                         raise AdapterError("TronGrid returned a non-JSON answer")
             if attempt < tries:
-                await asyncio.sleep(0.5 * (attempt + 1))
+                await asyncio.sleep(1.0 * (attempt + 1))
         raise AdapterError(f"TronGrid is unreachable right now ({last})")
 
     async def post(self, path: str, body: dict) -> dict:

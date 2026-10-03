@@ -118,6 +118,37 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
           "Jupiter builds the transaction; Helm checks its signatures and simulates it before sending."],
       };
     }
+    case "sweep": {
+      const from = list(pre.from);
+      const swept = from.reduce((s: number, x: any) => s + (num(x?.amount) ?? 0), 0);
+      return {
+        label: "Sweep dust", value: fmt(swept, 6), unit: "",
+        sub: <>Everything from {from.length} wallet{from.length === 1 ? "" : "s"} into {pre.to ? short(pre.to.address) : "the destination"} on {pre.chain}</>,
+        cells: [["Wallets swept", String(pre.wallets_swept ?? from.length)],
+          ["Stablecoins moved", fmt(num(pre.total_stable) ?? 0, 2)], ["Coin moved", fmt(num(pre.total_native) ?? 0, 6)],
+          ["Max network fees", `${fmt(num(pre.network_fees_max) ?? 0, 6)} ${pre.network_fee_coin ?? ""}`],
+          ["Skipped (nothing to move)", String(list(pre.skipped_empty).length)], ["Platform fee", fee(pre.platform_fee)]],
+        tone: "danger",
+        next: ["Stablecoins move first, then the coin empties — every wallet keeps only its fee reserve.",
+          "Wallets with nothing to move are skipped. This can't be undone except by funding them again."],
+      };
+    }
+    case "fund_cash": {
+      const q = pre.quote;
+      return {
+        label: "Fund from cash balance", value: String(pre.receive ?? ""), unit: "",
+        sub: pre.from
+          ? <>About {pre.send} of your USDC routes from {pre.from_chain} to {pre.to_chain}</>
+          : <>Your cash balance funds {pre.to_chain}</>,
+        cells: pre.from ? [["From", `${pre.from.label ?? "Wallet"} · ${short(pre.from.address)}`],
+          ["Relay + gas", q?.fees_usd ? `$${fmt((q.fees_usd.network_gas ?? 0) + (q.fees_usd.relayer ?? 0), 2)}` : "In quote"],
+          ["Helm route fee", fee(pre.route_fee)], ["Arrives in", q?.time_estimate_s ? `about ${Math.max(1, Math.round(q.time_estimate_s))}s` : "Varies"]]
+          : [["Reason", "No wallet holds enough USDC plus gas"]],
+        tone: "danger",
+        next: ["Relay converts your USDC into the destination's coin — same chain, or across chains.",
+          "Confirming fetches a fresh quote; if the fill fails, the amount is refunded to the source wallet."],
+      };
+    }
     case "withdraw": {
       const from = list(pre.from);
       const total = sum(from, "sol") + sum(from, "amount");

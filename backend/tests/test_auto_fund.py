@@ -115,3 +115,46 @@ async def test_no_usdc_source_keeps_the_shortfall_warning_and_opt_out_works(clie
         assert "funding" not in pf["preflight"] and pf["preflight"]["warnings"]
     finally:
         app.dependency_overrides.pop(get_executor, None)
+
+
+async def test_fund_cash_tops_up_any_wallet_from_the_best_usdc_source(client, fake_rpc, monkeypatch):
+    """The cash-balance feature: one wallet on any chain, funded from whichever wallet holds USDC."""
+    from app.config import get_settings
+
+    try:
+        monkeypatch.setattr(get_settings(), "route_poll_seconds", 0)
+        monkeypatch.setattr(get_settings(), "route_wait_seconds", 0)
+        base = TokenNode("base")
+        seen: list = []
+        relay = Relay("https://relay.test", fee_bps=30, fee_recipient="0x" + "11" * 20,
+                      client=httpx.AsyncClient(transport=relay_mock(seen, lambda: None)))
+        app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base}, relay=relay)
+        h = await signup(client)
+        dev = (await client.post("/wallets", json={"count": 1}, headers=h)).json()[0]
+        src = (await client.post("/wallets", json={"network": "base", "count": 1}, headers=h)).json()[0]
+        fake_rpc.balances[dev["address"]] = 1_000  # destination is empty
+        base.balances[src["address"].lower()] = ETH // 100
+        base.tokens[src["address"].lower()] = 500 * 10**6
+
+        body = {"wallet_id": dev["id"], "amount": 0.5}
+        pf = (await client.post("/wallets/fund-cash", json=body, headers=h)).json()
+        p = pf["preflight"]
+        assert p["from"]["address"] == src["address"] and p["to_chain"] == "Solana"
+        assert p["receive"] == "0.5 SOL" and p["send"] == "80 USDC"  # 0.5 SOL at $150 + buffer + $1, rounded up
+        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.3 and p["route_fee"] == "0.3% of the amount sent"
+        assert not p["warnings"], p
+        r = await client.post("/wallets/fund-cash", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
+                                                          "idempotency_key": "cash-1"}, headers=h)
+        assert r.status_code == 200, r.text
+        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+        assert job["status"] == "confirmed", job
+        assert [t["kind"] for t in job["transactions"]][:2] == ["fund_route_approve", "fund_route"]
+        assert seen[0]["recipient"] == dev["address"] and seen[0]["amount"] == str(80 * 10**6)
+
+        # A wallet whose own USDC covers it funds itself with no route at all — but it still needs gas.
+        fake_rpc.tokens[dev["address"]] = 500 * 10**6
+        fake_rpc.balances[dev["address"]] = int(0.05 * SOL)
+        pf2 = (await client.post("/wallets/fund-cash", json=body, headers=h)).json()
+        assert pf2["preflight"]["from"]["address"] == dev["address"]
+    finally:
+        app.dependency_overrides.pop(get_executor, None)

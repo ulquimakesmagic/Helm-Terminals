@@ -191,10 +191,22 @@ def require_enabled(network: str) -> ExtraNetwork:
     return net
 
 
+# Keyless public endpoints that answer the same API, cycled when the primary rate-limits the host
+# (balance reads fan out across every wallet at once). NearClient rotates across the whole list.
+_FALLBACK_RPCS: dict[str, list[str]] = {
+    "near": ["https://rpc.mainnet.near.org", "https://1rpc.io/near"],
+}
+
+
 def rpc_urls(network: str) -> str:
-    """The configured endpoint(s) for a network, else its public default. Env: {NETWORK}_RPC_URL."""
+    """The configured endpoint(s) for a network, else its public default(s). Env: {NETWORK}_RPC_URL."""
     s = get_settings()
-    return getattr(s, f"{network.replace('-', '_')}_rpc_url", "") or EXTRA_NETWORKS[network].default_rpc
+    configured = getattr(s, f"{network.replace('-', '_')}_rpc_url", "")
+    if configured:
+        return configured
+    default = EXTRA_NETWORKS[network].default_rpc
+    fallbacks = _FALLBACK_RPCS.get(network)
+    return f"{default},{','.join(fallbacks)}" if fallbacks else default
 
 
 def offered(network: str) -> bool:

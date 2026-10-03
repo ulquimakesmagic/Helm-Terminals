@@ -112,3 +112,21 @@ async def test_launch_token_disperse_attaches_wallets_for_transparency(client, f
     ws = (await client.get(f"/launches/{launch_id}/workspace", headers=h)).json()
     attached = {w["address"] for w in ws["wallets"]}
     assert all(w["address"] in attached for w in fresh)
+
+
+async def test_sweep_moves_stable_then_coin(client, fake_rpc):
+    h = await signup(client)
+    ws = (await client.post("/wallets", json={"count": 4}, headers=h)).json()
+    dest, a, b = ws[0], ws[1], ws[2]
+    fake_rpc.tokens[a["address"]] = 3_000_000   # 3 USDC
+    fake_rpc.tokens[b["address"]] = 500_000     # 0.5 USDC
+    body = {"from_wallet_ids": [a["id"], b["id"]], "to_wallet_id": dest["id"]}
+    r = await client.post("/wallets/sweep", json={"from_wallet_ids": [dest["id"]], "to_wallet_id": dest["id"]}, headers=h)
+    assert r.status_code == 400  # the destination can't also be a source
+    pf, job = await confirm(client, h, "/wallets/sweep", body, "sweep-1")
+    p = pf["preflight"]
+    assert p["wallets_swept"] == 2 and p["skipped_empty"] == []
+    assert p["total_stable"] == 3.5 and abs(p["total_native"] - 2 * (5 - 0.00001)) < 1e-9
+    assert job["status"] == "confirmed", job
+    kinds = [t["kind"] for t in job["transactions"]]
+    assert kinds == ["sweep_stable", "sweep_stable", "sweep", "sweep"]  # stablecoins first, then the coin

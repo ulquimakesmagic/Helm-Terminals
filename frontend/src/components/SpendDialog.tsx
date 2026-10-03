@@ -38,7 +38,7 @@ const LABELS: Record<string, string> = {
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
-  disperse: "disperse", consolidate: "consolidate", bridge: "route", swap: "swap",
+  disperse: "disperse", consolidate: "consolidate", bridge: "route", swap: "swap", sweep: "sweep", fund_cash: "cash fund",
 };
 
 

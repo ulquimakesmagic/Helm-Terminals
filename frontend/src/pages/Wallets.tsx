@@ -5,9 +5,9 @@ import { useSession } from "../session";
 import Distribute from "../components/Distribute";
 import { ChainLabel, ChainMark } from "../components/marks";
 import SpendDialog from "../components/SpendDialog";
-import ExportKeyDialog from "../components/ExportKeyDialog";
 import SwapDialog from "../components/SwapDialog";
 import BridgeDialog from "../components/BridgeDialog";
+import SweepDialog from "../components/SweepDialog";
 import { CHAIN_ORDER, CHAINS, ChainId, chainOf, isExtraChain } from "../chains";
 import { isEvmAddr, isSolanaAddr } from "../validate";
 import {
@@ -327,11 +327,11 @@ export default function Wallets() {
   const [wdAmount, setWdAmount] = useState("");
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [exportWallet, setExportWallet] = useState<any>(null);
-  const [exportCapability, setExportCapability] = useState<{ available: boolean; reason: string | null }>({ available: true, reason: null });
-  useEffect(() => { api<{ available: boolean; reason: string | null }>("/wallets/export-capability").then(setExportCapability).catch(() => { }); }, []);
   const [swapOpen, setSwapOpen] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [sweepOpen, setSweepOpen] = useState(false);
+  const [fundMode, setFundMode] = useState<"wallet" | "cash">("wallet");
+  const [cashDest, setCashDest] = useState("");
   const [launchTokens, setLaunchTokens] = useState<{ mint: string; symbol: string; network: string }[]>([]);
   const [swapWalletId, setSwapWalletId] = useState<string | undefined>(undefined);
 
@@ -401,6 +401,7 @@ export default function Wallets() {
   const selNets = [...new Set(selManaged.map((id) => managed.find((w) => w.id === id)?.network ?? "solana"))];
   const selNet = selNets.length === 1 ? selNets[0] : null;
   const coin = chainOf(selNet).native;
+  const cashDestCoin = chainOf(managed.find((w) => w.id === cashDest)?.network ?? selNet).native;
   const evmSel = !!selNet && selNet !== "solana";
   const extraSel = isExtraChain(selNet);  // TRON, NEAR, Arc and TON move funds through their own transfer
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -422,7 +423,7 @@ export default function Wallets() {
       <Metrics label="Wallet totals" items={[
         { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", tone: folio && folio.complete === false ? "warn" : undefined,
           hint: folio ? (folio.complete === false ? `at least · ${folio.incomplete_chains.length} chain${folio.incomplete_chains.length === 1 ? "" : "s"} not fully read` : folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
-        { label: "Stablecoins", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC, USDG on Robinhood" },
+        { label: "Cash balance", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC and USDG — funds any wallet on any chain" },
         { label: "Managed", value: wallets ? String(managed.length) : "—", hint: `on ${new Set(managed.map((w) => w.network)).size} chain${new Set(managed.map((w) => w.network)).size === 1 ? "" : "s"}` },
         { label: "Watch-only", value: wallets ? String(all.filter((w) => w.kind === "watch").length) : "—",
           hint: all.some((w) => w.kind === "connected") ? `tracked · plus ${all.filter((w) => w.kind === "connected").length} connected` : "tracked, can't sign" },
@@ -515,9 +516,6 @@ export default function Wallets() {
                       : <span className="muted" title="Load balances to see">—<span className="sr-only"> not loaded</span></span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>
                       {w.kind === "managed" && <button className="btn sm ghost row-action" onClick={() => openSwap(w.id)} aria-label={`Swap from ${w.label || w.address}`}>Swap</button>}
-                      {w.kind === "managed" && (exportCapability.available
-                        ? <button className="btn sm ghost row-action" onClick={() => setExportWallet(w)} aria-label={`Export the private key of ${w.label || w.address}`}>Export key</button>
-                        : <button className="btn sm ghost row-action" disabled title={exportCapability.reason ?? "Key export is unavailable on this deployment."}>Export key</button>)}
                       {w.kind === "managed" && !fu && <button className="btn sm ghost row-action" onClick={() => makeFunder(w)} aria-label={`Make ${w.label || w.address} a funder`}>Make funder</button>}
                     </td>
                   </tr>
@@ -540,6 +538,7 @@ export default function Wallets() {
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("withdraw")}><Icon name="arrowup" size={14} />Withdraw</button>
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("disperse")} title="Split a coin or token from one wallet across the selected wallets"><Icon name="send" size={14} />Disperse</button>
           <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setModal("consolidate")} title="Gather a coin or token from the selected wallets into one"><Icon name="download" size={14} />Consolidate</button>
+          <button className="btn sm secondary" disabled={!selNet || extraSel} onClick={() => setSweepOpen(true)} title="Empty the selected wallets into one — stablecoins and network coin, fees kept back"><Icon name="zap" size={14} />Sweep dust</button>
           <button className="btn sm secondary" onClick={() => setBridgeOpen(true)} title="Bridge value to another chain through Relay"><Icon name="globe" size={14} />Bridge</button>
           <button className="btn sm secondary" onClick={() => { setMoveTo(""); setMoveNew(""); setModal("move"); }}><Icon name="folder" size={14} />Move to folder</button>
           <button className="btn sm ghost" onClick={() => setSelected(new Set())}>Clear</button>
@@ -572,22 +571,49 @@ export default function Wallets() {
       )}
 
       {modal === "fund" && (
-        <Modal title="Fund wallets" sub={`Send ${coin} on ${chainOf(selNet).name} from one wallet to ${selManaged.filter((id) => id !== fundFrom).length} selected wallet(s)`} onClose={() => setModal(null)}
+        <Modal title={fundMode === "cash" ? "Fund from cash balance" : "Fund wallets"}
+          sub={fundMode === "cash"
+            ? "Top up one wallet from your cash balance — the USDC (or USDG) in any of your wallets, routed to its coin, same chain or across chains"
+            : `Send ${coin} on ${chainOf(selNet).name} from one wallet to ${selManaged.filter((id) => id !== fundFrom).length} selected wallet(s)`} onClose={() => setModal(null)}
           foot={<><button className="btn ghost" onClick={() => setModal(null)}>Cancel</button>
-            <button className="btn" disabled={!fundFrom || !(+fundAmount > 0) || selManaged.filter((id) => id !== fundFrom).length === 0}
-              onClick={() => { setModal(null); setDialog({ title: "Fund wallets", path: "/wallets/fund", network: selNet ?? "solana",
-                body: { funder_wallet_id: fundFrom, allocations: selManaged.filter((id) => id !== fundFrom).map((id) => ({ wallet_id: id, sol: +fundAmount })) } }); }}>
-              Review<Icon name="arrowright" size={14} /></button></>}>
-          <Field label="Send from">
-            <select value={fundFrom} onChange={(e) => setFundFrom(e.target.value)}>
-              <option value="">Choose a wallet…</option>
-              {managed.filter((w) => w.network === selNet).sort((a, b) => Number(!!funderOf(b.id)) - Number(!!funderOf(a.id))).map((w) => (
-                <option key={w.id} value={w.id}>{funderOf(w.id) ? "★ " : ""}{w.label || "Wallet"} · {short(w.address)}{w.balance_sol !== undefined ? ` · ${fmt(w.balance_sol)} ${coin}` : ""}</option>
-              ))}
-            </select>
+            {fundMode === "cash"
+              ? <button className="btn" disabled={!cashDest || !(+fundAmount > 0)}
+                  onClick={() => { const d = managed.find((w) => w.id === cashDest); setModal(null); setDialog({ title: "Fund from cash balance",
+                    path: "/wallets/fund-cash", network: d?.network ?? "solana", body: { wallet_id: cashDest, amount: +fundAmount } }); }}>
+                  Review<Icon name="arrowright" size={14} /></button>
+              : <button className="btn" disabled={!fundFrom || !(+fundAmount > 0) || selManaged.filter((id) => id !== fundFrom).length === 0}
+                  onClick={() => { setModal(null); setDialog({ title: "Fund wallets", path: "/wallets/fund", network: selNet ?? "solana",
+                    body: { funder_wallet_id: fundFrom, allocations: selManaged.filter((id) => id !== fundFrom).map((id) => ({ wallet_id: id, sol: +fundAmount })) } }); }}>
+                  Review<Icon name="arrowright" size={14} /></button>}</>}>
+          <Field label="Source">
+            <div className="seg full" role="group" aria-label="Funding source">
+              <button type="button" className={fundMode === "wallet" ? "on" : ""} onClick={() => setFundMode("wallet")}>One of my wallets</button>
+              <button type="button" className={fundMode === "cash" ? "on" : ""} onClick={() => setFundMode("cash")}>Cash balance (USDC)</button>
+            </div>
           </Field>
-          <Field label="Amount per wallet"><UnitInput unit={coin} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} /></Field>
-          <Callout>Total: <b className="num">{fmt(+fundAmount * selManaged.filter((id) => id !== fundFrom).length)} {coin}</b> plus network fees. You'll see the full preview before anything is sent.</Callout>
+          {fundMode === "cash" ? <>
+            <Field label="Fund which wallet" hint="Any managed wallet, on any chain.">
+              <select value={cashDest} onChange={(e) => setCashDest(e.target.value)}>
+                <option value="">Choose a wallet…</option>
+                {managed.map((w) => (
+                  <option key={w.id} value={w.id}>{w.label || "Wallet"} · {chainOf(w.network).name} · {short(w.address)}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Amount"><UnitInput unit={cashDestCoin} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} /></Field>
+            <Callout icon="info">Helm picks the wallet holding enough USDC (the destination's own USDC first), routes it through Relay — same chain or across chains — and shows the whole route before anything is sent.</Callout>
+          </> : <>
+            <Field label="Send from">
+              <select value={fundFrom} onChange={(e) => setFundFrom(e.target.value)}>
+                <option value="">Choose a wallet…</option>
+                {managed.filter((w) => w.network === selNet).sort((a, b) => Number(!!funderOf(b.id)) - Number(!!funderOf(a.id))).map((w) => (
+                  <option key={w.id} value={w.id}>{funderOf(w.id) ? "★ " : ""}{w.label || "Wallet"} · {short(w.address)}{w.balance_sol !== undefined ? ` · ${fmt(w.balance_sol)} ${coin}` : ""}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Amount per wallet"><UnitInput unit={coin} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} /></Field>
+            <Callout>Total: <b className="num">{fmt(+fundAmount * selManaged.filter((id) => id !== fundFrom).length)} {coin}</b> plus network fees. You'll see the full preview before anything is sent.</Callout>
+          </>}
         </Modal>
       )}
 
@@ -632,8 +658,6 @@ export default function Wallets() {
 
 
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => { setSelected(new Set()); load(true); }} />}
-      {exportWallet && <ExportKeyDialog wallet={exportWallet} onClose={() => setExportWallet(null)}
-        onExported={() => { toast("good", "Private key exported. It was shown once and will not be shown again."); }} />}
       {swapOpen && <SwapDialog wallets={managed}
         tokens={[{ mint: "native", symbol: "SOL", network: "solana" },
           { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", network: "solana" },
@@ -656,6 +680,10 @@ export default function Wallets() {
         onClose={() => setBridgeOpen(false)}
         onReview={(req) => { setBridgeOpen(false); setDialog(req); }}
         key={bridgeOpen ? "open" : "closed"} />}
+      {sweepOpen && selNet && <SweepDialog wallets={all} selectedIds={selManaged} network={selNet}
+        onClose={() => setSweepOpen(false)}
+        onReview={(req) => { setSweepOpen(false); setDialog(req); }}
+        key={sweepOpen ? "open" : "closed"} />}
     </>
   );
 }

@@ -32,18 +32,20 @@ def _coin_decimals(network: str) -> int:
     return 9 if network == "solana" else 18
 
 
-async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet,
-                       shortfall_raw: int) -> tuple[dict | None, str | None]:
-    """(plan, None) when a USDC route can cover `shortfall_raw` of dst's coin, else (None, why not)."""
+async def find_cash_source(ex: Executor, wallets: list[Wallet], mains: set[str], dst: Wallet,
+                           need_coin_raw: int, price: float | None = None) -> tuple[tuple, Wallet | None, int | None]:
+    """Pick the wallet whose USDC (plus gas) best covers `need_coin_raw` of dst's coin.
+
+    `price` is dst's coin's USD price (fetched once when omitted). Returns (group, src, usd), with
+    (None, None, None) when no wallet can cover it. The destination's own USDC wins first (no route at
+    all), then same chain, then main wallets, then the larger USDC balance."""
     coin = native_coin(dst.network)
-    price = (await portfolio.coin_prices()).get(coin)
+    if price is None:
+        price = (await portfolio.coin_prices()).get(coin)
     if not price:
-        return None, f"{coin}'s price couldn't be read, so a USDC top-up can't be sized right now."
+        return (None, None, None), None, None
     fee_bps = ex.relay.fee_bps
-    wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.kind == "managed"))).scalars().all()
-    mains = await main_wallet_ids(db, user_id)
-    # Prefer the dev wallet itself, then the account's main wallets, then the dev wallet's chain, then anywhere else.
-    ordered = sorted(wallets, key=lambda w: (w.id != dst.id, w.id not in mains, w.network != dst.network))[:MAX_SCAN]
+    need_coin = need_coin_raw / 10 ** _coin_decimals(dst.network)
     sem = asyncio.Semaphore(8)
 
     async def read(w: Wallet):
@@ -56,25 +58,38 @@ async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet
                 return None
             return w, stable, native, gas
 
-    reads = [r for r in await asyncio.gather(*(read(w) for w in ordered)) if r]
-    need_coin = shortfall_raw / 10 ** _coin_decimals(dst.network)
+    reads = [r for r in await asyncio.gather(*(read(w) for w in wallets)) if r]
     best = None
     for w, stable, native, gas in reads:
         gas_raw = int(gas * 10 ** _coin_decimals(w.network))
-        # Swapping in the dev wallet itself spends some of its own coin on gas, so cover that too.
+        # Swapping in the destination itself spends some of its own coin on gas, so cover that too.
         cover = need_coin + (gas if w.id == dst.id else 0)
         usd = math.ceil(cover * price * BUFFER / (1 - fee_bps / 10_000) + FLAT_USD)
         if native < gas_raw or stable < usd * 10 ** STABLE_DECIMALS[w.network]:
             continue
-        # Same chain is the cheapest route, so it still wins; among equals a main wallet goes first, then more USDC.
         group = (w.id != dst.id, w.network != dst.network, w.id not in mains)
         if best is None or group < best[0] or (group == best[0] and stable > best[2]):
-            best = (group, w, stable, usd)
+            best = (group, w, usd)
     if best is None:
-        usd = math.ceil(need_coin * price * BUFFER / (1 - fee_bps / 10_000) + FLAT_USD)
+        return (None, None, None), None, None
+    return best[0], best[1], best[2]
+
+
+async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet,
+                       shortfall_raw: int) -> tuple[dict | None, str | None]:
+    """(plan, None) when a USDC route can cover `shortfall_raw` of dst's coin, else (None, why not)."""
+    coin = native_coin(dst.network)
+    price = (await portfolio.coin_prices()).get(coin)
+    if not price:
+        return None, f"{coin}'s price couldn't be read, so a USDC top-up can't be sized right now."
+    wallets = (await db.execute(select(Wallet).where(Wallet.user_id == user_id, Wallet.kind == "managed"))).scalars().all()
+    mains = await main_wallet_ids(db, user_id)
+    ordered = sorted(wallets, key=lambda w: (w.id != dst.id, w.id not in mains, w.network != dst.network))[:MAX_SCAN]
+    _, src, usd = await find_cash_source(ex, list(ordered), mains, dst, shortfall_raw)
+    if src is None:
+        usd = math.ceil(shortfall_raw / 10 ** _coin_decimals(dst.network) * price * BUFFER / (1 - ex.relay.fee_bps / 10_000) + FLAT_USD)
         return None, (f"No wallet holds about ${usd} in USDC plus gas to route it. Fund one with USDC "
                       f"(and a little of its chain's coin for fees), or add {coin} to the dev wallet directly.")
-    _, src, _, usd = best
     symbol = stable_for(src.network)[0]
     return {
         "from_wallet_id": src.id, "from": src.label or "Wallet", "from_address": src.address,

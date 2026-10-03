@@ -405,3 +405,119 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+# --- sweep ----------------------------------------------------------------------------------------
+
+
+class SweepBody(SpendConfirm):
+    from_wallet_ids: list[str] = Field(min_length=1, max_length=50)
+    to_wallet_id: str
+
+
+@router.post("/wallets/sweep")
+async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+                ex: Executor = Depends(get_executor)):
+    """Sweep dust: move everything from several of your wallets into one — the full stablecoin balance
+    and the whole native coin minus what its own transfer needs for fees. Stablecoins go first (each
+    wallet still holds gas for its own send), then the native coin empties. Wallets with nothing to
+    move are listed, not failed."""
+    from .wallets import _core_only
+
+    if (prior := await find_replay(db, user, body)):
+        return prior
+    if len(set(body.from_wallet_ids)) != len(body.from_wallet_ids):
+        raise HTTPException(400, "each source wallet can only be listed once")
+    if body.to_wallet_id in body.from_wallet_ids:
+        raise HTTPException(400, "the destination wallet can't also be a source")
+    dest = await owned_wallet(db, user, body.to_wallet_id)
+    _core_only(dest.network)
+    sources = [await owned_wallet(db, user, wid) for wid in body.from_wallet_ids]
+    net = dest.network
+    if any(s.network != net for s in sources):
+        raise HTTPException(400, f"all source wallets must be on {chain_name(net)}")
+
+    a_native = {"kind": "native", "symbol": native_coin(net), "token": None, "decimals": 9 if net == "solana" else 18}
+    a_stable = await _asset(db, user, ex, net, "stable")
+    nd = 9 if net == "solana" else 18
+    try:
+        sender = ex.evm(net) if net != "solana" else None
+        gas_each = (SOL_FEE + ATA_RENT) if net == "solana" else await sender.max_gas_cost(ERC20_TRANSFER_GAS)
+        plan_stable: list[tuple[Wallet, int]] = []
+        plan_native: list[tuple[Wallet, int]] = []
+        skipped: list[str] = []
+        for s in sources:
+            stable_bal = await _balance(ex, net, a_stable, s.address)
+            native_bal = await _balance(ex, net, a_native, s.address)
+            if net == "solana":
+                native_spendable = max(native_bal - SOL_FEE, 0)
+            else:
+                native_spendable = await sender.spendable(s.address)
+            if stable_bal > 0:
+                plan_stable.append((s, stable_bal))
+                if native_bal < gas_each:  # stablecoins go first, so every wallet pays its own gas
+                    warnings.append(f"{_label(s)} holds {a_stable['symbol']} but needs about "
+                                    f"{_human(gas_each, nd):.6f} {native_coin(net)} for the network fee to send it.")
+            if native_spendable > 0:
+                plan_native.append((s, native_spendable))
+            if stable_bal <= 0 and native_spendable <= 0:
+                skipped.append(s.address)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
+
+    warnings: list[str] = []
+    if not plan_stable and not plan_native:
+        warnings.append("None of the selected wallets has anything to sweep.")
+    legs = len(plan_stable) + len(plan_native)
+    if net == "solana":
+        gas = legs * SOL_FEE + len(plan_stable) * ATA_RENT
+    else:
+        gas = len(plan_stable) * await sender.max_gas_cost(ERC20_TRANSFER_GAS) + len(plan_native) * await sender.max_gas_cost()
+    pf = build_preflight("sweep", {
+        "network": net, "chain": chain_name(net),
+        "to": {"label": dest.label or "Wallet", "address": dest.address},
+        "from": [{"label": s.label or "Wallet", "address": s.address,
+                  "amount": _human(r, a_stable["decimals"]), "asset": a_stable["symbol"]} for s, r in plan_stable]
+        + [{"label": s.label or "Wallet", "address": s.address,
+            "amount": _human(r, a_native["decimals"]), "asset": a_native["symbol"]} for s, r in plan_native],
+        "skipped_empty": skipped,
+        "wallets_swept": len({s.id for s, _ in plan_stable} | {s.id for s, _ in plan_native}),
+        "total_stable": _human(sum(r for _, r in plan_stable), a_stable["decimals"]),
+        "total_native": _human(sum(r for _, r in plan_native), nd),
+        "network_fees_max": _human(gas, nd), "network_fee_coin": native_coin(net),
+        "own_wallets_only": True, "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "sweep", None, {**pf["preflight"], "network": net})
+    if created:
+        stable_legs = list(zip(plan_stable, [a_stable] * len(plan_stable)))
+
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            results = []
+
+            async def leg(s: Wallet, raw: int, asset: dict, kind: str):
+                if net == "solana":
+                    return await _send_solana(ex, j, s, kind, asset, [(dest, raw)])
+                return await _send_evm(ex, j, s, kind, asset, dest, raw)
+
+            for (s, raw), asset in stable_legs:  # stablecoins first: every wallet still has its gas
+                res = await leg(s, raw, asset, "sweep_stable")
+                await _record(session, j, s, "sweep_stable", res, None)
+                await session.commit()
+                results.append(res)
+            for s, raw in plan_native:  # then the coin empties, keeping only fee reserves
+                res = await leg(s, raw, a_native, "sweep")
+                await _record(session, j, s, "sweep", res, None)
+                await session.commit()
+                results.append(res)
+            _finish(j, results)
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
