@@ -23,22 +23,25 @@ ROUTE_GAS = 350_000  # approve + deposit on the origin chain
 
 
 def currency(network: str, asset: str) -> tuple[str, str]:
-    """(symbol, Relay currency address) for "native" or "stable" on a chain."""
+    """(symbol, Relay currency address) for "native", "stable", or a token contract/mint address."""
     if asset == "native":
         return native_coin(network), native_currency(network)
-    return stable_for(network)
+    if asset == "stable":
+        return stable_for(network)
+    return asset[:6], asset  # arbitrary token: the caller resolves a display symbol when it has one
 
 
 async def asset_decimals(ex: Executor, network: str, asset: str) -> int:
     if asset == "native":
         return 9 if network == "solana" else 18
-    return await token_decimals(ex, network, stable_for(network)[1])
+    token = stable_for(network)[1] if asset == "stable" else asset
+    return await token_decimals(ex, network, token)
 
 
 async def asset_balance(ex: Executor, network: str, asset: str, address: str) -> int:
     if asset == "native":
         return int(await (ex.rpc.get_balance(address) if network == "solana" else ex.evm(network).rpc.get_balance(address)))
-    token = stable_for(network)[1]
+    token = stable_for(network)[1] if asset == "stable" else asset
     if network == "solana":
         return int(await ex.rpc.get_token_balance(address, token))
     return int(await ex.evm(network).rpc.erc20_balance(token, address))

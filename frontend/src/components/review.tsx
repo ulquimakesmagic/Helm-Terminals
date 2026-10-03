@@ -93,7 +93,23 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         next: ["One transfer per recipient, sent in order.", "All recipients are wallets on your account."],
       };
     }
-    case "swap":
+    case "swap": {
+      const q = pre.quote;
+      if (q?.fees_usd) {
+        // Relay-routed swap on an EVM chain: the quote carries fees and the arrival estimate like a bridge.
+        const f = q.fees_usd;
+        return {
+          label: `Swap on ${pre.chain ?? "EVM"}`, value: String(pre.input ?? ""), unit: "",
+          sub: q.receive_estimate != null
+            ? <>Receive about {fmt(q.receive_estimate, 6)} {q.receive_symbol}, at least {fmt(q.receive_minimum ?? 0, 6)}</>
+            : <>Receive {pre.output}</>,
+          cells: [["Route", pre.route ?? "Relay"], ["Relay + gas", `$${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)}`],
+            ["Helm route fee", fee(pre.platform_fee)], ["Slippage", pre.slippage ?? "—"]],
+          tone: "danger",
+          next: ["A fresh quote is taken when the swap executes; the final output is bounded by the slippage shown here.",
+            "Relay builds the transactions; Helm checks their signatures and simulates them before sending."],
+        };
+      }
       return {
         label: "Swap", value: `${pre.input} → ${pre.output}`, unit: "", sub: <>Through Jupiter on Solana from {pre.wallet ? short(pre.wallet) : "the wallet"}</>,
         cells: [["Estimated out", pre.estimated_output ?? "—"], ["Route", pre.route ?? "—"], ["Price impact", pre.price_impact ?? "—"],
@@ -101,6 +117,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         next: ["A fresh quote is taken when the swap executes; the final output is bounded by the slippage shown here.",
           "Jupiter builds the transaction; Helm checks its signatures and simulates it before sending."],
       };
+    }
     case "withdraw": {
       const from = list(pre.from);
       const total = sum(from, "sol") + sum(from, "amount");

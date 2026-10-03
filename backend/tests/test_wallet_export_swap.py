@@ -158,11 +158,76 @@ async def test_swap_refuses_unknown_tokens_and_same_token(client, fake_rpc, fake
     assert (await client.post("/wallets/swap", json=same, headers=h)).status_code == 400
 
 
-async def test_swap_is_solana_only(client, fake_rpc, fake_jupiter):
-    h = await signup(client, "evm@example.com", main=False)
-    r = await client.post("/wallets", json={"label": "EVM", "network": "base"}, headers=h)
+async def test_swap_unsupported_chain_is_refused(client, fake_rpc, fake_jupiter):
+    h = await signup(client, "arc@example.com", main=False)
+    r = await client.post("/wallets", json={"label": "Arc", "network": "arc"}, headers=h)
     wid = r.json()[-1]["id"]
     out = await client.post("/wallets/swap", json={"wallet_id": wid, "input_mint": "native",
-                                                   "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                                                   "amount": 1}, headers=h)
-    assert out.status_code == 400 and "Solana-only" in out.text
+                                                   "output_mint": "native", "amount": 1}, headers=h)
+    assert out.status_code == 400 and "Bridge route" in out.text
+
+
+async def test_evm_swap_routes_through_relay(client, fake_rpc, monkeypatch):
+    """Same-chain EVM swap: Relay quote for the preflight, approve capped at the quoted need, then the swap."""
+    import httpx as _httpx
+
+    from app.chains.relay import EVM_NATIVE, Relay
+    from app.deps import get_executor
+    from app.services.executor import Executor
+    from app.signing import get_signer
+
+    from .test_bridge import BASE_USDC, ETH, TokenNode, relay_mock
+
+    seen: list = []
+    relay = Relay("https://relay.test", client=_httpx.AsyncClient(transport=relay_mock(seen, ["success"])))
+    base = TokenNode("base")
+    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base}, relay=relay)
+    try:
+        h = await signup(client, "evmswap@example.com", main=False)
+        w = (await client.post("/wallets", json={"network": "base", "count": 1}, headers=h)).json()[-1]
+        base.tokens[w["address"].lower()] = 50 * 10**6          # 50 USDC
+        base.balances[w["address"].lower()] = ETH // 100        # gas money
+        body = {"wallet_id": w["id"], "input_mint": BASE_USDC, "output_mint": "native", "amount": 20}
+        pre = (await client.post("/wallets/swap", json=body, headers=h)).json()
+        p = pre["preflight"]
+        assert p["kind"] == "swap" and p["network"] == "base" and p["chain"] == "Base"
+        assert p["input"] == "20 USDC" and p["estimated_output"] == "0.03 ETH"
+        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.06 and p["platform_fee"] == "none"
+        same = await client.post("/wallets/swap", json={**body, "output_mint": BASE_USDC}, headers=h)
+        assert same.status_code == 400 and "same token" in same.text
+        bad = await client.post("/wallets/swap", json={**body, "input_mint": "0x1234"}, headers=h)
+        assert bad.status_code == 400 and "valid token address" in bad.text
+
+        r = await client.post("/wallets/swap", json={**body, "confirm": True, "preflight_hash": pre["preflight_hash"],
+                                                     "idempotency_key": "evm-swap"}, headers=h)
+        assert r.status_code == 200, r.text
+        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+        assert job["status"] == "confirmed", job
+        assert [t["kind"] for t in job["transactions"]] == ["swap_approve", "swap"]
+        # Provider-built transactions go out byte-for-byte (the guard checked, not rewrote, them).
+        assert base.sent[-2]["data"] == bytes.fromhex("095ea7b3" + "00" * 12 + "cd" * 20 + "00" * 32)
+        assert base.sent[-1]["to"].lower() == "0x" + "cd" * 20 and base.sent[-1]["data"] == bytes.fromhex("abcdef")
+        q = seen[-1]
+        assert q["originChainId"] == 8453 and q["destinationChainId"] == 8453  # same-chain route
+        assert q["originCurrency"] == BASE_USDC and q["destinationCurrency"] == EVM_NATIVE
+        assert q["user"] == q["recipient"] == w["address"]
+    finally:
+        app.dependency_overrides.pop(get_executor, None)
+
+
+async def test_export_capability_reports_the_signer(client, monkeypatch):
+    h = await signup(client, "cap@example.com", main=False)
+    r = (await client.get("/wallets/export-capability", headers=h)).json()
+    assert r == {"available": True, "reason": None}
+
+    class _TurnkeyLike:
+        pass
+
+    monkeypatch.setattr(wallets_module, "get_signer", lambda: _TurnkeyLike())
+    r = (await client.get("/wallets/export-capability", headers=h)).json()
+    assert r["available"] is False and "Turnkey" in r["reason"]
+    # The export endpoint refuses on capability before burning password/2FA attempts.
+    w = (await make_wallets(client, h, 1))[0]
+    out = await client.post(f"/wallets/{w['id']}/export-key",
+                            json={"password": "definitely-wrong", "totp": "000000"}, headers=h)
+    assert out.status_code == 400 and "Turnkey" in out.text

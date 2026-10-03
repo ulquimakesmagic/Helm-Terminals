@@ -328,17 +328,21 @@ export default function Wallets() {
   const [dest, setDest] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [exportWallet, setExportWallet] = useState<any>(null);
+  const [exportCapability, setExportCapability] = useState<{ available: boolean; reason: string | null }>({ available: true, reason: null });
+  useEffect(() => { api<{ available: boolean; reason: string | null }>("/wallets/export-capability").then(setExportCapability).catch(() => { }); }, []);
   const [swapOpen, setSwapOpen] = useState(false);
   const [bridgeOpen, setBridgeOpen] = useState(false);
-  const [launchTokens, setLaunchTokens] = useState<{ mint: string; symbol: string }[]>([]);
+  const [launchTokens, setLaunchTokens] = useState<{ mint: string; symbol: string; network: string }[]>([]);
+  const [swapWalletId, setSwapWalletId] = useState<string | undefined>(undefined);
 
-  const openSwap = () => {
+  const openSwap = (id?: string) => {
+    setSwapWalletId(id);
     setSwapOpen(true);
     api<any[]>("/launches").then((ls) => {
-      const tokens: Record<string, { mint: string; symbol: string }> = {};
+      const tokens: Record<string, { mint: string; symbol: string; network: string }> = {};
       for (const l of ls ?? []) {
-        if (l.network === "solana" && l.mint_address && l.status !== "archived") {
-          tokens[l.mint_address] = { mint: l.mint_address, symbol: l.symbol };
+        if (l.mint_address && l.status !== "archived") {
+          tokens[l.mint_address] = { mint: l.mint_address, symbol: l.symbol, network: l.network };
         }
       }
       setLaunchTokens(Object.values(tokens));
@@ -510,8 +514,10 @@ export default function Wallets() {
                       : balances ? <span className="state unavailable" title="This balance couldn't be read. Refresh balances to retry."><Icon name="xcircle" size={12} />Unavailable</span>
                       : <span className="muted" title="Load balances to see">—<span className="sr-only"> not loaded</span></span>}</td>
                     <td className="r" onClick={(e) => e.stopPropagation()}>
-                      {w.kind === "managed" && w.network === "solana" && <button className="btn sm ghost row-action" onClick={openSwap} aria-label={`Swap from ${w.label || w.address}`}>Swap</button>}
-                      {w.kind === "managed" && <button className="btn sm ghost row-action" onClick={() => setExportWallet(w)} aria-label={`Export the private key of ${w.label || w.address}`}>Export key</button>}
+                      {w.kind === "managed" && <button className="btn sm ghost row-action" onClick={() => openSwap(w.id)} aria-label={`Swap from ${w.label || w.address}`}>Swap</button>}
+                      {w.kind === "managed" && (exportCapability.available
+                        ? <button className="btn sm ghost row-action" onClick={() => setExportWallet(w)} aria-label={`Export the private key of ${w.label || w.address}`}>Export key</button>
+                        : <button className="btn sm ghost row-action" disabled title={exportCapability.reason ?? "Key export is unavailable on this deployment."}>Export key</button>)}
                       {w.kind === "managed" && !fu && <button className="btn sm ghost row-action" onClick={() => makeFunder(w)} aria-label={`Make ${w.label || w.address} a funder`}>Make funder</button>}
                     </td>
                   </tr>
@@ -628,12 +634,20 @@ export default function Wallets() {
       {dialog && <SpendDialog {...dialog} onClose={() => setDialog(null)} onDone={() => { setSelected(new Set()); load(true); }} />}
       {exportWallet && <ExportKeyDialog wallet={exportWallet} onClose={() => setExportWallet(null)}
         onExported={() => { toast("good", "Private key exported. It was shown once and will not be shown again."); }} />}
-      {swapOpen && <SwapDialog wallets={managed.filter((w) => w.network === "solana")}
-        tokens={[{ mint: "native", symbol: "SOL" },
-          { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC" },
-          { mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", symbol: "USDT" },
+      {swapOpen && <SwapDialog wallets={managed}
+        tokens={[{ mint: "native", symbol: "SOL", network: "solana" },
+          { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", symbol: "USDC", network: "solana" },
+          { mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", symbol: "USDT", network: "solana" },
+          { mint: "native", symbol: "ETH", network: "base" },
+          { mint: "native", symbol: "BNB", network: "bsc" },
+          { mint: "native", symbol: "ETH", network: "ethereum" },
+          { mint: "native", symbol: "ETH", network: "robinhood" },
+          { mint: "stable", symbol: "USDC", network: "base" },
+          { mint: "stable", symbol: "USDC", network: "bsc" },
+          { mint: "stable", symbol: "USDC", network: "ethereum" },
+          { mint: "stable", symbol: "USDG", network: "robinhood" },
           ...launchTokens]}
-        initialWallet={managed.find((w) => w.network === "solana" && selected.has(w.id))?.id}
+        initialWallet={swapWalletId ?? managed.find((w) => selected.has(w.id))?.id}
         onClose={() => setSwapOpen(false)}
         onSwap={(req) => { setSwapOpen(false); setDialog(req); }}
         key={swapOpen ? "open" : "closed"} />}

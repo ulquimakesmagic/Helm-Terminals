@@ -1,9 +1,24 @@
-# Jupiter swaps in the wallets surface
+# Swaps in the wallets surface
 
 Status: **implemented behind the standard spend pipeline; not yet exercised on mainnet with a real
 key.** The first live swap should be small and watched end to end.
 
+Swaps are same-chain and multichain: **Solana routes through Jupiter**, **EVM chains (Base, BNB
+Chain, Ethereum, Robinhood Chain) route through Relay's same-chain routing** — the native coin, the
+chain's dollar stablecoin, any token address, or your launch tokens. Cross-chain conversion is the
+separate Bridge action.
+
 ## What it does
+
+`POST /wallets/swap` is network-aware:
+
+- **Solana (Jupiter)** — as documented below.
+- **EVM (Relay)** — the quote is a Relay same-chain route (`originChainId == destinationChainId`);
+  the preflight shows the Relay receive estimate, the guaranteed minimum, and the fees; confirmation
+  re-quotes and sends the route's transactions (approve + swap, capped by tx_guard's allowance check)
+  from the wallet itself. The swap completes with those transactions — no separate solver fill.
+
+## What it does on Solana
 
 `POST /wallets/swap` converts two Solana tokens through Jupiter's aggregator from a managed wallet:
 
@@ -20,10 +35,11 @@ key.** The first live swap should be small and watched end to end.
 
 ## Boundaries, stated plainly
 
-- **Solana only.** Cross-chain conversion — and same-chain conversion on EVM chains — is the
-  separate **Bridge** action (below); the swap dialog links to it instead of imitating it.
-- **`platform_fee: none`** — Helm charges no fee on swaps today; Jupiter's platform-fee field is
-  not used. If a swap fee is added later it must appear in the preflight first.
+- **Solana swaps are Jupiter; EVM swaps are Relay.** Cross-chain conversion stays on the Bridge
+  action; the swap dialog links there instead of imitating it.
+- **`platform_fee: none`** — Helm charges no fee on Jupiter swaps. Relay-routed EVM swaps carry the
+  same disclosed route fee as bridges (`ROUTE_FEE_BPS` + `PLATFORM_FEE_WALLET_EVM`), shown in the
+  quote as `helm_route_fee`.
 - **Third-party trust** mirrors PumpPortal: Helm does not audit Jupiter's route. The guardrails are
   structural — signature checking, simulation, and the slippage bound are what Helm verifies, not
   the route's fairness. A malicious quote can, at worst, execute at the reviewed slippage floor.

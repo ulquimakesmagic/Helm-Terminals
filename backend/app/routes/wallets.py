@@ -17,10 +17,12 @@ from ..models import AdminAudit, Folder, Funder, Job, Transaction, User, Wallet
 from ..services.executor import Executor, _finish, _record, run_single, send_evm_tracked, submit_tracked
 from ..services import portfolio
 from ..services.admin import request_context
-from ..services.chain_balances import STABLE_DECIMALS, native_coin, stable_for
+from ..services.chain_balances import STABLE_DECIMALS, chain_name, fee_reserve, native_coin, stable_for
 from ..services.preflight import build_preflight
+from ..chains.base import AdapterError
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.jupiter import Jupiter
+from ..services.routing import ROUTE_GAS, currency as route_currency, send_item
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 from ..services.guard import check_password, check_totp_once, ensure_not_locked, record_attempt
@@ -631,12 +633,42 @@ class ExportKeyBody(BaseModel):
     totp: str = Field(max_length=12)
 
 
+@router.get("/wallets/export-capability")
+async def export_capability(user: User = Depends(current_user)):
+    """Whether private-key export can work on this deployment, and why not when it can't.
+
+    Config-derived only; never touches wallets, keys or secrets. The wallets page uses this to explain
+    up front instead of offering a dialog that can only fail. Note the ordering trap it avoids: the
+    export endpoint checks password and 2FA before the signer kind, so on a Turnkey deployment every
+    attempt looked like a rejection of the user's credentials rather than a policy."""
+    try:
+        signer = get_signer()
+    except RuntimeError as e:
+        return {"available": False, "reason": str(e)}
+    if hasattr(signer, "reveal_secret"):
+        return {"available": True, "reason": None}
+    return {"available": False,
+            "reason": "wallets created on this deployment keep their keys in Turnkey, so Helm never sees "
+                      "them and can't export them. Use Turnkey's own export tooling, or move the funds "
+                      "with a withdrawal."}
+
+
 @router.post("/wallets/{wallet_id}/export-key")
 async def export_key(wallet_id: str, body: ExportKeyBody, request: Request, user: User = Depends(web_user),
                      db: AsyncSession = Depends(get_db)):
     """One-time private-key export for a managed wallet: web app only, password + a fresh 2FA code,
     throttled and audited. The secret crosses the wire exactly once, in this response, and never
     appears in a log, an activity feed or any GET. Turnkey-held keys export through Turnkey instead."""
+    # Capability before credentials: on a Turnkey deployment this is a policy refusal, not a login
+    # failure, so it must not consume one of the throttled export attempts (or look like one).
+    try:
+        signer = get_signer()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+    if not hasattr(signer, "reveal_secret"):
+        raise HTTPException(400, "keys for this wallet are held by Turnkey, so Helm never sees them and "
+                                 "can't export them. Use Turnkey's own export tooling, or move the funds "
+                                 "with a withdrawal.")
     throttle = f"export:{user.id}"
     await ensure_not_locked(db, throttle, EXPORT_LIMIT)
     await record_attempt(db, throttle)
@@ -649,9 +681,6 @@ async def export_key(wallet_id: str, body: ExportKeyBody, request: Request, user
     w = await owned_wallet(db, user, wallet_id)
     if w.kind != "managed" or not w.signer_ref:
         raise HTTPException(400, "only managed wallets can export")
-    signer = get_signer()
-    if not hasattr(signer, "reveal_secret"):
-        raise HTTPException(400, "this deployment keeps keys in Turnkey; export them through Turnkey's own flow")
     try:
         secret = await signer.reveal_secret(w.signer_ref)
     except SigningError as e:
@@ -679,17 +708,25 @@ class SwapBody(SpendConfirm):
 @router.post("/wallets/swap")
 async def swap(body: SwapBody, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
                rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
-    """Swap through Jupiter's aggregator: quote -> preflight -> confirm -> a fresh quote and an
-    unsigned transaction Helm signs for the wallet (tx_guard checks the signers, the executor
-    simulates before broadcast). Solana only; cross-chain conversion keeps using Relay routes."""
+    """Same-chain swaps from any managed wallet: Solana routes through Jupiter's aggregator, EVM chains
+    through Relay's same-chain routing. Quote -> preflight -> confirm -> a fresh quote at execution time;
+    tx_guard checks every transaction's signers and the executor simulates before broadcast. Cross-chain
+    conversion keeps using Bridge routes."""
     if (prior := await find_replay(db, user, body)):
         return prior
     w = await owned_wallet(db, user, body.wallet_id)
-    if w.network != "solana":
-        raise HTTPException(400, "Jupiter swaps are Solana-only; use a route for cross-chain conversion")
     if w.kind != "managed":
         raise HTTPException(400, "watch-only and connected wallets can't sign")
+    if w.network == "solana":
+        return await _swap_solana(body, user, db, rpc, ex, w)
+    if w.network in EVM_CHAINS:
+        return await _swap_evm(body, user, db, ex, w)
+    raise HTTPException(400, f"swaps aren't available on {chain_name(w.network)} yet; use a Bridge route")
 
+
+async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: SolanaRPC, ex: Executor, w: Wallet):
+    """Swap through Jupiter: quote -> preflight -> confirm -> a fresh quote and an unsigned transaction
+    Helm signs for the wallet (the executor simulates before broadcast)."""
     jup = Jupiter()
     in_mint = WSOL if body.input_mint == "native" else body.input_mint
     out_mint = WSOL if body.output_mint == "native" else body.output_mint
@@ -737,5 +774,112 @@ async def swap(body: SwapBody, user: User = Depends(current_user), db: AsyncSess
             fresh = await quote()  # quotes expire; a new one is taken at execution time
             raw = await jup.swap_tx(fresh, w.address)
             await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""})
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
+async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, w: Wallet):
+    """Same-chain swap on an EVM chain through Relay's routing: the input can be the native coin, the
+    chain's dollar stablecoin or any token address. The route is one or two transactions (approve plus
+    swap) sent from the wallet itself; the swap completes with those transactions, so unlike a bridge
+    there is no separate solver fill to wait for."""
+    net = w.network
+    sender = ex.evm(net)
+
+    def relay_currency(mint: str) -> str:
+        if mint in ("native", "stable"):
+            return route_currency(net, mint)[1]
+        token = mint.strip()
+        if not valid_address_for(net, token):
+            raise HTTPException(400, f"that's not a valid token address on {chain_name(net)}")
+        return token
+
+    in_cur, out_cur = relay_currency(body.input_mint), relay_currency(body.output_mint)
+    if in_cur.lower() == out_cur.lower():
+        raise HTTPException(400, "input and output are the same token")
+
+    async def token_meta(cur: str, mint: str) -> tuple[str, int]:
+        if mint == "native":
+            return native_coin(net), 18
+        if mint == "stable":
+            return route_currency(net, "stable")[0], STABLE_DECIMALS[net]
+        try:
+            meta = await sender.rpc.erc20_meta(cur)
+        except Exception as e:
+            raise HTTPException(400, f"couldn't read that token on {chain_name(net)} ({type(e).__name__})") from e
+        return meta.get("symbol") or cur[:6], int(meta["decimals"])
+
+    in_sym, in_dec = await token_meta(in_cur, body.input_mint)
+    out_sym, out_dec = await token_meta(out_cur, body.output_mint)
+    amount_raw = int(round(body.amount * 10 ** in_dec))
+
+    async def quote():
+        return await ex.relay.quote(user=w.address, recipient=w.address, from_network=net, to_network=net,
+                                    from_currency=in_cur, to_currency=out_cur, amount=amount_raw,
+                                    slippage_pct=body.slippage_pct)
+
+    warnings: list[str] = []
+    try:
+        q = await quote()
+        summary = ex.relay.summarize(q)
+    except AdapterError as e:
+        q, summary = None, None
+        warnings.append(str(e))
+    try:
+        gas = await fee_reserve(ex, net, 2, ROUTE_GAS)
+        native_bal = await sender.rpc.get_balance(w.address) / WEI
+        need = gas + (body.amount if body.input_mint == "native" else 0)
+        if native_bal < need:
+            warnings.append(f"{w.label or w.address[:8]} needs about {need:.6f} {native_coin(net)} on "
+                            f"{chain_name(net)} for network fees" + (" plus the amount" if body.input_mint == "native" else "") + ".")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
+    warnings += two_fa_warnings(user, "swap")
+    pf = build_preflight("swap", {
+        "wallet": w.address, "network": net, "chain": chain_name(net),
+        "input": f"{body.amount:g} {in_sym}",
+        "output": (f"at least {summary['receive_minimum']:g} {out_sym}"
+                   if summary and summary.get("receive_minimum") is not None else f"at least some {out_sym}"),
+        "estimated_output": (f"{summary['receive_estimate']:g} {out_sym}"
+                             if summary and summary.get("receive_estimate") is not None else None),
+        "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%",
+        "quote": summary, "provider": "Relay (relay.link)",
+        "platform_fee": ex.relay.fee_note,
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "swap", None, {
+        "wallet_id": w.id, "network": net, "input_currency": in_cur, "output_currency": out_cur,
+        "amount_raw": amount_raw, "slippage_pct": body.slippage_pct,
+    })
+    if created:
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            fresh = await quote()  # re-quote at execution time
+            info = ex.relay.summarize(fresh)
+            j.params = {**(j.params or {}), "request_id": info["request_id"], "quote": info}
+            await session.commit()
+            results = []
+            for step in fresh["steps"]:
+                for item in step.get("items") or []:
+                    if item.get("status") == "complete":
+                        continue
+                    tx_kind = "swap" if step.get("id") == "deposit" else f"swap_{step.get('id')}"[:24]
+                    res = await send_item(ex, w, item.get("data") or {}, j, tx_kind, max_allowance=amount_raw)
+                    await _record(session, j, w, tx_kind, res, None)
+                    await session.commit()
+                    results.append(res)
+                    if res.status != "confirmed":
+                        break
+                else:
+                    continue
+                break
+            _finish(j, results)
+            await session.commit()
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
