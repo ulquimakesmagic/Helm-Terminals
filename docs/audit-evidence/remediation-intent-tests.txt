@@ -1,0 +1,40 @@
+...........................F.F..EEE                                      [100%]
+=================================== ERRORS ====================================
+_________ ERROR at setup of test_alembic_bootstraps_a_fresh_database __________
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\user\\AppData\\Local\\Temp\\pytest-of-user'
+_ ERROR at setup of test_existing_create_all_schema_can_be_adopted_without_data_loss _
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\user\\AppData\\Local\\Temp\\pytest-of-user'
+_ ERROR at setup of test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees _
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:926: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\user\\AppData\\Local\\Temp\\pytest-of-user'
+================================== FAILURES ===================================
+____________ test_solana_step_is_compiled_from_relay_instructions _____________
+tests\test_bridge.py:148: in test_solana_step_is_compiled_from_relay_instructions
+    assert res.status == "confirmed"
+E   AssertionError: assert 'failed' == 'confirmed'
+E     
+E     - confirmed
+E     + failed
+____________ test_failed_route_deploys_nothing_and_keeps_the_draft ____________
+tests\test_auto_fund.py:100: in test_failed_route_deploys_nothing_and_keeps_the_draft
+    assert job["status"] == "failed" and "Nothing was deployed" in str(job), job
+E   AssertionError: {'id': '664842de4bf24a1182737ccc185c47e9', 'kind': 'deploy', 'status': 'unconfirmed', 'error': "Funding route wasn't sent: Relay reported refund; a refund goes back to the source wallet. Nothing was deployed.", ...}
+E   assert ('unconfirmed' == 'failed'
+E     
+E     - failed
+E     + unconfirmed)
+=========================== short test summary info ===========================
+FAILED tests/test_bridge.py::test_solana_step_is_compiled_from_relay_instructions
+FAILED tests/test_auto_fund.py::test_failed_route_deploys_nothing_and_keeps_the_draft
+ERROR tests/test_migrations.py::test_alembic_bootstraps_a_fresh_database - Pe...
+ERROR tests/test_migrations.py::test_existing_create_all_schema_can_be_adopted_without_data_loss
+ERROR tests/test_migrations.py::test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees
+2 failed, 30 passed, 2 warnings, 3 errors in 53.51s

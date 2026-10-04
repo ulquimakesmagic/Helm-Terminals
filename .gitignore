@@ -9,3 +9,7 @@ helm-update.zip
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+.audit-runtime/
+
+# Local security-gate state
+.mimosa/

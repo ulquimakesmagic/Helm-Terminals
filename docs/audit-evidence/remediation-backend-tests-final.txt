@@ -1,0 +1,49 @@
+....................................F................................... [ 15%]
+..............F......................................................... [ 31%]
+........................................................................ [ 47%]
+............................................F........................... [ 63%]
+..................................................................ss.... [ 78%]
+........................................................................ [ 94%]
+........................                                                 [100%]
+================================== FAILURES ===================================
+_______ test_kyber_dex_fee_is_one_fee_exact_on_buys_estimated_on_sells ________
+tests\test_admin.py:378: in test_kyber_dex_fee_is_one_fee_exact_on_buys_estimated_on_sells
+    buy = await k.prepare_trade("base", RPC(), "0x" + "22" * 20, "0x" + "33" * 20, "buy", 10**18, 5)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\chains\kyber.py:87: in prepare_trade
+    raise AdapterError("Kyber selected an unreviewed router; no approval was sent")
+E   app.chains.base.AdapterError: Kyber selected an unreviewed router; no approval was sent
+___________________ test_health_reports_rpc_setup_per_chain ___________________
+tests\test_api.py:663: in test_health_reports_rpc_setup_per_chain
+    assert (await client.get("/public-info")).json() == {"test_signer": True}
+E   AssertionError: assert {'test_signer...very': False}} == {'test_signer': True}
+E     
+E     Omitting 1 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'capabilities': {'cash_routes': ['solana',
+E                                       'base',
+E                                       'bsc',
+E                                       'ethereum',...
+E     
+E     ...Full output truncated (5 lines hidden), use '-vv' to show
+____________________ test_kyber_quote_reports_price_impact ____________________
+tests\test_launchdesk.py:218: in test_kyber_quote_reports_price_impact
+    plan = asyncio.run(k.prepare_trade("base", RPC(), "0x" + "22" * 20, "0x" + "33" * 20, "buy", 10**18, 5))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+..\..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+app\chains\kyber.py:87: in prepare_trade
+    raise AdapterError("Kyber selected an unreviewed router; no approval was sent")
+E   app.chains.base.AdapterError: Kyber selected an unreviewed router; no approval was sent
+=========================== short test summary info ===========================
+FAILED tests/test_admin.py::test_kyber_dex_fee_is_one_fee_exact_on_buys_estimated_on_sells
+FAILED tests/test_api.py::test_health_reports_rpc_setup_per_chain - Assertion...
+FAILED tests/test_launchdesk.py::test_kyber_quote_reports_price_impact - app....
+3 failed, 451 passed, 2 skipped, 2 warnings in 2408.20s (0:40:08)

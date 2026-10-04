@@ -1,0 +1,116 @@
+...........................................F............................ [ 16%]
+..............F...FF.F.................................................. [ 33%]
+........................................FFF............................. [ 50%]
+........................................................................ [ 66%]
+................................................F....................... [ 83%]
+..............F....................FFF.................................. [100%]
+================================== FAILURES ===================================
+_________ test_suspending_needs_a_reason_ends_sessions_and_is_audited _________
+tests\test_admin.py:544: in test_suspending_needs_a_reason_ends_sessions_and_is_audited
+    tok = (await client.post("/auth/login", json={"email": "bad@example.com", "password": PW})).json()["token"]
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'token'
+___________________ test_health_reports_rpc_setup_per_chain ___________________
+tests\test_api.py:661: in test_health_reports_rpc_setup_per_chain
+    assert health == {"ok": True}
+E   AssertionError: assert {'ok': True, ...d': 'unknown'} == {'ok': True}
+E     
+E     Omitting 1 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'build': 'unknown'}
+E     Use -v to get more diff
+_ test_job_recheck_resolves_solana_signature_and_fee_ledger[confirmed-confirmed-received] _
+tests\test_audit_fixes.py:150: in test_job_recheck_resolves_solana_signature_and_fee_ledger
+    assert response.json()["status"] == job_status
+E   AssertionError: assert 'unconfirmed' == 'confirmed'
+E     
+E     - confirmed
+E     + unconfirmed
+E     ? ++
+_ test_job_recheck_resolves_solana_signature_and_fee_ledger[failed-failed-failed] _
+tests\test_audit_fixes.py:150: in test_job_recheck_resolves_solana_signature_and_fee_ledger
+    assert response.json()["status"] == job_status
+E   AssertionError: assert 'unconfirmed' == 'failed'
+E     
+E     - failed
+E     + unconfirmed
+_____________ test_unconfirmed_evm_job_rechecks_its_saved_receipt _____________
+tests\test_audit_fixes.py:181: in test_unconfirmed_evm_job_rechecks_its_saved_receipt
+    assert response.json()["status"] == "confirmed"
+E   AssertionError: assert 'unconfirmed' == 'confirmed'
+E     
+E     - confirmed
+E     + unconfirmed
+E     ? ++
+____ test_tron_linked_wallet_signs_what_was_reviewed_then_helm_broadcasts _____
+tests\test_external_wallets.py:280: in test_tron_linked_wallet_signs_what_was_reviewed_then_helm_broadcasts
+    assert job["status"] == "confirmed" and len(t.broadcasts) == 1 and t.broadcasts[0]["txID"] == tx["txID"]
+E   AssertionError: assert ('submitted' == 'confirmed'
+E     
+E     - confirmed
+E     + submitted)
+__________ test_arc_linked_wallet_sends_and_helm_checks_what_it_sent __________
+tests\test_external_wallets.py:335: in test_arc_linked_wallet_sends_and_helm_checks_what_it_sent
+    assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "confirmed"
+E   AssertionError: assert 'submitted' == 'confirmed'
+E     
+E     - confirmed
+E     + submitted
+_____________ test_near_linked_wallet_sends_the_reviewed_actions ______________
+tests\test_external_wallets.py:388: in test_near_linked_wallet_sends_the_reviewed_actions
+    assert (await client.get(f"/jobs/{jid}", headers=h)).json()["status"] == "confirmed"
+E   AssertionError: assert 'submitted' == 'confirmed'
+E     
+E     - confirmed
+E     + submitted
+________________ test_profile_net_flow_is_usd_valued_per_chain ________________
+tests\test_profile.py:78: in test_profile_net_flow_is_usd_valued_per_chain
+    assert sol["symbol"] == "SOL" and sol["amount"] < 0 and sol["usd"] is not None
+E   AssertionError: assert ('SOL' == 'SOL'
+E     
+E       SOL and -5e-06 < 0 and None is not None)
+________ test_readiness_checks_database_without_exposing_configuration ________
+tests\test_security.py:145: in test_readiness_checks_database_without_exposing_configuration
+    assert (await client.get("/health")).json() == {"ok": True}
+E   AssertionError: assert {'ok': True, ...d': 'unknown'} == {'ok': True}
+E     
+E     Omitting 1 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'build': 'unknown'}
+E     Use -v to get more diff
+____ test_native_transfer_job_first_then_wallet_signed_message_is_followed ____
+tests\test_ton.py:299: in test_native_transfer_job_first_then_wallet_signed_message_is_followed
+    assert job["status"] == "confirmed" and job["transactions"][0]["signature"] == (bytes([9]) * 32).hex()
+E   AssertionError: assert ('submitted' == 'confirmed'
+E     
+E     - confirmed
+E     + submitted)
+_____________ test_declined_unseen_failed_and_different_messages ______________
+tests\test_ton.py:334: in test_declined_unseen_failed_and_different_messages
+    assert job["status"] == "unconfirmed" and "check your wallet" in job["transactions"][0]["error"]
+E   AssertionError: assert ('submitted' == 'unconfirmed'
+E     
+E     - unconfirmed
+E     + submitted)
+________ test_jetton_transfer_is_followed_through_both_jetton_wallets _________
+tests\test_ton.py:384: in test_jetton_transfer_is_followed_through_both_jetton_wallets
+    assert job["status"] == "failed" and "tokens didn't move" in job["transactions"][0]["error"]
+E   AssertionError: assert ('submitted' == 'failed'
+E     
+E     - failed
+E     + submitted)
+=========================== short test summary info ===========================
+FAILED tests/test_admin.py::test_suspending_needs_a_reason_ends_sessions_and_is_audited
+FAILED tests/test_api.py::test_health_reports_rpc_setup_per_chain - Assertion...
+FAILED tests/test_audit_fixes.py::test_job_recheck_resolves_solana_signature_and_fee_ledger[confirmed-confirmed-received]
+FAILED tests/test_audit_fixes.py::test_job_recheck_resolves_solana_signature_and_fee_ledger[failed-failed-failed]
+FAILED tests/test_audit_fixes.py::test_unconfirmed_evm_job_rechecks_its_saved_receipt
+FAILED tests/test_external_wallets.py::test_tron_linked_wallet_signs_what_was_reviewed_then_helm_broadcasts
+FAILED tests/test_external_wallets.py::test_arc_linked_wallet_sends_and_helm_checks_what_it_sent
+FAILED tests/test_external_wallets.py::test_near_linked_wallet_sends_the_reviewed_actions
+FAILED tests/test_profile.py::test_profile_net_flow_is_usd_valued_per_chain
+FAILED tests/test_security.py::test_readiness_checks_database_without_exposing_configuration
+FAILED tests/test_ton.py::test_native_transfer_job_first_then_wallet_signed_message_is_followed
+FAILED tests/test_ton.py::test_declined_unseen_failed_and_different_messages
+FAILED tests/test_ton.py::test_jetton_transfer_is_followed_through_both_jetton_wallets
+13 failed, 419 passed in 2405.63s (0:40:05)
