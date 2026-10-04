@@ -5,10 +5,9 @@ Helm signs transactions it did not assemble line by line: launchpad APIs (PumpPo
 does not build. A compromised or malicious provider must not be able to turn a confirmed spend into
 a drain of the wallet it signs for.
 
-The guards are fail-closed: a check that cannot complete (RPC unreachable, unparsable calldata)
-refuses to sign. Legitimate providers pass today because their spenders and escrows are contracts,
-their routes require no signature Helm does not hold, and their approvals cover the quoted need —
-a provider that starts doing otherwise fails loudly instead of draining silently.
+These are supplemental shape checks, not a complete intent validator. Contract-code presence and
+known signers do not establish a trusted recipient or constrain opaque program effects. Protocol
+validators must separately enforce the user's economic intent before provider payloads are signed.
 """
 
 from solders.transaction import VersionedTransaction
@@ -17,8 +16,6 @@ from eth_utils import keccak
 APPROVE = keccak(b"approve(address,uint256)")[:4]
 INCREASE_ALLOWANCE = keccak(b"increaseAllowance(address,uint256)")[:4]
 TRANSFER = keccak(b"transfer(address,uint256)")[:4]
-# A provider may approve a hair over the quoted need (rounding, price moved between quote and build).
-ALLOWANCE_SLIPPAGE = 1.01
 
 
 def _word(data: bytes, i: int) -> bytes:
@@ -62,7 +59,7 @@ async def check_evm_call(rpc, call, wallet: str, *, max_allowance: int | None = 
         if reason := await _has_code(rpc, spender):
             return f"approval target rejected: {reason}"
         amount = int.from_bytes(amount_word, "big")
-        if max_allowance is not None and amount > int(max_allowance * ALLOWANCE_SLIPPAGE):
+        if max_allowance is not None and amount > max_allowance:
             return (f"approval amount {amount} exceeds the quoted need ({max_allowance}); "
                     "provider-built approvals are capped at the quote")
     elif require_contract_recipients and selector == TRANSFER:

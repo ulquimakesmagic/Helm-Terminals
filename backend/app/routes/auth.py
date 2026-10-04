@@ -1,7 +1,7 @@
 import logging
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from ..security import (
 )
 
 from ..services.admin import role_of
+from ..services.passwords import hash_async, verify_async
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
@@ -47,20 +48,21 @@ class PasswordConfirm(BaseModel):
 
 
 @router.post("/register", status_code=201)
-async def register(body: Register, request: Request, db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
+async def register(body: Register, request: Request, background: BackgroundTasks, db: AsyncSession = Depends(get_db), signer=Depends(get_signer)):
     signup_key = f"signup:{client_address(request)}"
     await ensure_not_locked(db, signup_key, SIGNUP_LIMIT)
     await record_attempt(db, signup_key)
     email = body.email.lower()
-    password_hash = hash_password(body.password)  # before the existence check: a duplicate must take the
+    password_hash = await hash_async(body.password)  # before the existence check: a duplicate must take the
     # same Argon2 time as a fresh account, or registration latency reveals which emails are registered
-    if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
-        raise HTTPException(409, "email already registered")
+    response = {"message": "Registration processed. Sign in with your credentials; existing accounts keep their password."}
     ref = None
     if body.referral_code:
         ref = (await db.execute(select(Referral).where(Referral.code == body.referral_code.strip().upper()))).scalar_one_or_none()
         if not ref or ref.uses >= ref.max_uses:
             raise HTTPException(400, "referral code is invalid or used up")
+    if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
+        return response
     user = User(email=email, password_hash=password_hash)
     db.add(user)
     await db.flush()
@@ -70,27 +72,34 @@ async def register(body: Register, request: Request, db: AsyncSession = Depends(
     await log_activity(db, user.id, "account.created", payload={"referred": bool(ref)})
     await db.commit()
     # Every account gets its main wallet. A signer outage mustn't block sign-up: the Wallets page offers to finish it.
-    uid, email = user.id, user.email  # read before a rollback expires the object
-    main = False
-    try:
-        main = bool(await ensure_main_wallets(db, signer, uid))
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        log.warning("main wallet not created at sign-up for user %s", uid, exc_info=True)
-    return {"id": uid, "email": email, "main_wallet": main}
+    async def provision(uid):
+        from ..db import get_sessionmaker
+        async with get_sessionmaker()() as session:
+            try:
+                await ensure_main_wallets(session, signer, uid)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                log.warning("main wallet provisioning unavailable")
+    background.add_task(provision, user.id)
+    return response
 
 
 @router.post("/login")
 async def login(body: Login, request: Request, db: AsyncSession = Depends(get_db)):
     email = body.email.lower()
     here, anywhere = f"login:{email}:{client_address(request)}", f"login:{email}"
+    origin = f"login-origin:{client_address(request)}"
+    await ensure_not_locked(db, origin, 60)
+    await record_attempt(db, origin)
     await ensure_not_locked(db, here, LOGIN_LIMIT)
     await ensure_not_locked(db, anywhere, LOGIN_LIMIT_ANY)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not await verify_async(body.password, user.password_hash if user else None):
         await record_failure(db, here, anywhere)
         raise HTTPException(401, "invalid credentials")
+    from ..services.account_recovery import ensure_active
+    await ensure_active(db, user.id)
     if user.totp_enabled:
         if not body.totp:
             raise HTTPException(401, "totp_required")
@@ -154,8 +163,12 @@ async def totp_verify(body: Code, user: User = Depends(web_user), db: AsyncSessi
 
 @router.get("/me")
 async def me(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    from ..models import AccountSecurity
+    security = await db.get(AccountSecurity, user.id)
     p = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
     return {"id": user.id, "email": user.email, "totp_enabled": user.totp_enabled,
+            "email_verified": bool(security and security.email_verified_at),
+            "recovery_hold_until": security.recovery_hold_until.isoformat() if security and security.recovery_hold_until else None,
             "created_at": user.created_at.isoformat(),
             "display_name": p.display_name if p else user.email.split("@")[0][:40],
             "handle": p.handle if p else None, "avatar_hue": p.avatar_hue if p else 265,

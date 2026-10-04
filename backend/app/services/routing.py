@@ -62,13 +62,17 @@ async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
         tables = []
         for addr in data.get("addressLookupTableAddresses") or []:
             table = await ex.rpc.get_lookup_table(addr)
-            if table:
-                tables.append(table)
+            if table is None:
+                return SubmitResult(None, "failed", "Relay lookup table could not be resolved; no transaction was signed")
+            tables.append(table)
         raw = build_unsigned(Pubkey.from_string(w.address), ixs, await ex.rpc.get_latest_blockhash(), tables)
         if job is None:  # test/utility call without a user-facing job record
             return await ex.submit(raw, {w.address: w.signer_ref or ""})
         return await submit_tracked(ex, job, w, kind, raw, {w.address: w.signer_ref or ""})
     hexdata = data.get("data") or "0x"
+    from ..chains.relay import relay_chain_id
+    if data.get("chainId") != relay_chain_id(w.network) or (data.get("from") and data["from"].lower() != w.address.lower()):
+        return SubmitResult(None, "failed", "Relay transaction targets a different chain or signer")
     call = EvmCall(to=data["to"], data=bytes.fromhex(hexdata[2:] if hexdata.startswith("0x") else hexdata),
                    value=int(data.get("value") or 0))
     sender = ex.evm(w.network)
@@ -105,7 +109,7 @@ async def wait_for_fill(ex: Executor, request_id: str | None) -> str:
 
 async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Wallet, from_asset: str, to_asset: str,
                         amount_raw: int, slippage_pct: float, kind: str = "bridge",
-                        key: str | None = None) -> tuple[SubmitResult, str]:
+                        key: str | None = None, approved_bounds: dict | None = None) -> tuple[SubmitResult, str]:
     """Quote, send and wait. Returns (outcome, Relay status). Transactions are recorded on `job` under `kind`;
     the quote, request id and status go in job.params (under `key` when given). The caller finishes the job."""
 
@@ -117,6 +121,11 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
 
     try:
         q = await quote(ex, src, dst, from_asset, to_asset, amount_raw, slippage_pct)  # fresh: quotes expire fast
+        if not approved_bounds:
+            raise AdapterError("This route has no approved output bound; request a new preview")
+        from .quote_approval import check_relay_bounds
+
+        check_relay_bounds(q, approved_bounds, currency(dst.network, to_asset)[1], dst.network)
     except AdapterError as e:
         res = SubmitResult(None, "failed", str(e))
         await _record(session, job, src, kind, res, None)
@@ -128,11 +137,19 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
     fee_terms = (ex.relay.fee_bps, ex.relay.fee_recipient)
     note(request_id=info["request_id"], quote=info, route_status="sending")
     await session.commit()
+    from .execution_journal import require_steps
+    await require_steps(session, job, src.id, [
+        kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
+        for step in q["steps"] for item in step.get("items") or [] if item.get("status") != "complete"])
     last = None
     for step in q["steps"]:
         for item in step.get("items") or []:
             if item.get("status") == "complete":
                 continue
+            try:
+                check_relay_bounds(q, approved_bounds, currency(dst.network, to_asset)[1], dst.network)
+            except AdapterError as e:
+                return SubmitResult(last.signature if last else None, "timeout" if last else "failed", str(e)), "not_sent"
             tx_kind = kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
             res = await send_item(ex, src, item.get("data") or {}, job, tx_kind, max_allowance=amount_raw)
             await _record(session, job, src, tx_kind, res, None)
@@ -149,6 +166,8 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
         return SubmitResult(None, "failed", "nothing to send"), status
     if status in FAILED:
         return SubmitResult(last.signature, "failed", f"Relay reported {status}; a refund goes back to the source wallet"), status
+    if status not in DONE:
+        return SubmitResult(last.signature, "timeout", "Origin transaction confirmed; destination settlement is still unconfirmed."), status
     if status in DONE and last.status == "confirmed":
         # Helm's Relay app fee, if the quote carried one: Relay holds it for the treasury until claimed, so it goes in
         # the ledger as claimable. A route that failed, was refunded or hasn't filled records nothing.

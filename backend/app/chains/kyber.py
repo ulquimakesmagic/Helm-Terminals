@@ -12,6 +12,7 @@ Docs: docs.kyberswap.com, Aggregator API, EVM swaps.
 """
 
 import httpx
+import time
 from eth_abi import encode as abi_encode
 from eth_utils import keccak
 
@@ -80,13 +81,30 @@ class KyberSwap:
         charge = "currency_in" if side == "buy" else "currency_out"
         first = await self._route(network, token_in, token_out, amount, charge)
         router = first["routerAddress"]
+        from ..services.kyber_intent import ROUTER, validate_calldata
+        from ..services.execution_intent import AmountBound, ExecutionIntent
+        if router.lower() != ROUTER:
+            raise AdapterError("Kyber selected an unreviewed router; no approval was sent")
+        first_out = int(first["routeSummary"].get("amountOut") or 0)
+        minimum = first_out * (10_000 - int(max(0, min(slippage_pct, 20)) * 100)) // 10_000
+        if minimum <= 0:
+            raise AdapterError("Kyber did not supply a usable output floor")
+        intent = ExecutionIntent(network, wallet.lower(), frozenset({wallet.lower()}), frozenset({ROUTER}),
+            (AmountBound(token_in.lower(), amount),), (AmountBound(token_out.lower(), minimum),), (), (), int(time.time()) + 120)
+        fee_bps, fee_receiver = self.fee_bps, self.fee_receiver
 
         async def build() -> bytes:
+            intent.check_live(network, wallet.lower())
             fresh = await self._route(network, token_in, token_out, amount, charge)  # a fresh price at send time
+            if int(fresh["routeSummary"].get("amountOut") or 0) < minimum:
+                raise AdapterError("Kyber's refreshed quote is below the approved output floor")
             built = await self._build(network, fresh, wallet, slippage_pct)
             if built.get("routerAddress", router).lower() != router.lower():
                 raise AdapterError("KyberSwap changed router address between quote and swap; try again")
-            return bytes.fromhex(built["data"].removeprefix("0x"))
+            data = bytes.fromhex(built["data"].removeprefix("0x"))
+            await validate_calldata(rpc, router, data, amount if side == "buy" else 0, intent,
+                                     fee_bps=fee_bps, fee_receiver=fee_receiver)
+            return data
 
         steps = []
         if side == "sell" and await rpc.erc20_allowance(token, wallet, router) < amount:

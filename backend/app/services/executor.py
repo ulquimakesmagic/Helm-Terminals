@@ -235,9 +235,12 @@ async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call,
 def _finish(job: Job, results: list[SubmitResult]) -> None:
     """A transaction that was sent but not confirmed in time may still land, so a job with any such transaction is
     "unconfirmed", never "failed": reporting it as failed invites a retry that could buy or send twice."""
+    from .execution_journal import seal
+
+    seal(job, results)
     ok = sum(1 for r in results if r.status == "confirmed")
     if results and ok == len(results):
-        job.status = "confirmed"
+        job.status = "submitted" if (job.params or {}).get("required_followup_pending") else "confirmed"
     elif any(r.status == "timeout" for r in results):
         job.status = "unconfirmed"
     else:
@@ -476,6 +479,9 @@ async def run_built(
     job.status = "submitted"
     await db.commit()
     setup_kind = f"{kind}_setup"[:24]
+    from .execution_journal import require_steps
+    if wallet:
+        await require_steps(db, job, wallet.id, [setup_kind] * len(built.pre) + [kind])
     for raw in built.pre:
         async def persist_setup(signature: str) -> None:
             await _persist_pending_transaction(job, wallet, setup_kind, signature)
@@ -519,7 +525,11 @@ async def run_required_followup(
     await db.commit()
     res = await submit_tracked(ex, job, wallet, kind, raw, refs)
     await _record(db, job, wallet, kind, res, None)
-    _finish(job, [SubmitResult("primary", "confirmed"), res])
+    if res.status == "confirmed":
+        job.params = {**job.params, "required_followup_pending": False}
+    primary = (await db.execute(select(Transaction).where(Transaction.job_id == job.id,
+        Transaction.kind == "deploy", Transaction.status == "confirmed"))).scalars().all()
+    _finish(job, [*[SubmitResult(t.signature, "confirmed") for t in primary], res])
     await db.commit()
     return res
 
@@ -533,14 +543,22 @@ async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Walle
     from .evm_exec import EvmCall
 
     sender = ex.evm(wallet.network)
+    from .execution_journal import require_steps
+
+    await require_steps(db, job, wallet.id, [
+        kind if i == len(plan.steps) - 1 else f"{kind}_{step.label}"[:24]
+        for i, step in enumerate(plan.steps) if step.essential
+    ])
     last = None
     for i, step in enumerate(plan.steps):
         to, data = step.to, step.data
         try:
             if step.build:
                 built = await step.build()
-                if built is None:  # the step decided there's nothing to do (e.g. no fees in that token)
-                    continue
+                if built is None:
+                    if step.essential:
+                        raise AdapterError("Required execution step produced no transaction; completion is unverified")
+                    continue  # explicitly optional cleanup with nothing to collect
                 to, data = built if isinstance(built, tuple) else (to, built)
         except AdapterError as e:
             res = SubmitResult(None, "failed", str(e))
@@ -648,6 +666,13 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
         plans = await asyncio.gather(*(plan_for(w) for w in wallets))
         from .evm_exec import EvmCall
         sender = ex.evm(wallets[0].network)
+
+        from .execution_journal import require_steps
+        for w, (p, _) in zip(wallets, plans):
+            if p:
+                await require_steps(db, job, w.id, [
+                    side if i == len(p.steps) - 1 else f"{side}_{step.label}"[:24]
+                    for i, step in enumerate(p.steps) if step.essential])
 
         async def fire(w, plan):
             out = []

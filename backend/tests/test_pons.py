@@ -44,7 +44,11 @@ class PonsNode(FakeEvm):
         sel, body = data[:4], data[4:]
         value = int(tx.get("value", "0x0"), 16)
         w = lambda n: "0x" + abi_encode(["uint256"], [n]).hex()  # noqa: E731
+        if to == "0x6131b5fae19ea4f9d964eac0408e4408b66337b5" and sel == selector("isWhitelist(address)"):
+            return w(1)
         if to == FACTORY.lower():
+            if sel == selector("canLaunch(address)"):
+                return w(1)
             if sel == selector("launchFee()"):
                 return w(FEE)
             if sel == selector("previewLaunchEconomics(uint256,address)"):
@@ -177,7 +181,25 @@ async def test_claims():
     assert len(plan.steps) == 1 and plan.steps[0].value == 0
 
 
-async def test_pons_through_the_api(client, fake_rpc):
+async def test_pons_is_not_listed_as_available_while_its_reward_splitter_is_off(client):
+    pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
+    assert pads["pons"]["status"] != "available"
+    assert "PONS_REWARDS_ENABLED" in registry.needs_setup("pons")
+    h = await signup(client)
+    w = (await client.post("/wallets", json={"network": "robinhood", "count": 1}, headers=h)).json()[0]
+    r = await client.post("/launches", json={"launchpad": "pons", "name": "Hood Cat", "symbol": "hood",
+                                             "dev_wallet_id": w["id"]}, headers=h)
+    assert r.status_code == 400 and "paused" in r.json()["detail"]
+
+
+async def test_pons_through_the_api(client, fake_rpc, monkeypatch):
+    # The deploy mechanics, with the release gate opened for the test only (the splitter is covered separately).
+    real = registry.needs_setup
+    monkeypatch.setattr(registry, "needs_setup", lambda lid: None if lid == "pons" else real(lid))
+    import app.routes.launches as launches_routes
+
+    if hasattr(launches_routes, "needs_setup"):
+        monkeypatch.setattr(launches_routes, "needs_setup", lambda lid: None if lid == "pons" else real(lid))
     node = PonsNode()
     registry._cache["pons"] = PonsAdapter(node)
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"robinhood": node})

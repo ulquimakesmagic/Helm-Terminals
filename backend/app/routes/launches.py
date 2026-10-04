@@ -566,6 +566,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
 
         async def work(session, j):
             launch = await session.get(Launch, l.id)
+            if l.launchpad == "pumpfun" and share.get("bps"):
+                j.params = {**j.params, "required_followup_pending": True}
+                await session.commit()
             if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
                 return
             req = CreateRequest(name=l.name, symbol=l.symbol, description=l.description, image_bytes=l.image_blob,
@@ -620,7 +623,10 @@ async def _fund_first(session, ex: Executor, job: Job, launch: Launch, funding: 
     err = await run_funding(session, ex, job, funding, dev, need_raw)
     if err is None:
         return True
-    job.status, job.params = "failed", {**job.params, "error": err}
+    from ..models import Transaction
+    sent = (await session.execute(select(Transaction.id).where(Transaction.job_id == job.id,
+        Transaction.signature.is_not(None)).limit(1))).first()
+    job.status, job.params = "unconfirmed" if sent else "failed", {**job.params, "error": err}
     job.updated_at = utcnow()
     launch.status = prior_status
     await session.commit()
@@ -905,6 +911,20 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
 
 class ClaimBody(SpendConfirm):
     wallet_id: str
+
+
+@router.get("/launches/{launch_id}/pons-rewards")
+async def pons_reward_view(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    l = await _owned_launch(db, user, launch_id)
+    if l.launchpad != "pons" or l.status != "live" or not l.mint_address:
+        raise HTTPException(409, "Pons reward details require a live Pons launch")
+    from ..services.pons_reward_view import snapshot
+    try:
+        import asyncio
+        async with asyncio.timeout(20):
+            return await snapshot(get_adapter("pons"), l.mint_address, (l.launchpad_params or {}).get("pons_rewards"))
+    except Exception:
+        raise HTTPException(503, "Pons reward balances could not be verified. Try again later.") from None
 
 
 @router.post("/launches/{launch_id}/claim-fees")
@@ -1231,7 +1251,9 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
 
         # Platform-fee transfers do not decide whether the user's trade job succeeded.
         primary_txs = [tx for tx in txs if tx.kind != "platform_fee"]
-        if primary_txs and all(tx.status in ("confirmed", "failed") for tx in primary_txs):
+        from ..services.execution_journal import can_resolve
+
+        if primary_txs and can_resolve(j, primary_txs) and all(tx.status in ("confirmed", "failed") for tx in primary_txs):
             if all(tx.status == "confirmed" for tx in primary_txs):
                 j.status = "confirmed"
             elif any(tx.status == "confirmed" for tx in primary_txs):
@@ -1259,6 +1281,8 @@ EVM_TRADE_GAS = 400_000
 
 
 async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession, ex: Executor, dev: Wallet, adapter):
+    if l.launchpad == "pons" and not await adapter.can_launch(dev.address):
+        raise HTTPException(400, "This wallet is not eligible to launch on Pons. Request eligibility from Pons before funding it.")
     sender = ex.evm(l.network)
     coin = EVM_CHAINS[l.network]["native"]
     params = dict(l.launchpad_params or {})
@@ -1269,7 +1293,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         try:
             launch_fee = await adapter.launch_fee()
         except Exception:
-            launch_fee = 0
+            raise HTTPException(503, "The launchpad fee could not be verified. Refresh before confirming a launch.") from None
     bal = await sender.rpc.get_balance(dev.address)
     need_raw = dev_buy + launch_fee + gas
     warnings = []

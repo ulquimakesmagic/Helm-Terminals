@@ -46,6 +46,31 @@ class Session(Base):
     channel: Mapped[str] = mapped_column(String(8), default="web")  # web | bot
 
 
+class AccountSecurity(Base):
+    __tablename__ = "account_security"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recovery_hold_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RecoveryToken(Base):
+    __tablename__ = "recovery_tokens"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    purpose: Mapped[str] = mapped_column(String(24))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Folder(Base):
     __tablename__ = "folders"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
@@ -385,6 +410,8 @@ class RevenueEvent(Base):
     reference: Mapped[str | None] = mapped_column(String(120), nullable=True)  # tx signature / hash / claim id
     fee_record_id: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     note: Mapped[str] = mapped_column(String(200), default="")
+    receipt_evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
@@ -398,6 +425,13 @@ class AccountStatus(Base):
     reason: Mapped[str] = mapped_column(String(300), default="")
     changed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ExecutionNonce(Base):
+    __tablename__ = "execution_nonces"
+    key: Mapped[str] = mapped_column(String(90), primary_key=True)
+    next_nonce: Mapped[int] = mapped_column(BigInteger)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # Two statements, run separately: asyncpg refuses several commands in one prepared statement.

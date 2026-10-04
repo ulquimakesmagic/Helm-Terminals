@@ -66,9 +66,12 @@ async def test_profile_edit_is_web_only(client):
     assert (await client.get("/profile", headers=h)).status_code == 200
 
 
-async def test_profile_net_flow_is_usd_valued_per_chain(client, fake_rpc):
+async def test_profile_net_flow_is_usd_valued_per_chain(client, fake_rpc, monkeypatch):
     """The headline net flow is USD-valued per chain at each chain's own coin price, with the
     per-chain amounts kept beside it; chains without recorded flows are simply absent."""
+    from app.routes import profile
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(profile, "coin_prices", AsyncMock(return_value={"SOL": 150, "ETH": 2000}))
     h = await signup(client, "flow@example.com", main=False)
     await live_launch(client, h, fake_rpc)
     d = (await client.get("/profile", headers=h)).json()

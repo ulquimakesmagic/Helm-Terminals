@@ -113,8 +113,8 @@ async def test_single_step_signature_is_committed_before_broadcast(client, fake_
 
 
 @pytest.mark.parametrize(("chain_status", "job_status", "event_status"), [
-    ("confirmed", "confirmed", "received"),
-    ("failed", "failed", "failed"),
+    ("confirmed", "unconfirmed", "received"),
+    ("failed", "unconfirmed", "failed"),
     ("timeout", "unconfirmed", "pending"),
 ])
 async def test_job_recheck_resolves_solana_signature_and_fee_ledger(
@@ -178,7 +178,7 @@ async def test_unconfirmed_evm_job_rechecks_its_saved_receipt(client, fake_rpc, 
     monkeypatch.setattr(launches_route, "shared_evm", lambda network: ReceiptNode())
     response = await client.get(f"/jobs/{job_id}", headers=h)
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "confirmed"
+    assert response.json()["status"] == "unconfirmed"  # legacy job lacks a complete execution journal
     assert response.json()["transactions"][0]["status"] == "confirmed"
 
 

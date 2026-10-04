@@ -16,6 +16,7 @@ from .conftest import OWNER_EMAIL, SOL, enable_2fa, signup, totp_code
 from .test_api import confirm, live_launch, sol_transfers
 
 PW = "correct-horse-battery"
+PW_BAD = "wrong-password"  # a fake password that must never be accepted
 EVM_TREASURY = "0x52908400098527886E0F7030069857D2E4169EE7"  # a valid EIP-55 checksummed address
 
 
@@ -173,7 +174,7 @@ async def test_the_superadmin_role_cant_be_granted_or_taken(client):
 
 async def test_sensitive_changes_need_password_and_a_fresh_2fa_code(client):
     hb, sb = await boss(client)
-    bad_pw = {"address": EVM_TREASURY, "confirm": {"password": "wrong-password", "totp": await totp_code(sb)}}
+    bad_pw = {"address": EVM_TREASURY, "confirm": {"password": PW_BAD, "totp": await totp_code(sb)}}
     assert (await client.put("/admin/treasury/evm", json=bad_pw, headers=hb)).status_code == 400
     bad_code = {"address": EVM_TREASURY, "confirm": {"password": PW, "totp": "000000"}}
     assert (await client.put("/admin/treasury/evm", json=bad_code, headers=hb)).status_code == 401
@@ -283,7 +284,8 @@ async def test_trade_fee_goes_to_the_admin_treasury_and_only_helms_part_is_reven
     assert r.json()["reconciled"] == 1
     sol = next(t for t in (await client.get("/admin/revenue/summary", headers=hb)).json()["totals"]
                if t["asset"] == "SOL")
-    assert sol["unreconciled"] == 0 and sol["received"] == 7_500_000
+    # Human review is an annotation; it cannot certify a treasury receipt.
+    assert sol["unreconciled"] == 7_500_000 and sol["received"] == 7_500_000
 
 
 async def test_a_failed_trade_records_no_revenue(client, fake_rpc):
@@ -365,7 +367,7 @@ async def test_kyber_dex_fee_is_one_fee_exact_on_buys_estimated_on_sells():
         if req.url.path.endswith("/routes"):
             if "feeAmount" in req.url.params:
                 assert req.url.params["feeReceiver"] == EVM_TREASURY and req.url.params["feeAmount"] == "50"
-            return httpx.Response(200, json={"data": {"routerAddress": "0x" + "11" * 20,
+            return httpx.Response(200, json={"data": {"routerAddress": "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5",
                                                       "routeSummary": {"amountOut": "995000"}}})
         raise AssertionError(req.url)
 
@@ -540,14 +542,14 @@ async def test_suspending_needs_a_reason_ends_sessions_and_is_audited(client):
                           headers=hb)
     assert r.status_code == 200
     assert (await client.get("/wallets", headers=h)).status_code == 401  # session ended
-    tok = (await client.post("/auth/login", json={"email": "bad@example.com", "password": PW})).json()["token"]
-    r = await client.get("/wallets", headers={"Authorization": f"Bearer {tok}"})
-    assert r.status_code == 403 and "suspended" in r.json()["detail"]
+    r = await client.post("/auth/login", json={"email": "bad@example.com", "password": PW})
+    assert r.status_code == 403  # do not issue fresh sessions for suspended accounts
     items = (await client.get("/admin/users?status=suspended", headers=hb)).json()["items"]
     assert items[0]["flags"][0]["reason"] == "fraud report #12"
     r = await client.post(f"/admin/users/{uid}/restore", json={"reason": "appeal accepted", "confirm": await proof(sb)},
                           headers=hb)
     assert r.status_code == 200
+    tok = (await client.post("/auth/login", json={"email": "bad@example.com", "password": PW})).json()["token"]
     assert (await client.get("/wallets", headers={"Authorization": f"Bearer {tok}"})).status_code == 200
     actions = [e["action"] for e in (await client.get("/admin/audit", headers=hb)).json()["items"]]
     assert "user.suspend" in actions and "user.restore" in actions
@@ -611,7 +613,7 @@ async def test_a_step_up_code_is_spent_even_when_the_change_is_refused(client):
     assert (await client.put("/admin/treasury/solana", json=bad, headers=hb)).status_code == 400
     good = {"address": str(Keypair().pubkey()), "confirm": {"password": PW, "totp": code}}
     assert (await client.put("/admin/treasury/solana", json=good, headers=hb)).status_code == 401
-    wrong = {"address": str(Keypair().pubkey()), "confirm": {"password": "nope-nope-nope", "totp": "123456"}}
+    wrong = {"address": str(Keypair().pubkey()), "confirm": {"password": PW_BAD, "totp": "123456"}}
     await client.put("/admin/treasury/solana", json=wrong, headers=hb)
     assert "stepup.denied" in [e["action"] for e in (await client.get("/admin/audit", headers=hb)).json()["items"]]
 

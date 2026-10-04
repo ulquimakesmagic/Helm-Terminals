@@ -15,7 +15,7 @@ from app.main import app
 from app.models import Launch, User
 from app.services import market as mk
 from app.services.market import Market, MarketError, get_market
-from .conftest import signup
+from .conftest import TEST_OPENAPI, signup
 
 TOKEN = "So11111111111111111111111111111111111111112"
 POOL = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2"
@@ -91,7 +91,7 @@ class Provider:
         if request.url.host == "graph.codex.io":
             self.codex_requests.append(request)
             assert request.url.path == "/graphql" and request.method == "POST"
-            assert request.headers["Authorization"] == "test-only-secret"
+            assert request.headers["Authorization"] == TEST_OPENAPI
             await asyncio.sleep(0)
             if not isinstance(self.codex, list) or not self.codex:
                 return httpx.Response(500)
@@ -106,7 +106,7 @@ class Provider:
         self.requests.append(request)
         assert request.url.host == "openapi.gmgn.ai"
         assert request.url.path == "/v1/token/info" and request.method == "GET"
-        assert request.headers["X-APIKEY"] == "test-only-secret"
+        assert request.headers["X-APIKEY"] == TEST_OPENAPI
         assert "X-Signature" not in request.headers
         assert abs(int(request.url.params["timestamp"]) - time.time()) < 10
         UUID(request.url.params["client_id"])
@@ -119,7 +119,7 @@ class Provider:
 async def provider():
     p = Provider()
     async with httpx.AsyncClient(transport=httpx.MockTransport(p.handle)) as client:
-        m = Market(client=client, api_key="test-only-secret")
+        m = Market(client=client, api_key=TEST_OPENAPI)
         app.dependency_overrides[get_market] = lambda: m
         yield p, m
     app.dependency_overrides.pop(get_market, None)
@@ -129,7 +129,7 @@ async def provider():
 async def codex_provider(client):
     p = Provider()
     async with httpx.AsyncClient(transport=httpx.MockTransport(p.handle)) as client:
-        m = Market(client=client, api_key="", codex_key="test-only-secret")
+        m = Market(client=client, api_key="", codex_key=TEST_OPENAPI)
         app.dependency_overrides[get_market] = lambda: m
         yield p, m
     app.dependency_overrides.pop(get_market, None)
@@ -509,7 +509,7 @@ def test_mismatched_tokens_pools_and_links():
 async def test_malformed_envelopes_fail_without_leaking_or_crashing(payload):
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))) as client:
         with pytest.raises(MarketError) as error:
-            await Market(client=client, api_key="test-only").snapshot("solana", TOKEN)
+            await Market(client=client, api_key=TEST_OPENAPI).snapshot("solana", TOKEN)
         assert "secret" not in str(error.value)
 
 
@@ -594,7 +594,7 @@ async def test_diagnostics_only_include_safe_fields(caplog, payload):
     response = httpx.Response(403, json=payload) if payload is not None else httpx.Response(403, text="private contents test-only-secret")
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response)) as client:
         with pytest.raises(MarketError) as error:
-            await Market(client=client, api_key="test-only-secret").snapshot("solana", TOKEN)
+            await Market(client=client, api_key=TEST_OPENAPI).snapshot("solana", TOKEN)
     assert error.value.kind == "access_denied"
     diagnostics = [r.message for r in caplog.records if r.name == "app.services.market" and "http_status=" in r.message]
     assert len(diagnostics) == 1 and "http_status=403" in diagnostics[0]

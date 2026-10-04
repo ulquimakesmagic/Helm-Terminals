@@ -5,6 +5,8 @@ import json
 
 import httpx
 from eth_abi import decode as abi_decode
+from eth_abi import encode as abi_encode
+from eth_utils import keccak
 
 from app.chains import registry
 from app.chains.kyber import NATIVE, KyberSwap
@@ -26,10 +28,18 @@ def kyber_transport(log: list, amount_out: int = 12345):
         log.append(req)
         if req.url.path.endswith("/routes"):
             return httpx.Response(200, json={"code": 0, "data": {"routerAddress": ROUTER, "routeSummary": {
-                "tokenIn": req.url.params["tokenIn"], "amountIn": req.url.params["amountIn"], "amountOut": str(amount_out)}}})
+                "tokenIn": req.url.params["tokenIn"], "tokenOut": req.url.params["tokenOut"], "amountIn": req.url.params["amountIn"], "amountOut": str(amount_out),
+                "feeBps": int(req.url.params.get("feeAmount", 0)), "feeReceiver": req.url.params.get("feeReceiver", "")}}})
         body = json.loads(req.content)
         assert body["routeSummary"]["amountOut"] == str(amount_out)
-        return httpx.Response(200, json={"code": 0, "data": {"routerAddress": ROUTER, "data": "0xdeadbeef", "amountOut": str(amount_out)}})
+        from app.services.kyber_intent import EXECUTION
+        route = body["routeSummary"]
+        bps, receiver = route["feeBps"], route["feeReceiver"]
+        desc = (route["tokenIn"], route["tokenOut"], [], [], [receiver] if bps else [], [bps] if bps else [],
+                body["recipient"], int(route["amountIn"]), amount_out * (10000-body["slippageTolerance"]) // 10000,
+                (128 | (64 if route["tokenOut"].lower() == NATIVE.lower() else 0)) if bps else 0, b"")
+        calldata = keccak(text=f"swapGeneric({EXECUTION})")[:4] + abi_encode([EXECUTION], [(ROUTER, "0x"+"00"*20, b"route", desc, b"")])
+        return httpx.Response(200, json={"code": 0, "data": {"routerAddress": ROUTER, "data": "0x"+calldata.hex(), "amountOut": str(amount_out)}})
     return httpx.MockTransport(handler)
 
 
@@ -39,7 +49,8 @@ async def test_kyber_buy_and_sell_plans_with_fee():
     node = PonsNode()
     buy = await k.prepare_trade("robinhood", node, TOKEN, "0x" + "ab" * 20, "buy", 10**15, 5)
     assert [s.label for s in buy.steps] == ["buy"] and buy.steps[0].to == ROUTER and buy.steps[0].value == 10**15
-    assert await buy.steps[0].build() == bytes.fromhex("deadbeef")
+    from app.services.kyber_intent import SELECTORS
+    assert (await buy.steps[0].build())[:4] in SELECTORS
     q = log[0].url.params
     assert log[0].url.path == "/robinhood/api/v1/routes" and q["tokenIn"] == NATIVE and q["tokenOut"] == TOKEN
     assert q["feeAmount"] == "100" and q["isInBps"] == "true" and q["chargeFeeBy"] == "currency_in"

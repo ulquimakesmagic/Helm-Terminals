@@ -45,10 +45,17 @@ def _caps(n) -> dict:
 
 @router.get("/chains")
 async def chains():
+    from ..services.market import DEX_CHAIN, CHART_CHAIN
+    def core_caps(network):
+        return {"wallets": "implemented", "launches": "launchpad_specific",
+                "trading": "adapter_and_pool_specific", "cash_routes": "implemented",
+                "market_metrics": "implemented" if network in DEX_CHAIN else "unavailable",
+                "market_charts": "implemented" if network in CHART_CHAIN else "unavailable",
+                "eligibility": "checked_per_action"}
     core = [{"id": "solana", "name": "Solana", "family": "solana", "enabled": True,
-             "capabilities": "full: wallets, launches, trading, market data"}] + [
+             "capabilities": core_caps("solana")}] + [
         {"id": k, "name": v["name"], "family": "evm", "enabled": True, "chain_id": v["chain_id"],
-         "capabilities": "full: wallets, launches, trading, market data"} for k, v in EVM_CHAINS.items()]
+         "capabilities": core_caps(k)} for k, v in EVM_CHAINS.items()]
     return {"core": core, "extra": [_net_out(n) for n in EXTRA_NETWORKS.values()],
             "note": "Enabled networks are the ones the server lists in EXTRA_NETWORKS (mainnets by default; "
                     "ALLOW_MAINNET_EXTRA_NETWORKS=false turns every mainnet off)."}

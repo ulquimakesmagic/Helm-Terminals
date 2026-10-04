@@ -96,8 +96,16 @@ class EvmSender:
     async def send(self, address: str, signer_ref: str, call: EvmCall,
                    on_signed: Callable[[str], Awaitable[None]] | None = None,
                    max_allowance: int | None = None,
-                   require_contract_recipients: bool = False) -> EvmResult:
+                   require_contract_recipients: bool = False, intent=None) -> EvmResult:
         from .tx_guard import check_evm_call
+
+        if intent is not None:
+            from .execution_intent import evm_transfer_effect, validate_effects
+            from ..chains.base import AdapterError
+            try:
+                validate_effects(intent, [evm_transfer_effect(call)], network=self.rpc.network, wallet=address.lower())
+            except AdapterError as exc:
+                return EvmResult(None, "failed", f"refused before signing: {exc}")
 
         if reason := await check_evm_call(self.rpc, call, address, max_allowance=max_allowance,
                                           require_contract_recipients=require_contract_recipients):
@@ -111,6 +119,12 @@ class EvmSender:
                 return EvmResult(None, "failed", f"simulation failed: {e}")
             fees = await self.fees()
             nonce = max(await self.rpc.nonce(address), _next_nonce.get(key, 0))
+            from ..config import get_settings
+            if get_settings().env == "production":
+                from .execution_lease import assert_owned
+                from .execution_nonce import reserve
+                await assert_owned()
+                nonce = await reserve(self.rpc.chain_id, address, nonce)
             tx = self._unsigned(nonce, gas, fees, call)
             try:
                 raw = await self.sign(tx, signer_ref)

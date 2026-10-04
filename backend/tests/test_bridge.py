@@ -49,7 +49,7 @@ def relay_mock(seen: list, statuses: list[str], fail_quote: str | None = None):
                 ],
                 "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.06"}},
                 "details": {"timeEstimate": 20, "currencyOut": {
-                    "currency": {"symbol": "BNB", "decimals": 18}, "amount": str(3 * 10**16), "minimumAmount": str(29 * 10**15),
+                    "currency": {"symbol": "BNB", "decimals": 18, "chainId": body["destinationChainId"], "address": body["destinationCurrency"]}, "amount": str(3 * 10**16), "minimumAmount": str(29 * 10**15),
                     "amountUsd": "19.8"}},
             })
         if req.url.path == "/intents/status/v3":
@@ -92,7 +92,7 @@ async def test_usdc_on_base_routes_to_bnb_with_disclosed_fee(client, fake_rpc, m
         assert q["originCurrency"] == BASE_USDC and q["destinationCurrency"] == EVM_NATIVE
         assert q["appFees"] == [{"recipient": "0x" + "11" * 20, "fee": "30"}] and q["recipient"] == dst["address"]
 
-        r = await client.post("/bridge", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
+        r = await client.post("/bridge", json={**body, "confirm": True, "quote_approval": pf["quote_approval"], "preflight_hash": pf["preflight_hash"],
                                                "idempotency_key": "route-one"}, headers=h)
         assert r.status_code == 200, r.text
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
@@ -143,11 +143,16 @@ async def test_solana_step_is_compiled_from_relay_instructions(fake_rpc):
     data = {"instructions": [{"programId": "11111111111111111111111111111111", "data": "02000000e803000000000000",
                               "keys": [{"pubkey": ref.address, "isSigner": True, "isWritable": True},
                                        {"pubkey": other, "isSigner": False, "isWritable": True}]}],
-            "addressLookupTableAddresses": [str(Keypair().pubkey())]}
+            "addressLookupTableAddresses": []}
     res = await _send_item(Executor(fake_rpc, signer), w, data)
     assert res.status == "confirmed"
     tx = VersionedTransaction.from_bytes(fake_rpc.sent[-1])
     assert str(tx.message.account_keys[0]) == ref.address and len(tx.message.instructions) == 1
+    data["addressLookupTableAddresses"] = [str(Keypair().pubkey())]
+    before = len(fake_rpc.sent)
+    rejected = await _send_item(Executor(fake_rpc, signer), w, data)
+    assert rejected.status == "failed" and "lookup table" in rejected.error
+    assert len(fake_rpc.sent) == before
 
 
 async def _none():

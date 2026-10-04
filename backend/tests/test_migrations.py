@@ -34,7 +34,7 @@ def test_alembic_bootstraps_a_fresh_database(tmp_path):
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "users" in tables and "transactions" in tables and "alembic_version" in tables
         version = db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert version == "11d712bf1eb8"
+        assert version == "42c9a01f0003"
 
 
 def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
@@ -56,4 +56,25 @@ def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
     with sqlite3.connect(path) as db:
         row = db.execute("SELECT key FROM auth_failures WHERE id='keep-me'").fetchone()
         assert row == ("redacted-test-key",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "11d712bf1eb8"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0003"
+
+
+def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
+    path = tmp_path / "upgrade.db"
+    url = f"sqlite+aiosqlite:///{path.as_posix()}"
+    run_alembic(url, "upgrade", "11d712bf1eb8")
+    with sqlite3.connect(path) as db:
+        db.execute("INSERT INTO revenue_events (id, source, network, asset, amount_raw, decimals, estimated, status, note, created_at) "
+                   "VALUES ('old-fee', 'dex_trade_fee', 'base', 'ETH', 100, 18, 0, 'received', '', '2026-09-29')")
+    run_alembic(url, "upgrade", "head")
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT status, estimated, receipt_evidence FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending", 1, None)
+        backup = tmp_path / "backup.db"
+        with sqlite3.connect(backup) as restored:
+            db.backup(restored)
+    run_alembic(url, "downgrade", "11d712bf1eb8")
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT status FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending",)
+    with sqlite3.connect(backup) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0003"
+

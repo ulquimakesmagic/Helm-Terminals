@@ -9,6 +9,7 @@ complete, nothing is deployed.
 
 import asyncio
 import math
+from datetime import timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,6 +97,8 @@ async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet
         "from_chain": chain_name(src.network), "from_network": src.network, "send": f"{usd} {symbol}", "amount_usd": usd,
         "receive": f"{coin} in the dev wallet on {chain_name(dst.network)}",
         "provider": "Relay (relay.link)", "route_fee": ex.relay.fee_note,
+        "minimum_receive_raw": str(shortfall_raw), "minimum_receive_network": dst.network,
+        "fee_bps": ex.relay.fee_bps, "fee_recipient": ex.relay.fee_recipient,
         "leftover": "Anything not used by the launch stays in the dev wallet",
     }, None
 
@@ -118,8 +121,16 @@ async def run_funding(session: AsyncSession, ex: Executor, job: Job, plan: dict,
     if src is None:
         return "the funding wallet no longer exists"
     amount_raw = int(plan["amount_usd"]) * 10 ** STABLE_DECIMALS[src.network]
+    if not plan.get("minimum_receive_raw"):
+        return "Funding has no approved minimum; request a new deployment preview."
+    if (plan.get("fee_bps"), plan.get("fee_recipient")) != (ex.relay.fee_bps, ex.relay.fee_recipient):
+        return "Funding fees changed; request a new deployment preview."
+    from .routing import currency
+
+    bounds = {"minimum_raw": plan["minimum_receive_raw"], "network": dst.network,
+              "asset": currency(dst.network, "native")[1], "expires": int(job.created_at.replace(tzinfo=timezone.utc).timestamp()) + 120}
     res, status = await execute_route(session, ex, job, src, dst, "stable", "native", amount_raw, SLIPPAGE_PCT,
-                                      kind="fund_route", key="funding")
+                                      kind="fund_route", key="funding", approved_bounds=bounds)
     if res.status != "confirmed":
         return f"Funding route wasn't sent: {res.error or 'failed'}. Nothing was deployed."
     if status not in DONE:

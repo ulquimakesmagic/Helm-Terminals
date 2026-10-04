@@ -20,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cryptography.fernet import InvalidToken
 
 from ..models import AuthFailure, TotpUse, User, utcnow
-from ..security import decrypt_secret, verify_password
+from ..security import decrypt_secret
+from .passwords import verify_async
 
 WINDOW = timedelta(minutes=15)
 LOGIN_LIMIT = 10  # wrong passwords per email from one client address, per window
@@ -138,7 +139,7 @@ async def check_password(db: AsyncSession, user: User, password: str, key: str |
     use it to lock the owner out of signing in."""
     key = key or f"reauth:{user.id}"
     await ensure_not_locked(db, key, LOGIN_LIMIT)
-    if verify_password(password, user.password_hash):
+    if await verify_async(password, user.password_hash):
         return True
     await record_failure(db, key)
     return False

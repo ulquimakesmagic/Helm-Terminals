@@ -47,7 +47,7 @@ async def test_signup_still_works_when_the_signer_is_down_and_main_can_be_finish
     app.dependency_overrides[get_signer] = lambda: BrokenSigner()
     try:
         r = await client.post("/auth/register", json={"email": "late@example.com", "password": "correct-horse-battery"})
-        assert r.status_code == 201 and r.json()["main_wallet"] is False
+        assert r.status_code == 201 and "message" in r.json()
         tok = (await client.post("/auth/login", json={"email": "late@example.com", "password": "correct-horse-battery"})).json()["token"]
         h = {"Authorization": f"Bearer {tok}"}
         assert (await client.get("/wallets", headers=h)).json() == []

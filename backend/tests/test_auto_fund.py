@@ -29,7 +29,7 @@ def relay_mock(seen: list, on_status, status: str = "success"):
                         "to": "0x" + "cd" * 20, "data": "0xabcdef", "value": "0", "chainId": 8453}}]},
                 ],
                 "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.30"}},
-                "details": {"timeEstimate": 10, "currencyOut": {"currency": {"symbol": "SOL", "decimals": 9},
+                "details": {"timeEstimate": 10, "currencyOut": {"currency": {"symbol": "SOL", "decimals": 9, "chainId": seen[-1]["destinationChainId"], "address": seen[-1]["destinationCurrency"]},
                                                                 "amount": str(SOL), "minimumAmount": str(SOL)}},
             })
         if req.url.path == "/intents/status/v3":
@@ -97,7 +97,7 @@ async def test_failed_route_deploys_nothing_and_keeps_the_draft(client, fake_rpc
         r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
                                                               "idempotency_key": "af2"}, headers=h)
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "failed" and "Nothing was deployed" in str(job), job
+        assert job["status"] == "unconfirmed" and "Nothing was deployed" in str(job), job
         assert "deploy" not in [t["kind"] for t in job["transactions"]]
         assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "draft"
     finally:
@@ -143,7 +143,7 @@ async def test_fund_cash_tops_up_any_wallet_from_the_best_usdc_source(client, fa
         assert p["receive"] == "0.5 SOL" and p["send"] == "80 USDC"  # 0.5 SOL at $150 + buffer + $1, rounded up
         assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.3 and p["route_fee"] == "0.3% of the amount sent"
         assert not p["warnings"], p
-        r = await client.post("/wallets/fund-cash", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
+        r = await client.post("/wallets/fund-cash", json={**body, "confirm": True, "quote_approval": pf["quote_approval"], "preflight_hash": pf["preflight_hash"],
                                                           "idempotency_key": "cash-1"}, headers=h)
         assert r.status_code == 200, r.text
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()

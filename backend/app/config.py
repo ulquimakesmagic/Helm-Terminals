@@ -10,10 +10,18 @@ class Settings(BaseSettings):
     env: str = "development"  # development | production
     database_url: str = "sqlite+aiosqlite:///./helm.db"  # use postgresql+asyncpg://... in prod
     secret_key: str = "dev-secret-change-me"
-    session_ttl_hours: int = 24 * 7
+    session_ttl_hours: int = 12
+    build_revision: str = "unknown"
     # Only trust forwarded client IP headers when the immediate peer belongs to an explicitly verified proxy CIDR.
     # Empty by default: use the socket peer address until the hosting provider's ranges are confirmed.
     trusted_proxy_cidrs: str = ""
+    public_app_url: str = "https://helmterminals.xyz"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_implicit_tls: bool = False  # otherwise STARTTLS is required
 
     @field_validator("platform_fee_bps")
     @classmethod

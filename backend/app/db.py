@@ -51,3 +51,18 @@ async def create_all() -> None:
 
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+SCHEMA_REVISION = "42c9a01f0003"
+
+
+async def require_schema() -> None:
+    """Production never adopts or mutates a schema implicitly at API startup."""
+    from sqlalchemy import text
+    try:
+        async with get_engine().connect() as conn:
+            versions = list((await conn.execute(text("SELECT version_num FROM alembic_version"))).scalars())
+    except Exception:
+        raise RuntimeError("Database migration state unavailable. Back up and migrate explicitly before starting Helm.") from None
+    if versions != [SCHEMA_REVISION]:
+        raise RuntimeError(f"Database schema does not match {SCHEMA_REVISION}; migrate before starting Helm")

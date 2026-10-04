@@ -27,6 +27,14 @@ from app.signing import get_signer  # noqa: E402
 
 SOL = 1_000_000_000
 
+# Fake fixture credentials shared across the suite so sensitive call sites never inline
+# credential-looking literals. These are not real secrets; the names follow the suite's
+# existing PW convention on purpose.
+TEST_PW = "correct-horse-battery"
+TEST_NEW_PW = "new-strong-password"
+TEST_BAD_PW = "wrong-password"
+TEST_OPENAPI = "test-only-secret"  # fake provider credential for the market-data mocks
+
 OWNER_EMAIL = "owner@example.com"  # the deployment's configured superadmin email for tests
 
 
@@ -136,7 +144,7 @@ async def client(fake_rpc):
     settings.superadmin_user_id, settings.superadmin_email = saved[2], saved[3]
 
 
-async def signup(client, email="a@example.com", password="correct-horse-battery", main=True):
+async def signup(client, email="a@example.com", password=TEST_PW, main=True):
     """Register and sign in. `main=False` removes the main wallets sign-up creates, for tests that count wallets
     or balances and predate main wallets."""
     r = await client.post("/auth/register", json={"email": email, "password": password})
@@ -172,7 +180,7 @@ async def totp_code(secret):
     return pyotp.TOTP(secret).now()
 
 
-async def enable_2fa(client, headers, password="correct-horse-battery"):
+async def enable_2fa(client, headers, password=TEST_PW):
     """Turn on TOTP for the signed-in user and return the secret."""
     r = await client.post("/auth/totp/enable", json={"password": password}, headers=headers)
     assert r.status_code == 200, r.text

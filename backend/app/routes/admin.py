@@ -249,7 +249,7 @@ async def revenue_ledger(start: str | None = None, end: str | None = None, netwo
         "destination": r.destination, "reference": r.reference, "created_at": iso(r.created_at),
         "launch": ({"id": r.launch_id, "name": launches[r.launch_id].name, "symbol": launches[r.launch_id].symbol,
                     "token": launches[r.launch_id].mint_address} if r.launch_id in launches else None),
-        "note": r.note,
+        "note": r.note, "receipt_evidence": r.receipt_evidence, "reviewed_at": iso(r.reviewed_at),
     } for r in rows]}
 
 
@@ -261,16 +261,33 @@ class Reconcile(BaseModel):
 @router.post("/revenue/reconcile")
 async def reconcile(body: Reconcile, request: Request, user: User = Depends(superadmin),
                     db: AsyncSession = Depends(get_db)):
-    """Mark entries as matched against the treasury's on-chain history (or a provider's claim)."""
+    """Record manual review. This does not prove receipt or alter accounting status."""
     rows = (await db.execute(select(RevenueEvent).where(RevenueEvent.id.in_(body.ids),
-                                                        RevenueEvent.reconciled_at.is_(None)))).scalars().all()
+                                                        RevenueEvent.reviewed_at.is_(None)))).scalars().all()
     now = utcnow()
     for r in rows:
-        r.reconciled_at = now
+        r.reviewed_at = now
     await audit(db, user, "revenue.reconcile", ",".join(r.id for r in rows)[:120],
                 {"entries": [None, len(rows)], "note": [None, body.note]}, request)
     await db.commit()
     return {"reconciled": len(rows)}
+
+
+@router.post("/revenue/verify-dex")
+async def verify_dex(request: Request, user: User = Depends(superadmin), db: AsyncSession = Depends(get_db),
+                     ex: Executor = Depends(get_executor)):
+    from ..services.revenue import verify_dex_fee
+    # Row locks make concurrent reconciliation idempotent. No transaction is sent.
+    rows = (await db.execute(select(RevenueEvent).where(
+        RevenueEvent.source == "dex_trade_fee", RevenueEvent.receipt_evidence.is_(None))
+        .order_by(RevenueEvent.created_at).limit(2).with_for_update(skip_locked=True))).scalars().all()
+    counts = {}
+    for row in rows:
+        outcome = await verify_dex_fee(ex.evm(row.network).rpc, row)
+        counts[outcome] = counts.get(outcome, 0) + 1
+    await audit(db, user, "revenue.verify_dex", None, {k: [None, v] for k, v in counts.items()}, request)
+    await db.commit()
+    return {"checked": len(rows), **counts}
 
 
 # --- Relay app fees ------------------------------------------------------------------------------------

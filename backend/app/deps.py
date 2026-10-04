@@ -131,6 +131,7 @@ class SpendConfirm(BaseModel):
 
     confirm: bool = False
     preflight_hash: str | None = None
+    quote_approval: str | None = None
     idempotency_key: str | None = None
     totp: str | None = None
 
@@ -156,6 +157,12 @@ async def begin_spend(
         raise HTTPException(403, "Telegram is temporarily read-only; use the Helm web app to confirm transactions")
     if body.preflight_hash != pf["preflight_hash"]:
         raise HTTPException(409, "preflight_changed: review the new preflight and confirm again")
+    from .models import AccountSecurity
+
+    security = await db.get(AccountSecurity, user.id)
+    if security and security.recovery_hold_until and security.recovery_hold_until > utcnow():
+        raise HTTPException(403, "Spending is temporarily held after account recovery; try again after "
+                            + security.recovery_hold_until.isoformat() + " UTC")
     if not body.idempotency_key:
         raise HTTPException(400, "idempotency_key is required when confirm=true")
     if needs_2fa(kind):
@@ -170,7 +177,9 @@ async def begin_spend(
     ).scalar_one_or_none()
     if existing:
         return existing, False
-    job = Job(user_id=user.id, launch_id=launch_id, kind=kind, params=params, idempotency_key=body.idempotency_key,
+    from .services.execution_journal import initialize
+
+    job = Job(user_id=user.id, launch_id=launch_id, kind=kind, params=initialize(params), idempotency_key=body.idempotency_key,
               channel=getattr(user, "channel", "web"))
     db.add(job)
     await log_activity(db, user.id, f"{kind}.confirmed", "job", job.id, {"preflight_hash": body.preflight_hash})
@@ -181,11 +190,20 @@ async def begin_spend(
 _tasks: set[asyncio.Task] = set()
 
 
-async def run_job(job_id: str, fn) -> None:
+async def run_job(job_id: str, fn, *, already_claimed: bool = False) -> None:
     """Run `fn(db, job)` in its own session, in the background (or inline in tests)."""
 
     async def _wrapped() -> None:
         async with get_sessionmaker()() as db:
+            from sqlalchemy import update
+            # Claim once durably before any preparation or signature. A restarted process never replays
+            # a submitted job merely because its in-memory task disappeared.
+            if not already_claimed:
+                claim = await db.execute(update(Job).where(Job.id == job_id, Job.status == "pending")
+                                         .values(status="submitted", updated_at=utcnow()))
+                await db.commit()
+                if claim.rowcount != 1:
+                    return
             job = await db.get(Job, job_id)
             try:
                 await fn(db, job)

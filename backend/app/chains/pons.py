@@ -98,6 +98,13 @@ class PonsAdapter:
         """Pons' flat launch fee (currently 0.0005 ETH), paid on top of any dev buy."""
         return _word(await self._call(FACTORY, selector("launchFee()")))
 
+    async def can_launch(self, wallet: str) -> bool:
+        raw = await self._call(FACTORY, selector("canLaunch(address)") + abi_encode(["address"], [wallet]))
+        try:
+            return bool(abi_decode(["bool"], bytes.fromhex(raw.removeprefix("0x")))[0])
+        except Exception as exc:
+            raise AdapterError("Pons wallet eligibility could not be verified") from exc
+
     async def _call(self, to: str, data: bytes, sender: str | None = None, value: int = 0) -> str:
         tx = {"to": to, "data": "0x" + data.hex(), **({"from": sender} if sender else {}),
               **({"value": hex(value)} if value else {})}
@@ -106,6 +113,8 @@ class PonsAdapter:
     # --- launch -------------------------------------------------------------------------------
 
     async def prepare_create(self, req: CreateRequest) -> EvmPlan:
+        if not await self.can_launch(req.dev_pubkey):
+            raise AdapterError("This dev wallet is not currently eligible to launch on Pons. No launch funding was sent.")
         opts = req.options or {}
         rewards = opts.get("pons_rewards")
         recipient = req.dev_pubkey
@@ -191,7 +200,8 @@ class PonsAdapter:
     async def launched(self, token: str) -> dict:
         ret = await self._call(FACTORY, selector("getLaunchedToken(address)") + abi_encode(["address"], [token]))
         t = abi_decode([LAUNCHED_TOKEN_T], bytes.fromhex(ret[2:]))[0]
-        return {"token": t[0], "curve": to_checksum_address(t[1]), "recipient": t[3], "pair": t[4], "creator_tax_bps": t[8],
+        return {"token": t[0], "curve": to_checksum_address(t[1]), "recipient": t[3], "pair": t[4],
+                "pool_fee": t[6], "tick_spacing": t[7], "creator_tax_bps": t[8],
                 "phase": t[10], "exists": t[14]}
 
     async def _tradeable_curve(self, token: str) -> str:
@@ -261,7 +271,7 @@ class PonsAdapter:
             pending = _word(await self._call(FEE_ESCROW, selector("balanceOf(address)")
                                              + abi_encode(["address"], [rewards["splitter"]])))
             if not pending and not await self.rpc.get_balance(rewards["splitter"]):
-                raise AdapterError("no Pons rewards are waiting for this launch")
+                raise AdapterError("No escrowed or splitter-held Pons rewards are available. Unswept curve or hook fees may still exist; an authorized Pons sweep is required first.")
             data = distribution_data(rewards)
             # A successful dry run verifies counterfactual deployment, escrow claim and payout execution.
             try:

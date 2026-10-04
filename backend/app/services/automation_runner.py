@@ -116,6 +116,11 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
             if not user or suspended:
                 await _stop_in_session(db, automation, "Account is unavailable; scheduled trades stopped.")
                 return True
+            from ..models import AccountSecurity
+            security = await db.get(AccountSecurity, user.id)
+            if security and security.recovery_hold_until and security.recovery_hold_until > utcnow():
+                await _stop_in_session(db, automation, "Account recovery hold is active; create a new plan after the hold ends.")
+                return True
 
             from ..models import AutomationLimits
 

@@ -172,6 +172,8 @@ class TurnkeySigner:
         return WalletRef(signer_ref=found["privateKeyId"], address=address)
 
     async def sign_message(self, signer_ref: str, message: bytes) -> bytes:
+        from ..services.execution_lease import authorize_signer_ref
+        await authorize_signer_ref(signer_ref)
         result = await self._submit(
             "/public/v1/submit/sign_raw_payload",
             "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2",
@@ -189,6 +191,8 @@ class TurnkeySigner:
         """secp256k1 signature over an already-hashed EVM payload (Helm computes the keccak digest itself)."""
         if len(digest) != 32:
             raise SigningError("EVM digest must be 32 bytes")
+        from ..services.execution_lease import authorize_signer_ref
+        await authorize_signer_ref(signer_ref)
         result = await self._submit(
             "/public/v1/submit/sign_raw_payload",
             "ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2",

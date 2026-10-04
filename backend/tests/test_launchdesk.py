@@ -207,8 +207,8 @@ def test_kyber_quote_reports_price_impact():
     from app.chains.kyber import KyberSwap
 
     def handler(req):
-        return httpx.Response(200, json={"data": {"routerAddress": "0x" + "11" * 20, "routeSummary": {
-            "amountOut": "1", "amountInUsd": "100", "amountOutUsd": "97"}}})
+        return httpx.Response(200, json={"data": {"routerAddress": "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5", "routeSummary": {
+            "amountOut": "1000000", "amountInUsd": "100", "amountOutUsd": "97"}}})
 
     class RPC:
         async def erc20_allowance(self, *a):

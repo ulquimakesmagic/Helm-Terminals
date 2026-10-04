@@ -95,6 +95,12 @@ def needs_setup(launchpad_id: str) -> str | None:
             return "Meme.Cooking launches pin the image to IPFS, which needs a Pinata key (PINATA_JWT)"
         if launchpad_id == "tolly" and not get_settings().public_api_url:
             return "Tolly stores the token image as a link, which needs PUBLIC_API_URL on the server"
+    if launchpad_id == "pons":
+        s = get_settings()
+        # Release gate (audit sec. 6): no new Pons launches while the reward splitter is disabled or undeployed.
+        if not (s.pons_rewards_enabled and s.pons_rewards_factory):
+            return ("Pons launches are paused until Helm's reward splitter passes independent review and is deployed "
+                    "(PONS_REWARDS_ENABLED and PONS_REWARDS_FACTORY)")
     if launchpad_id == "meteora-dbc" and not get_settings().jupiter_api_key:
         return "Meteora DBC launches go through Jupiter Studio, which needs a Jupiter API key (JUPITER_API_KEY)"
     return None

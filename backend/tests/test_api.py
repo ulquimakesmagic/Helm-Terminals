@@ -6,7 +6,7 @@ from app.db import get_sessionmaker
 from app.models import FeeRecord, Transaction
 from app.signing import get_signer  # noqa: F401
 
-from .conftest import SOL, enable_2fa, signup, totp_code
+from .conftest import SOL, TEST_OPENAPI, TEST_PW, enable_2fa, signup, totp_code
 
 EXCLUDED_WORDS = ("marketplace", "volume", "nuke", "cleanup", "sniper", "generate-activity", "bundle", "block0")
 
@@ -206,7 +206,7 @@ async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
     code = (await client.post("/referrals", json={}, headers=ha)).json()["code"]
     payout = str(_Kp().pubkey())
     secret = await enable_2fa(client, ha)
-    assert (await client.put("/referrals/payout", json={"address": payout, "password": "correct-horse-battery",
+    assert (await client.put("/referrals/payout", json={"address": payout, "password": TEST_PW,
                                                          "totp": await totp_code(secret)}, headers=ha)).status_code == 200
 
     r = await client.post("/auth/register", json={"email": "fan@example.com", "password": "correct-horse-battery",
@@ -276,7 +276,7 @@ async def test_referral_payout_cannot_target_a_known_referred_wallet(client):
     referrer = await signup(client, "referrer@example.com", main=False)
     code = (await client.post("/referrals", json={}, headers=referrer)).json()["code"]
     created = await client.post("/auth/register", json={"email": "referred@example.com",
-                                                         "password": "correct-horse-battery",
+                                                         "password": TEST_PW,
                                                          "referral_code": code})
     assert created.status_code == 201
     secret = await enable_2fa(client, referrer)
@@ -285,7 +285,7 @@ async def test_referral_payout_cannot_target_a_known_referred_wallet(client):
         referred_wallet = (await db.execute(select(Wallet).where(
             Wallet.network == "solana", Wallet.user_id == referred_id))).scalars().first()
         address = referred_wallet.address
-    response = await client.put("/referrals/payout", json={"address": address, "password": "correct-horse-battery",
+    response = await client.put("/referrals/payout", json={"address": address, "password": TEST_PW,
                                                             "totp": await totp_code(secret)}, headers=referrer)
     assert response.status_code == 400 and "referred" in response.json()["detail"]
     async with get_sessionmaker()() as db:
@@ -532,7 +532,7 @@ async def test_pair_token_launch_needs_bags_eligibility_and_a_supported_token(cl
     fake = FakeBags()
     registry._cache["bags"] = fake
     s = get_settings()
-    s.bags_api_key = "test-key"
+    s.bags_api_key = TEST_OPENAPI
     try:
         assets = (await client.get("/launchpads/bags/quote-assets")).json()
         assert [a["symbol"] for a in assets["assets"]] == ["SOL", "NVDAx"] and "US" in assets["notice"]
@@ -658,6 +658,8 @@ async def test_evm_watch_wallet_balance_is_in_its_own_coin(client, fake_rpc, mon
 
 async def test_health_reports_rpc_setup_per_chain(client):
     health = (await client.get("/health")).json()
-    assert health == {"ok": True}
+    assert health == {"ok": True, "build": "unknown"}
     assert "evm_rpc" not in health and "signer" not in health and "env" not in health
-    assert (await client.get("/public-info")).json() == {"test_signer": True}
+    info = (await client.get("/public-info")).json()
+    assert info["test_signer"] is True and set(info) == {"test_signer", "capabilities"}
+    assert "rpc" not in str(info).lower() and "url" not in str(info).lower()  # no configuration detail

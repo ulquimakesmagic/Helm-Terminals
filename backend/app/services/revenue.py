@@ -47,9 +47,33 @@ def dex_fee_event(network: str, wei: int, estimated: bool, destination: str, job
                   payer_user_id: str, reference: str | None, side: str) -> RevenueEvent:
     asset, dec = NATIVE.get(network, ("ETH", 18))
     return RevenueEvent(source="dex_trade_fee", network=network, asset=asset, amount_raw=wei, decimals=dec,
-                        estimated=estimated, status="received", destination=destination, launch_id=launch_id,
+                        estimated=True, status="pending", destination=destination, launch_id=launch_id,
                         job_id=job_id, payer_user_id=payer_user_id, reference=reference,
-                        note=f"KyberSwap router fee on a {side}" + (" (amount estimated from the quote)" if estimated else ""))
+                        note=f"Expected KyberSwap fee on a {side}; treasury receipt not yet verified")
+
+
+async def verify_dex_fee(rpc, event: RevenueEvent) -> str:
+    from .receipt_evidence import native_fee_evidence
+    from ..models import utcnow
+
+    if event.receipt_evidence:
+        return "already_verified"
+    if (event.source != "dex_trade_fee" or event.network != rpc.network
+            or NATIVE.get(event.network) != (event.asset, event.decimals)
+            or not event.reference or not event.destination):
+        return "unsupported"
+    proof = await native_fee_evidence(rpc, event.reference, event.destination)
+    if not proof:
+        return "unavailable"
+    expected = int(event.amount_raw) if event.amount_raw is not None else None
+    proof["expected_amount_raw"] = str(expected) if expected is not None else None
+    event.amount_raw = int(proof["amount_raw"])
+    event.receipt_evidence = proof
+    event.estimated = False
+    event.status = "received"
+    event.reconciled_at = utcnow()
+    event.note = "Finalized native treasury inflow verified by call trace; compare expected and actual in evidence"
+    return "verified"
 
 
 def route_fee_event(quote: dict, destination: str, job_id: str, launch_id: str | None, payer_user_id: str,

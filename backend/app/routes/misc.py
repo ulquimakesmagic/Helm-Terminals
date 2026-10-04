@@ -67,17 +67,19 @@ async def dashboard(period: str = "all", user: User = Depends(current_user), db:
         cum += sol
         cum_usd += day_usd
         series.append({"date": day, "daily_sol": sol, "cumulative_sol": cum, "sol_price_usd": price,
-                       "daily_usd": day_usd, "cumulative_usd": cum_usd})
+                       "daily_usd": day_usd if price is not None else None,
+                       "cumulative_usd": cum_usd if priced else None})
     return {
         "period": period,
         "total_launches": launches,
         "by_chain": by_chain,
         "net_sol_flow": cum,
-        "net_usd_flow": cum_usd,
+        "net_usd_flow": cum_usd if priced else None,
+        "flow_scope": {"network": "solana", "asset": "SOL", "complete_portfolio": False},
         "usd_priced": priced,
         "series": series,
         "referral": await referral_summary(db, user),
-        "note": "Measured coin in and out of your wallets from confirmed transactions, fees included, valued in USD at each day's price. Unsold token holdings are not valued.",
+        "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted.",
     }
 
 

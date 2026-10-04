@@ -17,6 +17,7 @@ from .signing.base import SigningError
 from .db import create_all
 from .routes import admin, allocations, auth, automations, chains, bridge, ton as ton_routes, external_wallets, distribute, launches, market, misc, profile, telegram, wallets
 from .signing import get_signer
+from .routes import recovery
 
 
 @asynccontextmanager
@@ -28,7 +29,13 @@ async def lifespan(app: FastAPI):
     replica_lock = None
     try:
         replica_lock = await _acquire_single_replica_lock(settings)
-        await create_all()
+        from .services import execution_lease
+        await execution_lease.bind(replica_lock, _REPLICA_LOCK_KEY)
+        if settings.env == "production":
+            from .db import require_schema
+            await require_schema()
+        else:
+            await create_all()
         try:  # ledger rows for trading fees recorded before the revenue ledger existed (idempotent)
             from .db import get_sessionmaker
             from .services.revenue import backfill_trade_fees
@@ -43,6 +50,8 @@ async def lifespan(app: FastAPI):
             worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
         yield
     finally:
+        from .services import execution_lease
+        execution_lease.invalidate()
         if worker:
             worker.cancel()
             with suppress(asyncio.CancelledError):
@@ -156,6 +165,8 @@ def create_app() -> FastAPI:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.url.path.startswith("/auth/"):
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.exception_handler(RequestValidationError)
@@ -165,7 +176,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
-    for r in (admin.router, allocations.router, auth.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+    for r in (admin.router, allocations.router, auth.router, recovery.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
 
@@ -200,12 +211,15 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"ok": True}
+        return {"ok": True, "build": s.build_revision}
 
     @app.get("/public-info")
     async def public_info():
         # A deliberately small, user-facing custody statement; detailed configuration stays private.
-        return {"test_signer": s.env != "production" or s.signer != "turnkey"}
+        from .chains.evm import EVM_CHAINS
+        return {"test_signer": s.env != "production" or s.signer != "turnkey",
+                "capabilities": {"telegram": "read_only", "cash_routes": ["solana", *EVM_CHAINS],
+                                 "session_storage": "memory_only", "email_recovery": bool(s.smtp_host and s.smtp_from)}}
 
     @app.get("/health/ready")
     async def readiness():
@@ -216,6 +230,11 @@ def create_app() -> FastAPI:
             async with get_engine().connect() as conn:
                 await conn.execute(text("SELECT 1"))
             get_signer()
+            if s.env == "production":
+                from .db import require_schema
+                from .services.execution_lease import assert_owned
+                await require_schema()
+                await assert_owned()
         except Exception:
             logging.getLogger("helm.health").exception("readiness check failed")
             return JSONResponse(status_code=503, content={"ready": False})

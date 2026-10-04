@@ -495,7 +495,13 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
             "from": {"label": src.label or "Wallet", "address": src.address}, "from_chain": chain_name(src.network),
             "amount_usd": usd, "quote": None,
         })
-    pf = build_preflight("fund_cash", summary, warnings)
+    from ..services.quote_approval import issue, verify, relay_bounds, check_relay_bounds
+    scope = {"kind": "fund_cash", "source": src.id if src else None, "destination": dst.id,
+             "amount_usd": usd, "need_raw": str(amount_raw), "fee_bps": ex.relay.fee_bps,
+             "fee_recipient": ex.relay.fee_recipient}
+    approved = verify(body.quote_approval, user.id, scope) if body.confirm else None
+    bounds = None
+    quote_info = None
     if src is not None:
         try:
             q = await ex.relay.quote(user=src.address, recipient=dst.address, from_network=src.network,
@@ -503,10 +509,21 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
                                      to_currency=route_currency(dst.network, "native")[1],
                                      amount=int(usd) * 10 ** STABLE_DECIMALS[src.network],
                                      slippage_pct=auto_fund.SLIPPAGE_PCT)
-            pf["preflight"]["quote"] = ex.relay.summarize(q)
+            bounds = relay_bounds(q, destination_asset=route_currency(dst.network, "native")[1], destination_network=dst.network)
+            if int(bounds["minimum_raw"]) < amount_raw:
+                raise AdapterError("The quote cannot deliver the requested amount. Request a new preview.")
+            if approved:
+                check_relay_bounds(q, approved, route_currency(dst.network, "native")[1], dst.network)
+                bounds = {k: v for k, v in approved.items() if k != "expires"}
+            quote_info = ex.relay.summarize(q)
         except AdapterError as e:
-            pf["preflight"]["warnings"].append(str(e))
+            warnings.append(str(e))
+    summary["quote_bounds"] = bounds
+    pf = build_preflight("fund_cash", summary, warnings)
+    pf["preflight"]["quote"] = quote_info
     if not body.confirm:
+        if bounds and not warnings:
+            pf["quote_approval"] = issue(user.id, scope, bounds)
         return pf
     if pf["preflight"]["warnings"]:
         raise HTTPException(400, pf["preflight"]["warnings"][0])
@@ -519,7 +536,7 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
             await session.commit()
             amount_usd_raw = int(usd) * 10 ** STABLE_DECIMALS[src.network]
             res, status = await execute_route(session, ex, j, src, dst, "stable", "native", amount_usd_raw,
-                                              auto_fund.SLIPPAGE_PCT, kind="fund_route", key="funding")
+                                              auto_fund.SLIPPAGE_PCT, kind="fund_route", key="funding", approved_bounds=approved)
             if res.status == "confirmed" and status not in DONE:
                 j.error = f"Relay reported the route as {status}; check the destination wallet's balance."
             _finish(j, [res])

@@ -493,7 +493,7 @@ async def signed(network: str, job_id: str, body: SignedBody, user: User = Depen
         _finish(job, [res])
         await session.commit()
 
-    await run_job(j.id, work)
+    await run_job(j.id, work, already_claimed=True)
     return {"job_id": j.id, "status": j.status}
 
 

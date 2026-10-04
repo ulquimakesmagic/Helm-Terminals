@@ -394,9 +394,13 @@ async def signed(network: str, job_id: str, body: SignedBody, user: User = Depen
         raise HTTPException(400, "the signed message is for a different wallet")
     w = (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.network == network,
                                                Wallet.address == j.params["from"]))).scalar_one_or_none()
-    j.params = {**j.params, "message_hash": msg_hash}
-    j.status = "submitted"
+    from sqlalchemy import update
+    claimed = await db.execute(update(Job).where(Job.id == j.id, Job.status == "pending")
+        .values(status="submitted", params={**j.params, "message_hash": msg_hash}))
     await db.commit()
+    if claimed.rowcount != 1:
+        await db.refresh(j)
+        return {"job_id": j.id, "status": j.status}
     request = j.params["wallet_request"]
 
     async def work(session, job):
@@ -408,7 +412,7 @@ async def signed(network: str, job_id: str, body: SignedBody, user: User = Depen
         _finish(job, [res])
         await session.commit()
 
-    await run_job(j.id, work)
+    await run_job(j.id, work, already_claimed=True)
     return {"job_id": j.id, "status": j.status, "message_hash": msg_hash}
 
 

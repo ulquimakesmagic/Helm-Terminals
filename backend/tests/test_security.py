@@ -135,14 +135,14 @@ async def test_registration_attempts_are_rate_limited_by_client_address(client):
     body = {"email": "signup-limit@example.com", "password": PW}
     assert (await client.post("/auth/register", json=body)).status_code == 201
     for _ in range(4):
-        assert (await client.post("/auth/register", json=body)).status_code == 409
+        assert (await client.post("/auth/register", json=body)).status_code == 201
     assert (await client.post("/auth/register", json=body)).status_code == 429
 
 
 async def test_readiness_checks_database_without_exposing_configuration(client):
     response = await client.get("/health/ready")
     assert response.status_code == 200 and response.json() == {"ready": True}
-    assert (await client.get("/health")).json() == {"ok": True}
+    assert (await client.get("/health")).json() == {"ok": True, "build": "unknown"}
 
 
 def test_production_refuses_the_default_secret_key():

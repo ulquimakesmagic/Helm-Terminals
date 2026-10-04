@@ -85,16 +85,34 @@ async def route(body: RouteBody, user: User = Depends(current_user), db: AsyncSe
         "provider": "Relay (relay.link)", "own_wallets_only": True,
         "platform_fee": ex.relay.fee_note,
     }
-    pf = build_preflight("bridge", summary, warnings)
+    from ..services.quote_approval import issue, verify, relay_bounds, check_relay_bounds
+
+    scope = {"from_wallet": src.id, "to_wallet": dst.id, "from_network": src.network,
+             "to_network": dst.network, "from_address": src.address, "to_address": dst.address,
+             "from_asset": body.from_asset, "to_asset": body.to_asset, "amount_raw": str(amount_raw),
+             "slippage_pct": body.slippage_pct, "fee_bps": ex.relay.fee_bps,
+             "fee_recipient": ex.relay.fee_recipient}
+    approved = verify(body.quote_approval, user.id, scope) if body.confirm else None
+    quote_bounds = None
     quote = None
     try:
         quote = await route_quote(ex, src, dst, body.from_asset, body.to_asset, amount_raw, body.slippage_pct)
+        quote_bounds = relay_bounds(quote, destination_asset=currency(dst.network, body.to_asset)[1],
+                                    destination_network=dst.network)
+        if approved:
+            check_relay_bounds(quote, approved, currency(dst.network, body.to_asset)[1], dst.network)
     except AdapterError as e:
-        pf["preflight"]["warnings"].append(str(e))
+        warnings.append(str(e))
+    if approved:
+        quote_bounds = {k: v for k, v in approved.items() if k != "expires"}
+    summary["quote_bounds"] = quote_bounds
+    pf = build_preflight("bridge", summary, warnings)
     if quote:
-        # The quote moves with prices, so it's shown but not part of the confirmation hash; slippage protects you.
+        # Estimate may move; the authenticated original floor is part of the confirmation hash.
         pf["preflight"]["quote"] = ex.relay.summarize(quote)
     if not body.confirm:
+        if quote_bounds and not warnings:
+            pf["quote_approval"] = issue(user.id, scope, quote_bounds)
         return pf
     if pf["preflight"]["warnings"]:
         raise HTTPException(400, pf["preflight"]["warnings"][0])
@@ -104,7 +122,7 @@ async def route(body: RouteBody, user: User = Depends(current_user), db: AsyncSe
             j.status = "submitted"
             await session.commit()
             res, _ = await execute_route(session, ex, j, src, dst, body.from_asset, body.to_asset, amount_raw,
-                                         body.slippage_pct)
+                                         body.slippage_pct, approved_bounds=approved)
             _finish(j, [res])
             await session.commit()
 
