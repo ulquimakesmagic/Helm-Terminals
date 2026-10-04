@@ -4,6 +4,7 @@ import { api, hasToken, setToken } from "./api";
 import { Icon, IconName, Loading, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
+import Recovery from "./pages/Recovery";
 import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 // The landing, sign-in and dashboard pages load with the app; every other page is fetched when first opened,
@@ -99,7 +100,7 @@ function Shell({ children }: { children: React.ReactNode }) {
               <span className="dot" style={{ background: "var(--warn)" }} />Test signer<span className="hide-sm"> · no real funds</span>
             </span>
           )}
-          <span className={`pill ${health || !healthChecked ? "hide-sm" : ""}`} role="status">
+          <span className={`pill ${health || !healthChecked ? "hide-sm" : ""}`} role="status" title={health?.checkedAt ? `API liveness checked ${new Date(health.checkedAt).toLocaleTimeString()}. Individual providers may have separate outages.` : "API liveness; rechecked while this page is visible"}>
             <span className="dot" style={{ background: health ? "var(--good)" : healthChecked ? "var(--bad)" : "var(--muted)" }} />
             {health ? "API online" : healthChecked ? "API unreachable" : "Checking API"}
           </span>
@@ -137,6 +138,7 @@ export default function App() {
     <SessionProvider>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/recover" element={<Recovery />} />
         <Route path="/" element={<Home />} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />

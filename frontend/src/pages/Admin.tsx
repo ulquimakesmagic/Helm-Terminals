@@ -75,7 +75,7 @@ function StepUpDialog({ title, detail, onCancel, onConfirm, needsReason }: {
 /* ------------------------------------------------------------------ revenue */
 interface Bucket { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number; failed: number; estimated: number; estimated_by_status: Record<string, number>; unreconciled: number; entries: number; estimated_entries: number; unknown_amount_entries: number }
 interface Summary { totals: Bucket[]; by_source: { source: string; entries: number; by_asset: { network: string; asset: string; decimals: number; received: number; pending: number; claimable: number; failed: number; estimated: number; estimated_by_status: Record<string, number> }[] }[]; referral_liabilities: { network: string; asset: string; amount_raw: string; decimals: number; entries: number }[]; valuation: { method: string; as_of: string }; notes: Record<string, string>; warnings: string[] }
-interface LedgerItem { id: string; source: string; network: string; asset: string; amount_raw: string | null; decimals: number; estimated: boolean; status: string; reconciled_at: string | null; destination: string | null; reference: string | null; created_at: string; launch: { id: string; name: string; symbol: string; token: string | null } | null; note: string }
+interface LedgerItem { id: string; source: string; network: string; asset: string; amount_raw: string | null; decimals: number; estimated: boolean; status: string; reconciled_at: string | null; reviewed_at: string | null; receipt_evidence?: Record<string, unknown> | null; destination: string | null; reference: string | null; created_at: string; launch: { id: string; name: string; symbol: string; token: string | null } | null; note: string }
 
 interface RelayFees { wallet: string | null; claim_url: string; as_of: string; source: string; unavailable?: string; total_usd?: number; available_usd?: number;
   balances?: { asset: string; chain_id: number; amount: string; amount_usd: string; minimum: string }[] }
@@ -137,7 +137,7 @@ function Revenue({ me }: { me: AdminMe }) {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { setPage(1); setF({ ...f, [k]: e.target.value }); };
   const reconcile = () => {
     api<{ reconciled: number }>("/admin/revenue/reconcile", { body: { ids: sel, note: "" } })
-      .then((r) => { toast("good", `${r.reconciled} entries marked reconciled`); setSel([]); load(); })
+      .then((r) => { toast("good", `${r.reconciled} entries marked reviewed`); setSel([]); load(); })
       .catch((e) => toast("bad", errMsg(e)));
   };
 
@@ -219,7 +219,7 @@ function Revenue({ me }: { me: AdminMe }) {
       )}
 
       <Card title="Ledger" icon="layers" sub={led ? `${led.total} entries · times in UTC` : undefined} flush
-        actions={me.can_change && sel.length > 0 ? <button className="btn sm" onClick={reconcile}><Icon name="check" size={14} />Mark {sel.length} reconciled</button> : undefined}
+        actions={me.can_change && sel.length > 0 ? <button className="btn sm" onClick={reconcile}><Icon name="check" size={14} />Mark {sel.length} reviewed</button> : undefined}
         foot={led && led.total > 50 ? <div className="row between"><button className="btn sm ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
           <span className="muted small">Page {page} of {Math.ceil(led.total / 50)}</span>
           <button className="btn sm ghost" disabled={page * 50 >= led.total} onClick={() => setPage(page + 1)}>Next</button></div> : undefined}>
@@ -229,7 +229,7 @@ function Revenue({ me }: { me: AdminMe }) {
             <thead><tr>{me.can_change && <th><span className="sr-only">Select</span></th>}<th>When (UTC)</th><th>Source</th><th>Launch</th><th className="r">Amount</th><th>Status</th><th className="hide-sm">Destination</th><th className="hide-sm">Reference</th></tr></thead>
             <tbody>{led.items.map((r) => (
               <tr key={r.id} className={me.can_change ? "has-cb" : ""}>
-                {me.can_change && <td className="cb"><input type="checkbox" aria-label="Select entry" disabled={!!r.reconciled_at} checked={sel.includes(r.id)}
+                {me.can_change && <td className="cb"><input type="checkbox" aria-label="Select entry" disabled={!!r.reviewed_at} checked={sel.includes(r.id)}
                   onChange={(e) => setSel(e.target.checked ? [...sel, r.id] : sel.filter((x) => x !== r.id))} /></td>}
                 <td className="muted small mono" data-label="When">{utc(r.created_at)}</td>
                 <td data-label="Source" title={r.note}>{SOURCE_LABEL[r.source] ?? r.source}<div className="muted small">{NET_LABEL[r.network] ?? r.network}</div></td>
@@ -237,7 +237,7 @@ function Revenue({ me }: { me: AdminMe }) {
                 <td className="r mono" data-label="Amount" title={r.amount_raw ? `${r.amount_raw} raw · ${r.decimals} decimals` : r.note}>
                   {r.status === "configured" ? "Not measured" : <>{units(r.amount_raw, r.decimals)} {r.asset}{r.estimated && <div className="muted small">estimated</div>}</>}</td>
                 <td data-label="Status"><div><StatusBadge status={r.status === "received" ? "confirmed" : r.status === "failed" ? "failed" : r.status === "claimable" ? "scheduled" : "pending"} label={r.status} /></div>
-                  <div className="muted small">{r.reconciled_at ? `reconciled ${utc(r.reconciled_at)}` : "unreconciled"}</div></td>
+                  <div className="muted small">{r.reconciled_at ? `receipt checked ${utc(r.reconciled_at)}` : r.reviewed_at ? `Manually reviewed ${utc(r.reviewed_at)}; receipt unverified` : "receipt unverified"}</div></td>
                 <td className="hide-sm mono small">{r.destination ? <span className="row nowrap">{r.destination.slice(0, 6)}…{r.destination.slice(-4)}<CopyButton text={r.destination} /></span> : "—"}</td>
                 <td className="hide-sm mono small">{r.reference ? <span className="row nowrap">{r.reference.slice(0, 8)}…<CopyButton text={r.reference} /></span> : "—"}</td>
               </tr>))}</tbody>
@@ -581,3 +581,4 @@ function Operations() {
     <div className="grid g-2">{list("RPC endpoints", config.rpc_configured)}{list("Provider keys", config.external_provider_keys_configured)}</div>
   </div>;
 }
+

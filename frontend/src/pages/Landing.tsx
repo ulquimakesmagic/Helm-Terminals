@@ -164,9 +164,9 @@ export default function Landing() {
                 See coins and dollar stablecoins across every chain in one place, and an audit log of launches, trades,
                 transfers and sign-ins.
               </Capability>
-              <Capability icon="telegram" title="Telegram terminal" spec={["Link from Settings", "Trading there is Solana-only for now"]}>
-                Check your launches and wallets from Telegram once you link your account. Orders placed there show the
-                same preview and wait for your tap to confirm.
+              <Capability icon="telegram" title="Telegram status" spec={["Link from Settings", "Read-only account access"]}>
+                Check your launches and wallets from Telegram once you link your account. Review and confirm
+                financial actions in the Helm web app.
               </Capability>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl, isExtraChain } from "../chains";
 import { launchpadExperience } from "../launchpadExperience";
 import MarketTerminal from "../components/Market";
+import PonsRewards from "../components/PonsRewards";
 import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
 import DistributeSupply from "../components/DistributeSupply";
@@ -388,6 +389,7 @@ export default function Workspace() {
                 <Seg full value={effectiveOp} onChange={setOp} options={opOptions} />
                 {effectiveOp === "claim" && claimInApp && (
                   <>
+                    {l.launchpad === "pons" && <PonsRewards launchId={l.id} />}
                     <p className="muted small">{l.pons_rewards
                       ? "This launch's ETH rewards are split permanently: 94% to the creator and 6% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract."
                       : experience.claimCopy}</p>

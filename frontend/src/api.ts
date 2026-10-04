@@ -1,9 +1,9 @@
 export const BASE: string = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000";
 
-// Session token lives in sessionStorage: cleared when the tab closes. Use httpOnly cookies for a hardened deploy.
+// Memory-only bearer: reloads/new tabs require sign-in. No ambient authentication cookies.
 let token: string | null = null;
 try {
-  token = sessionStorage.getItem("helm_token");
+  sessionStorage.removeItem("helm_token");
 } catch {
   token = null;
 }
@@ -11,8 +11,7 @@ try {
 export function setToken(t: string | null) {
   token = t;
   try {
-    if (t) sessionStorage.setItem("helm_token", t);
-    else sessionStorage.removeItem("helm_token");
+    sessionStorage.removeItem("helm_token");
   } catch {
     /* storage unavailable */
   }
@@ -47,7 +46,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
             return field && field !== "body" ? `${String(field).replace(/_/g, " ")}: ${msg}` : msg;
           }).join(". ")
         : JSON.stringify(data.detail ?? data);
-    if (res.status === 401 && token && !detail.startsWith("totp_required")) {
+    if (res.status === 401 && token && ["missing bearer token", "invalid or expired session", "invalid session"].includes(detail)) {
       setToken(null);
       window.location.assign("/login");
     }

@@ -25,7 +25,7 @@ function fmtRaw(raw: string, decimals: number): string {
 
 interface Net { id: ExtraChainId; name: string; family: string; native: string; decimals: number; chain_id: number | null; network_id?: string | null;
   enabled: boolean; notes: string; capabilities: Record<string, string>; sources: string[]; explorer: Record<string, string> }
-interface Chains { core: { id: string; name: string; capabilities: string }[]; extra: Net[]; note: string }
+interface Chains { core: { id: string; name: string; capabilities: Record<string, string> }[]; extra: Net[]; note: string }
 const CAP_LABEL: Record<string, string> = {
   // Compact column heads so the matrix fits a desktop width; the full meaning is in each badge's
   // tooltip and in the "why" list below the table.

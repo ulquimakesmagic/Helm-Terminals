@@ -308,6 +308,7 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
 
 export default function Wallets() {
   const toast = useToast();
+  const {capabilities} = useSession();
   const [wallets, setWallets] = useState<W[] | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [funders, setFunders] = useState<Funder[]>([]);
@@ -354,6 +355,7 @@ export default function Wallets() {
   useEffect(() => { api<{ extra: ExtraNet[] }>("/chains").then((c) => setExtras(c.extra.filter((n) => n.enabled))).catch(() => setExtras([])); }, []);
 
   const [loadErr, setLoadErr] = useState("");
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const load = async (withBal = balances) => {
     setLoadErr("");
     if (withBal) setLoadingBal(true);
@@ -361,7 +363,7 @@ export default function Wallets() {
       const [w, f, fu] = await Promise.all([
         api<W[]>(`/wallets${withBal ? "?with_balances=true" : ""}`), api<Folder[]>("/folders"), api<Funder[]>("/funders"),
       ]);
-      setWallets(w); setFolders(f); setFunders(fu);
+      setWallets(w); setFolders(f); setFunders(fu); setUpdatedAt(Date.now());
       if (withBal) { setBalances(true); api("/portfolio?fresh=true").then(setFolio).catch(() => setFolio(null)); }
     } catch (e) { if (wallets) toast("bad", errMsg(e)); setLoadErr(errMsg(e)); }
     finally { setLoadingBal(false); }
@@ -423,17 +425,17 @@ export default function Wallets() {
       <Metrics label="Wallet totals" items={[
         { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", tone: folio && folio.complete === false ? "warn" : undefined,
           hint: folio ? (folio.complete === false ? `at least · ${folio.incomplete_chains.length} chain${folio.incomplete_chains.length === 1 ? "" : "s"} not fully read` : folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
-        { label: "Cash balance", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC and USDG — funds any wallet on any chain" },
-        { label: "Managed", value: wallets ? String(managed.length) : "—", hint: `on ${new Set(managed.map((w) => w.network)).size} chain${new Set(managed.map((w) => w.network)).size === 1 ? "" : "s"}` },
+        { label: "Cash balance", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC and USDG · routing on supported networks" },
+        { label: "Managed", value: wallets ? String(managed.length) : "—", hint: wallets ? `on ${new Set(managed.map((w) => w.network)).size} chains` : "inventory unavailable" },
         { label: "Watch-only", value: wallets ? String(all.filter((w) => w.kind === "watch").length) : "—",
           hint: all.some((w) => w.kind === "connected") ? `tracked · plus ${all.filter((w) => w.kind === "connected").length} connected` : "tracked, can't sign" },
-        { label: "Folders", value: String(folders.length), hint: funders.length ? `${funders.length} funder${funders.length === 1 ? "" : "s"}` : "no funders set" },
+        { label: "Folders", value: wallets ? String(folders.length) : "—", hint: !wallets ? "inventory unavailable" : funders.length ? `${funders.length} funder${funders.length === 1 ? "" : "s"}` : "no funders set" },
       ]} />
 
       {wallets && !hasMain && (
         <Callout tone="info">
           <div className="row between" style={{ gap: 10 }}>
-            <span><b>Your account has no main wallet yet.</b> It's one Solana wallet and one EVM address (on Base, BNB Chain, Ethereum and Robinhood Chain) that you can keep USDC in; launches on any chain route from it when the dev wallet is short.</span>
+            <span><b>Your account has no main wallet yet.</b> It's one Solana wallet and one EVM address (on Base, BNB Chain, Ethereum and Robinhood Chain) that you can keep USDC in. Funding routes are available only on supported networks when the dev wallet is short.</span>
             <button className="btn sm" onClick={setupMain} disabled={settingMain}>{settingMain ? <Spinner /> : <Icon name="plus" size={13} />}Set up main wallet</button>
           </div>
         </Callout>
@@ -471,6 +473,7 @@ export default function Wallets() {
           <div style={{ flex: "1 1 200px", maxWidth: 280 }}><SearchInput aria-label="Search wallets" placeholder="Search label or address" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           </div>
         </div>
+        {loadErr && wallets && <Callout tone="warn">Refresh failed. Showing the last successful inventory{updatedAt ? ` from ${new Date(updatedAt).toLocaleTimeString()}` : ""}; balances may be stale. {loadErr}</Callout>}
         {loadErr && !wallets ? <LoadError what="Wallets" error={loadErr} onRetry={() => load(false)} busy={loadingBal} /> : !wallets ? <Loading rows={5} /> : all.length === 0 ? (
           <Empty icon="wallet" title="No wallets yet" text="Create managed wallets to launch and trade from, or add an address to watch."
             action={<button className="btn sm" onClick={() => setModal("create")}><Icon name="plus" size={14} />Add wallets</button>} />
@@ -592,10 +595,10 @@ export default function Wallets() {
             </div>
           </Field>
           {fundMode === "cash" ? <>
-            <Field label="Fund which wallet" hint="Any managed wallet, on any chain.">
+            <Field label="Fund which wallet" hint="Choose a managed wallet on a supported funding network.">
               <select value={cashDest} onChange={(e) => setCashDest(e.target.value)}>
                 <option value="">Choose a wallet…</option>
-                {managed.map((w) => (
+                {managed.filter(w => capabilities?.cash_routes.includes(w.network)).map((w) => (
                   <option key={w.id} value={w.id}>{w.label || "Wallet"} · {chainOf(w.network).name} · {short(w.address)}</option>
                 ))}
               </select>

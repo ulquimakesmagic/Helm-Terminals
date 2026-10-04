@@ -117,6 +117,8 @@ export default function Auth() {
             <h1 id="auth-title" ref={heading} tabIndex={-1}>{title}</h1>
             <p className="text-2">{sub}</p>
           </div>
+          {mode === "login" && <Link className="small" to="/recover">Forgot password or lost your authenticator?</Link>}
+          <p className="small muted">Your session stays in this tab's memory. Reloading the page or opening a new tab requires signing in again.</p>
 
           <form id="auth-form" className="stack" style={{ gap: 14 }} onSubmit={submit} noValidate
             role={needTotp ? undefined : "tabpanel"} aria-labelledby={needTotp ? "auth-title" : `tab-${mode}`}>

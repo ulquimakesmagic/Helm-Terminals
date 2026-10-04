@@ -81,7 +81,7 @@ export default function Dashboard() {
     // "Create wallets" is the header's primary action when there are none, so it isn't repeated here.
     ...(me && !me.totp_enabled ? [{ key: "s-2fa", icon: "shield" as IconName, tone: "warn" as const, title: "Turn on two-factor authentication", text: "Withdrawals and token sends stay blocked until 2FA is on.", to: "/settings", cta: "Set up 2FA" }] : []),
     ...(launches.data && launches.data.length === 0 && managed.length > 0 ? [{ key: "s-l", icon: "rocket" as IconName, tone: "" as const, title: "Create or import a launch", text: "Pick a chain and launchpad, or import a token you already hold.", to: "/launches", cta: "Launches" }] : []),
-    ...(tg && !tg.linked ? [{ key: "s-tg", icon: "telegram" as IconName, tone: "" as const, title: "Link the Telegram bot", text: "Optional: trade and check status from Telegram with the same previews.", to: "/settings", cta: "Settings" }] : []),
+    ...(tg && !tg.linked ? [{ key: "s-tg", icon: "telegram" as IconName, tone: "" as const, title: "Link the Telegram bot", text: "Optional: check launches and wallets from Telegram. Confirm transactions in the web app.", to: "/settings", cta: "Settings" }] : []),
   ];
   const decisions: NextAction[] = [
     ...(launches.data ?? []).filter((l) => l.status === "failed").map((l): NextAction => ({
@@ -246,12 +246,12 @@ export default function Dashboard() {
               )}
           </Card>
 
-          <Card title="Net flow" icon="trend" sub="Value in and out of your wallets from confirmed transactions, in USD, fees included"
+          <Card title="Recorded SOL flow" icon="trend" sub="Solana SOL only · confirmed Helm transactions · not multichain cash flow or portfolio P&L"
             actions={<Seg value={period} onChange={setPeriod} options={PERIODS} />}
             foot={<>{data?.note}{data && data.usd_priced === false && " Some days couldn't be priced and count as $0."}</>}>
             {error && !data ? <LoadError what="Net flow" error={error} onRetry={load} /> : !data ? <Skeleton h={220} /> : data.series.length === 0 ? (
               <Empty icon="trend" title="No confirmed transactions in this period" text="Deploys, trades and transfers show up here once confirmed." />
-            ) : <AreaChart points={data.series.map((p: any) => ({ date: p.date, total: p.cumulative_usd ?? 0, day: p.daily_usd ?? 0 }))} height={220} />}
+            ) : data.series.some((p: any) => p.cumulative_usd == null || p.daily_usd == null) ? <Callout tone="warn">Some daily SOL prices are unavailable. The USD flow chart will return when the missing valuations are available.</Callout> : <AreaChart points={data.series.map((p: any) => ({ date: p.date, total: p.cumulative_usd, day: p.daily_usd }))} height={220} />}
           </Card>
         </Reveal>
 

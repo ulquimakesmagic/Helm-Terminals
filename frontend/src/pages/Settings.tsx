@@ -6,6 +6,7 @@ import {
 } from "../components/ui";
 import { useSession } from "../session";
 import WalletSettings from "../components/WalletSettings";
+import AccountSecurity from "../components/AccountSecurity";
 
 interface S { id: string; ip: string | null; user_agent: string | null; created_at: string; expires_at: string }
 interface Code { code: string; expires_in_minutes: number; bot_username: string }
@@ -181,6 +182,7 @@ export default function Settings() {
 
       <div className="grid g-2" style={{ alignItems: "start" }}>
         <TwoFactor />
+        <AccountSecurity />
         <Telegram />
       </div>
 

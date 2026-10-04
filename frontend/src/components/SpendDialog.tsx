@@ -45,6 +45,10 @@ const KIND_LABEL: Record<string, string> = {
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
   const coin = chainOf(network).native;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
+  if (k === "quote_bounds" && v && typeof v === "object") {
+    const bound = v as {minimum_raw: string; asset: string; network: string};
+    return <div className="stack tight"><b>Minimum {bound.minimum_raw} base units</b><span>{chainOf(bound.network).name} · <Address address={bound.asset} network={bound.network} /></span><small>Locked to this preview. A lower output or expired quote requires confirmation again.</small></div>;
+  }
   if (k === "pons_rewards" && v && typeof v === "object") {
     const r = v as { creator: string; treasury: string; splitter: string };
     return <div className="stack tight">
@@ -174,6 +178,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [phase, setPhase] = useState<Phase>("loading");
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
+  const [quoteApproval, setQuoteApproval] = useState<string | undefined>();
   const [totp, setTotp] = useState("");
   const [needs2fa, setNeeds2fa] = useState(false);
   const [error, setError] = useState("");
@@ -185,7 +190,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
 
   useEffect(() => {
     api(path, { body })
-      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
+      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
       .catch((e) => { setError(errMsg(e)); setPhase("error"); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -214,7 +219,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     setPhase("submitting");
     setError("");
     try {
-      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, idempotency_key: key.current, totp: totp || undefined } });
+      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, quote_approval: quoteApproval, idempotency_key: key.current, totp: totp || undefined } });
       setJobId(r.job_id);
       setPhase("polling");
       // Every half second at first (most transactions land within a few seconds), then every 1.5 s. A dropped
