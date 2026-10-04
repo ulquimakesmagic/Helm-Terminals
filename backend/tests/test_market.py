@@ -45,6 +45,36 @@ def dex_pair(token=TOKEN):
             "txns": {"h24": {"buys": 120, "sells": 80}, "h1": {"buys": 10, "sells": 5}}}
 
 
+CODEX_NET = 1399811149
+
+
+def codex_overview(token=TOKEN, network_id=CODEX_NET, pairs=True):
+    # Codex HelmTokenOverview document shape (docs.codex.io): token, pair discovery, token-wide stats.
+    results = [{"volume": "50000", "liquidity": "150000", "quoteToken": "token1",
+                "token": {"address": token, "symbol": "WSOL", "networkId": network_id},
+                "backingToken": {"address": QUOTE, "symbol": "USDC", "networkId": network_id},
+                "pair": {"address": POOL, "id": f"{POOL}:{network_id}", "networkId": network_id},
+                "exchange": {"name": "Raydium"}}] if pairs else []
+    return {"data": {"token": {"address": token, "networkId": network_id, "symbol": "WSOL",
+                               "name": "Wrapped SOL", "isScam": False,
+                               "info": {"circulatingSupply": "1000000", "totalSupply": "1200000"}},
+                     "listPairsWithMetadataForToken": {"results": results},
+                     "getDetailedTokenStats": {
+                         "stats_min5": {"statsNonCurrency": {"buys": {"currentValue": "4"}, "sells": {"currentValue": "2"}}},
+                         "stats_hour1": {"statsNonCurrency": {"buys": {"currentValue": "10"}, "sells": {"currentValue": "5"}}},
+                         "stats_day1": {"statsNonCurrency": {"buys": {"currentValue": "120"}, "sells": {"currentValue": "80"}}}}}}
+
+
+def codex_pair_meta(token=TOKEN, network_id=CODEX_NET, pair_address=POOL):
+    # Codex pairMetadata shape; priceChange fields are decimal fractions (0.01 = 1%).
+    return {"data": {"pairMetadata": {"pairAddress": pair_address, "networkId": network_id,
+            "liquidity": "150000", "liquidityToken": QUOTE, "nonLiquidityToken": token,
+            "priceChange5m": 0.005, "priceChange1": -0.012, "priceChange24": 0.2,
+            "volume5m": "100", "volume1": "3000", "volume24": "50000",
+            "token0": {"address": token, "symbol": "WSOL", "price": "120.5", "pooled": "1000"},
+            "token1": {"address": QUOTE, "symbol": "USDC", "price": "1.0", "pooled": "150000"}}}}
+
+
 class Provider:
     def __init__(self):
         self.data = token_data()
@@ -54,8 +84,19 @@ class Provider:
         self.requests = []
         self.dex = None          # list of DexScreener pairs to serve; None answers 500
         self.dex_requests = []
+        self.codex = None        # list of GraphQL bodies (or httpx.Response) to serve in order; None answers 500
+        self.codex_requests = []
 
     async def handle(self, request):
+        if request.url.host == "graph.codex.io":
+            self.codex_requests.append(request)
+            assert request.url.path == "/graphql" and request.method == "POST"
+            assert request.headers["Authorization"] == "test-only-secret"
+            await asyncio.sleep(0)
+            if not isinstance(self.codex, list) or not self.codex:
+                return httpx.Response(500)
+            item = self.codex.pop(0)
+            return item if isinstance(item, httpx.Response) else httpx.Response(200, json=item)
         if request.url.host == "api.dexscreener.com":
             self.dex_requests.append(request)
             await asyncio.sleep(0)
@@ -79,6 +120,16 @@ async def provider():
     p = Provider()
     async with httpx.AsyncClient(transport=httpx.MockTransport(p.handle)) as client:
         m = Market(client=client, api_key="test-only-secret")
+        app.dependency_overrides[get_market] = lambda: m
+        yield p, m
+    app.dependency_overrides.pop(get_market, None)
+
+
+@pytest.fixture
+async def codex_provider(client):
+    p = Provider()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(p.handle)) as client:
+        m = Market(client=client, api_key="", codex_key="test-only-secret")
         app.dependency_overrides[get_market] = lambda: m
         yield p, m
     app.dependency_overrides.pop(get_market, None)
@@ -139,7 +190,8 @@ async def test_without_a_key_dexscreener_serves_indexed_chains(client, provider)
     assert body["source"] == "DexScreener" and body["state"] == "ok"
     # Robinhood and Arc are indexed by DexScreener too, so a key covers no chain that DexScreener can't.
     for network in ("robinhood", "arc"):
-        p.dex = [{**dex_pair("0x" + "ab" * 20), "pairAddress": "0x" + "cd" * 20}]
+        from app.services.market import DEX_CHAIN
+        p.dex = [{**dex_pair("0x" + "ab" * 20), "chainId": DEX_CHAIN[network], "pairAddress": "0x" + "cd" * 20}]
         res = await m.snapshot(network, "0x" + "ab" * 20)
         assert res["state"] == "ok" and res["provider"] == "DexScreener"
         assert p.dex_requests[-1].url.path.startswith(f"/tokens/v1/{network}/")
@@ -166,6 +218,141 @@ async def test_gmgn_denial_falls_back_to_dexscreener_and_keeps_kind_when_dex_fai
     with pytest.raises(MarketError) as caught:
         await m.snapshot("solana", TOKEN)
     assert caught.value.kind == "unavailable" and len(p.dex_requests) == dex_before
+
+
+async def test_codex_primary_serves_the_published_shape(codex_provider):
+    p, m = codex_provider
+    p.codex = [codex_overview(), codex_pair_meta()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["state"] == "ok" and res["provider"] == "Codex" and res["gmgn_url"] is None
+    metrics = res["metrics"]
+    assert metrics["price_usd"] == 120.5 and metrics["holder_count"] is None
+    assert metrics["market_cap_usd"] == 120.5 * 1_000_000 and metrics["fdv_usd"] == 120.5 * 1_200_000
+    # Pool value is the sum of both sides (1000 × 120.5 + 150000 × 1.0), per Codex's own definition.
+    assert metrics["liquidity_usd"] == 270_500
+    assert metrics["price_change"]["m5"] == pytest.approx(0.5)
+    assert metrics["price_change"]["h1"] == pytest.approx(-1.2)
+    assert metrics["price_change"]["h24"] == pytest.approx(20)
+    assert metrics["price_change"]["h6"] is None  # Codex publishes no 6h window
+    assert metrics["volume_usd"] == {"m5": 100, "h1": 3000, "h6": None, "h24": 50000}
+    assert metrics["txns"]["h24"] == {"buys": 120, "sells": 80, "swaps": 200}
+    assert metrics["txns"]["h6"] == {"buys": None, "sells": None, "swaps": None}
+    pool = res["pool"]
+    assert pool["address"] == POOL and pool["dex"] == "Raydium" and pool["liquidity_usd"] == 270_500
+    assert pool["quote_address"] == QUOTE and pool["quote_symbol"] == "USDC"
+    assert len(p.codex_requests) == 2 and not p.requests and not p.dex_requests
+    await m.snapshot("solana", TOKEN)  # cached: no further POSTs
+    assert len(p.codex_requests) == 2
+
+
+async def test_codex_serves_partial_graphql_errors(codex_provider):
+    p, m = codex_provider
+    p.codex = [{**codex_overview(), "errors": [{"message": "test-only-secret: never echo this"}]},
+               codex_pair_meta()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["provider"] == "Codex" and res["state"] == "ok"
+
+
+async def test_codex_denial_and_miss_fall_back_to_dexscreener(codex_provider):
+    p, m = codex_provider
+    p.codex = [httpx.Response(403, json={"errors": [{"message": "test-only-secret: never echo this"}]})]
+    p.dex = [dex_pair()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["provider"] == "DexScreener" and res["state"] == "ok"
+    assert len(p.codex_requests) == 1 and len(p.dex_requests) == 1
+    # An empty Codex answer plus an empty DexScreener answer is a definitive no-pool from the fallback.
+    m._cache.clear(); m._codex_backoff_error = None; m._codex_backoff_until = 0
+    p.codex = [{"data": {}}]
+    p.dex = []
+    res = await m.snapshot("solana", QUOTE)
+    assert res["state"] == "no_pool" and res["provider"] == "DexScreener" and res["metrics"] is None
+
+
+async def test_codex_failure_keeps_kind_when_dexscreener_also_fails(codex_provider):
+    p, m = codex_provider
+    p.codex = [httpx.Response(500)]
+    with pytest.raises(MarketError) as caught:
+        await m.snapshot("solana", TOKEN)
+    assert caught.value.kind == "unavailable" and len(p.dex_requests) == 1
+
+
+async def test_codex_token_without_pool_is_definitive(codex_provider):
+    p, m = codex_provider
+    p.codex = [codex_overview(pairs=False)]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["state"] == "no_pool" and res["provider"] == "Codex" and res["pool"] is None
+    assert res["metrics"]["txns"]["h24"]["swaps"] == 200  # token-wide counts still reported
+    assert len(p.codex_requests) == 1 and not p.dex_requests  # no DexScreener net for a definitive answer
+
+
+async def test_codex_malformed_or_mismatched_payloads_fall_back(codex_provider):
+    p, m = codex_provider
+    p.dex = [dex_pair()]
+    # Pair metadata describing a different pair is rejected, then DexScreener serves the panel.
+    p.codex = [codex_overview(), codex_pair_meta(pair_address="0x" + "11" * 20)]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["provider"] == "DexScreener" and res["state"] == "ok"
+    # Overview data for a different token is rejected the same way.
+    m._cache.clear()
+    p.codex = [codex_overview(token=QUOTE), codex_pair_meta()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["provider"] == "DexScreener" and res["state"] == "ok"
+
+
+async def test_codex_rate_limit_pauses_codex_but_not_the_fallback(codex_provider):
+    p, m = codex_provider
+    p.codex = [httpx.Response(429, headers={"retry-after": "60"})]
+    p.dex = [dex_pair()]
+    res = await m.snapshot("solana", TOKEN)
+    assert res["provider"] == "DexScreener" and res["state"] == "ok"
+    m._cache.clear()
+    res = await m.snapshot("solana", QUOTE)  # still within the Codex cooldown
+    assert res["provider"] == "DexScreener"
+    assert len(p.codex_requests) == 1 and len(p.dex_requests) == 2
+
+
+async def test_codex_budget_is_separate_from_gmgn_and_dexscreener(codex_provider, monkeypatch):
+    p, m = codex_provider
+    monkeypatch.setattr(get_settings(), "codex_requests_per_minute", 2)
+    p.codex = [codex_overview(), codex_pair_meta()]
+    res = await m.snapshot("solana", TOKEN)  # exactly the two POSTs the budget allows
+    assert res["provider"] == "Codex"
+    m._cache.clear()
+    p.dex = [dex_pair()]
+    res = await m.snapshot("solana", QUOTE)  # budget exhausted -> keyless fallback
+    assert res["provider"] == "DexScreener" and res["state"] == "ok"
+    assert len(p.codex_requests) == 2 and len(p.dex_requests) == 1
+
+
+@pytest.mark.parametrize("field,value", [("price", "NaN"), ("price", "Infinity"), ("price", -1), ("circulating_supply", True), ("total_supply", "abc")])
+def test_codex_malformed_numbers_degrade_to_missing(field, value):
+    raw = {"token": {"address": TOKEN, "symbol": "WSOL", "circulating_supply": "1000000", "total_supply": "1200000"},
+           "pair": {"address": POOL, "exchange": "Raydium", "liquidity_usd": "150000",
+                    "quote_address": QUOTE, "quote_symbol": "USDC"},
+           "meta": {"price": "120.5", "price_change": {"m5": 0.005, "h1": None, "h24": 0.2},
+                    "volume": {"m5": "100", "h1": None, "h24": "50000"},
+                    "sides": [{"price": "120.5", "pooled": "1000"}, {"price": "1.0", "pooled": "150000"}]},
+           "stats": {"m5": {"buys": {"currentValue": "4"}, "sells": {"currentValue": "2"}}, "h1": None,
+                     "h24": {"buys": {"currentValue": "120"}, "sells": {"currentValue": "80"}}}}
+    raw["token"][field] = value
+    if field == "price":
+        raw["meta"][field] = value
+    out = mk._normalize_codex(raw, "solana", TOKEN)["metrics"]
+    if field == "price":
+        assert out["price_usd"] is None and out["market_cap_usd"] is None and out["fdv_usd"] is None
+    else:
+        assert out["market_cap_usd"] is None if field == "circulating_supply" else out["fdv_usd"] is None
+
+
+def test_codex_uncomputable_pool_value_falls_back_to_reported():
+    raw = {"token": {"address": TOKEN, "symbol": "WSOL", "circulating_supply": "1000000", "total_supply": "1200000"},
+           "pair": {"address": POOL, "exchange": "Raydium", "liquidity_usd": "150000",
+                    "quote_address": QUOTE, "quote_symbol": "USDC"},
+           "meta": {"price": "120.5", "price_change": {}, "volume": {},
+                    "sides": [{"price": "120.5", "pooled": None}, {"price": "1.0", "pooled": "150000"}]},
+           "stats": None}
+    out = mk._normalize_codex(raw, "solana", TOKEN)
+    assert out["metrics"]["liquidity_usd"] == 150000  # reported pair liquidity, not a partial sum
 
 
 async def test_dexscreener_malformed_and_mismatched_payloads(provider):
