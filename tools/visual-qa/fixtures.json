@@ -1,0 +1,4285 @@
+{
+ "/public-info": {
+  "status": 200,
+  "body": {
+   "test_signer": true,
+   "capabilities": {
+    "telegram": "read_only",
+    "cash_routes": [
+     "solana",
+     "base",
+     "bsc",
+     "ethereum",
+     "robinhood"
+    ],
+    "session_storage": "memory_only",
+    "email_recovery": false
+   }
+  }
+ },
+ "/health": {
+  "status": 200,
+  "body": {
+   "ok": true,
+   "build": "unknown"
+  }
+ },
+ "/auth/me": {
+  "status": 200,
+  "body": {
+   "id": "e8f94a71259441fbb7188ac135f2cb75",
+   "email": "operator@example.com",
+   "totp_enabled": false,
+   "email_verified": false,
+   "recovery_hold_until": null,
+   "created_at": "2026-10-06T09:17:02.234340",
+   "display_name": "operator",
+   "handle": null,
+   "avatar_hue": 265,
+   "admin_role": null
+  }
+ },
+ "/telegram/status": {
+  "status": 200,
+  "body": {
+   "linked": false,
+   "linked_at": null,
+   "bot_username": "",
+   "enabled": false
+  }
+ },
+ "/dashboard?period=all": {
+  "status": 200,
+  "body": {
+   "period": "all",
+   "total_launches": 2,
+   "by_chain": {
+    "solana": {
+     "launches": 2,
+     "transactions": 1
+    }
+   },
+   "net_sol_flow": -5e-06,
+   "net_usd_flow": null,
+   "flow_scope": {
+    "network": "solana",
+    "asset": "SOL",
+    "complete_portfolio": false
+   },
+   "usd_priced": false,
+   "series": [
+    {
+     "date": "2026-10-06",
+     "daily_sol": -5e-06,
+     "cumulative_sol": -5e-06,
+     "sol_price_usd": null,
+     "daily_usd": null,
+     "cumulative_usd": null
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   },
+   "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted."
+  }
+ },
+ "/dashboard?period=1y": {
+  "status": 200,
+  "body": {
+   "period": "1y",
+   "total_launches": 2,
+   "by_chain": {
+    "solana": {
+     "launches": 2,
+     "transactions": 1
+    }
+   },
+   "net_sol_flow": -5e-06,
+   "net_usd_flow": null,
+   "flow_scope": {
+    "network": "solana",
+    "asset": "SOL",
+    "complete_portfolio": false
+   },
+   "usd_priced": false,
+   "series": [
+    {
+     "date": "2026-10-06",
+     "daily_sol": -5e-06,
+     "cumulative_sol": -5e-06,
+     "sol_price_usd": null,
+     "daily_usd": null,
+     "cumulative_usd": null
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   },
+   "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted."
+  }
+ },
+ "/dashboard?period=1m": {
+  "status": 200,
+  "body": {
+   "period": "1m",
+   "total_launches": 2,
+   "by_chain": {
+    "solana": {
+     "launches": 2,
+     "transactions": 1
+    }
+   },
+   "net_sol_flow": -5e-06,
+   "net_usd_flow": null,
+   "flow_scope": {
+    "network": "solana",
+    "asset": "SOL",
+    "complete_portfolio": false
+   },
+   "usd_priced": false,
+   "series": [
+    {
+     "date": "2026-10-06",
+     "daily_sol": -5e-06,
+     "cumulative_sol": -5e-06,
+     "sol_price_usd": null,
+     "daily_usd": null,
+     "cumulative_usd": null
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   },
+   "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted."
+  }
+ },
+ "/dashboard?period=7d": {
+  "status": 200,
+  "body": {
+   "period": "7d",
+   "total_launches": 2,
+   "by_chain": {
+    "solana": {
+     "launches": 2,
+     "transactions": 1
+    }
+   },
+   "net_sol_flow": -5e-06,
+   "net_usd_flow": null,
+   "flow_scope": {
+    "network": "solana",
+    "asset": "SOL",
+    "complete_portfolio": false
+   },
+   "usd_priced": false,
+   "series": [
+    {
+     "date": "2026-10-06",
+     "daily_sol": -5e-06,
+     "cumulative_sol": -5e-06,
+     "sol_price_usd": null,
+     "daily_usd": null,
+     "cumulative_usd": null
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   },
+   "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted."
+  }
+ },
+ "/dashboard?period=1d": {
+  "status": 200,
+  "body": {
+   "period": "1d",
+   "total_launches": 2,
+   "by_chain": {
+    "solana": {
+     "launches": 2,
+     "transactions": 1
+    }
+   },
+   "net_sol_flow": -5e-06,
+   "net_usd_flow": null,
+   "flow_scope": {
+    "network": "solana",
+    "asset": "SOL",
+    "complete_portfolio": false
+   },
+   "usd_priced": false,
+   "series": [
+    {
+     "date": "2026-10-06",
+     "daily_sol": -5e-06,
+     "cumulative_sol": -5e-06,
+     "sol_price_usd": null,
+     "daily_usd": null,
+     "cumulative_usd": null
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   },
+   "note": "SOL-only movement recorded by Helm from confirmed transactions, including fees. USD values use daily SOL prices; missing prices remain unavailable. Excludes other chains and tokens, external activity and unrealized P&L; internal transfers are not adjusted."
+  }
+ },
+ "/portfolio": {
+  "status": 200,
+  "body": {
+   "chains": [
+    {
+     "network": "solana",
+     "name": "Solana",
+     "coin": "SOL",
+     "wallets": 5,
+     "native": 24.999995,
+     "stable_symbol": "USDC",
+     "stable": 0.0,
+     "error": null,
+     "status": "ok",
+     "wallets_read": 5,
+     "native_read": 5,
+     "stable_read": 5,
+     "top": [
+      {
+       "id": "46155af843b64165920c74b375b84c61",
+       "label": "Desk 3",
+       "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+       "native": 5.0,
+       "stable": 0.0
+      },
+      {
+       "id": "997a9553ad5346cb933c9cf79e4edf81",
+       "label": "Main",
+       "address": "6azhW5JdRj1suXpJ9B1jtYAJtvcsrpeqzmnfiK5aCRF6",
+       "native": 5.0,
+       "stable": 0.0
+      },
+      {
+       "id": "9b1fc51338d94acca4a6f236f2704197",
+       "label": "Desk 2",
+       "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+       "native": 5.0,
+       "stable": 0.0
+      }
+     ],
+     "message": null,
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": false,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": 0
+    },
+    {
+     "network": "base",
+     "name": "Base",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "Base: USDC unread for 1 of 1 wallet (eth_call failed on every Base RPC endpoint (Base RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Base RPC endpoint (Base RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "bsc",
+     "name": "BNB Chain",
+     "coin": "BNB",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "BNB Chain: USDC unread for 1 of 1 wallet (eth_call failed on every BNB Chain RPC endpoint (BNB Chain RPC endpoint 1 of 1: temporarily cooling down after a failed request)); BNB unread for 1 of 1 wallet (eth_getBalance failed on every BNB Chain RPC endpoint (BNB Chain RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "BNB read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "robinhood",
+     "name": "Robinhood Chain",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDG",
+     "stable": null,
+     "error": "Robinhood Chain: USDG unread for 1 of 1 wallet (eth_call failed on every Robinhood Chain RPC endpoint (Robinhood Chain RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Robinhood Chain RPC endpoint (Robinhood Chain RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDG read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "ethereum",
+     "name": "Ethereum",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "Ethereum: USDC unread for 1 of 1 wallet (eth_call failed on every Ethereum RPC endpoint (Ethereum RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Ethereum RPC endpoint (Ethereum RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "tron",
+     "name": "TRON",
+     "coin": "TRX",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Native coin only; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "near",
+     "name": "NEAR",
+     "coin": "NEAR",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Available NEAR after storage; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "arc",
+     "name": "Arc",
+     "coin": "USDC",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": true,
+     "scope": "Native USDC, counted once; other tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": 1.0,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "ton",
+     "name": "TON",
+     "coin": "TON",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Native coin only; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    }
+   ],
+   "totals": {
+    "usd": 0.0,
+    "stable_usd": 0.0,
+    "native_usd": null
+   },
+   "complete": false,
+   "incomplete_chains": [
+    "base",
+    "bsc",
+    "robinhood",
+    "ethereum"
+   ],
+   "stable_complete": false,
+   "native_complete": false,
+   "unpriced_chains": [
+    "solana"
+   ],
+   "checked_at": "2026-10-06T09:17:03.480388+00:00",
+   "prices": {},
+   "priced": false,
+   "wallets": 9,
+   "note": "Managed wallets only. Native coins and listed stablecoins; launch tokens and other tokens are excluded. NEAR is available after storage. USDC and USDG are valued at $1; Arc USDC is counted once."
+  }
+ },
+ "/portfolio?fresh=true": {
+  "status": 200,
+  "body": {
+   "chains": [
+    {
+     "network": "solana",
+     "name": "Solana",
+     "coin": "SOL",
+     "wallets": 5,
+     "native": 24.999995,
+     "stable_symbol": "USDC",
+     "stable": 0.0,
+     "error": null,
+     "status": "ok",
+     "wallets_read": 5,
+     "native_read": 5,
+     "stable_read": 5,
+     "top": [
+      {
+       "id": "46155af843b64165920c74b375b84c61",
+       "label": "Desk 3",
+       "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+       "native": 5.0,
+       "stable": 0.0
+      },
+      {
+       "id": "997a9553ad5346cb933c9cf79e4edf81",
+       "label": "Main",
+       "address": "6azhW5JdRj1suXpJ9B1jtYAJtvcsrpeqzmnfiK5aCRF6",
+       "native": 5.0,
+       "stable": 0.0
+      },
+      {
+       "id": "9b1fc51338d94acca4a6f236f2704197",
+       "label": "Desk 2",
+       "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+       "native": 5.0,
+       "stable": 0.0
+      }
+     ],
+     "message": null,
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": false,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": 0
+    },
+    {
+     "network": "base",
+     "name": "Base",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "Base: USDC unread for 1 of 1 wallet (eth_call failed on every Base RPC endpoint (Base RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Base RPC endpoint (Base RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "bsc",
+     "name": "BNB Chain",
+     "coin": "BNB",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "BNB Chain: USDC unread for 1 of 1 wallet (eth_call failed on every BNB Chain RPC endpoint (BNB Chain RPC endpoint 1 of 1: temporarily cooling down after a failed request)); BNB unread for 1 of 1 wallet (eth_getBalance failed on every BNB Chain RPC endpoint (BNB Chain RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "BNB read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "robinhood",
+     "name": "Robinhood Chain",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDG",
+     "stable": null,
+     "error": "Robinhood Chain: USDG unread for 1 of 1 wallet (eth_call failed on every Robinhood Chain RPC endpoint (Robinhood Chain RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Robinhood Chain RPC endpoint (Robinhood Chain RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDG read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "ethereum",
+     "name": "Ethereum",
+     "coin": "ETH",
+     "wallets": 1,
+     "native": null,
+     "stable_symbol": "USDC",
+     "stable": null,
+     "error": "Ethereum: USDC unread for 1 of 1 wallet (eth_call failed on every Ethereum RPC endpoint (Ethereum RPC endpoint 1 of 1: temporarily cooling down after a failed request)); ETH unread for 1 of 1 wallet (eth_getBalance failed on every Ethereum RPC endpoint (Ethereum RPC endpoint 1 of 1: ProxyError))",
+     "status": "unavailable",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": "ETH read for 0 of 1 wallets. USDC read for 0 of 1 wallets. The balance provider is busy; try again shortly.",
+     "stable_tracked": true,
+     "native_is_stable": false,
+     "scope": null,
+     "native_complete": false,
+     "stable_complete": false,
+     "price_complete": true,
+     "value_complete": false,
+     "price_usd": null,
+     "native_usd": null,
+     "usd": null
+    },
+    {
+     "network": "tron",
+     "name": "TRON",
+     "coin": "TRX",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Native coin only; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "near",
+     "name": "NEAR",
+     "coin": "NEAR",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Available NEAR after storage; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "arc",
+     "name": "Arc",
+     "coin": "USDC",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": true,
+     "scope": "Native USDC, counted once; other tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": 1.0,
+     "native_usd": 0.0,
+     "usd": 0
+    },
+    {
+     "network": "ton",
+     "name": "TON",
+     "coin": "TON",
+     "wallets": 0,
+     "native": 0.0,
+     "stable_symbol": null,
+     "stable": 0.0,
+     "error": null,
+     "status": "no_wallets",
+     "wallets_read": 0,
+     "native_read": 0,
+     "stable_read": 0,
+     "top": [],
+     "message": null,
+     "stable_tracked": false,
+     "native_is_stable": false,
+     "scope": "Native coin only; tokens not included.",
+     "native_complete": true,
+     "stable_complete": true,
+     "price_complete": true,
+     "value_complete": true,
+     "price_usd": null,
+     "native_usd": 0.0,
+     "usd": 0
+    }
+   ],
+   "totals": {
+    "usd": 0.0,
+    "stable_usd": 0.0,
+    "native_usd": null
+   },
+   "complete": false,
+   "incomplete_chains": [
+    "base",
+    "bsc",
+    "robinhood",
+    "ethereum"
+   ],
+   "stable_complete": false,
+   "native_complete": false,
+   "unpriced_chains": [
+    "solana"
+   ],
+   "checked_at": "2026-10-06T09:17:03.480388+00:00",
+   "prices": {},
+   "priced": false,
+   "wallets": 9,
+   "note": "Managed wallets only. Native coins and listed stablecoins; launch tokens and other tokens are excluded. NEAR is available after storage. USDC and USDG are valued at $1; Arc USDC is counted once."
+  }
+ },
+ "/launches": {
+  "status": 200,
+  "body": [
+   {
+    "id": "46ce5d2d9336466abd732285e07bb7d8",
+    "network": "solana",
+    "launchpad": "pumpfun",
+    "status": "draft",
+    "name": "Quiet Draft",
+    "symbol": "QDFT",
+    "description": "",
+    "socials": {},
+    "mint_address": null,
+    "dev_wallet_id": "9b1fc51338d94acca4a6f236f2704197",
+    "dev_buy_sol": 0.0,
+    "imported": false,
+    "has_image": false,
+    "created_at": "2026-10-06T09:17:02.742617",
+    "quote": null,
+    "cloned_from": null,
+    "deployed_at": null,
+    "settings": {},
+    "deploy_tx": null,
+    "deploy_error": null,
+    "deploy_note": null,
+    "creator_share_setup": null,
+    "pons_rewards": null
+   },
+   {
+    "id": "a4f2841e811e433084289f86640faf82",
+    "network": "solana",
+    "launchpad": "pumpfun",
+    "status": "live",
+    "name": "Harbor Signal",
+    "symbol": "HRBR",
+    "description": "Disposable QA launch",
+    "socials": {},
+    "mint_address": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+    "dev_wallet_id": "bcfe0956163c4254a3c7b64af8c23cf8",
+    "dev_buy_sol": 0.25,
+    "imported": false,
+    "has_image": false,
+    "created_at": "2026-10-06T09:17:02.571056",
+    "quote": null,
+    "cloned_from": null,
+    "deployed_at": "2026-10-06T09:17:02.707100",
+    "settings": {},
+    "deploy_tx": null,
+    "deploy_error": null,
+    "deploy_note": null,
+    "creator_share_setup": null,
+    "pons_rewards": null
+   }
+  ]
+ },
+ "/launches?status=archived": {
+  "status": 200,
+  "body": []
+ },
+ "/launchpads": {
+  "status": 200,
+  "body": [
+   {
+    "id": "pumpfun",
+    "network": "solana",
+    "quote_assets": [
+     "SOL"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "letsbonk",
+    "network": "solana",
+    "quote_assets": [
+     "SOL"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "bags",
+    "network": "solana",
+    "quote_assets": [
+     "SOL"
+    ],
+    "status": "setup_required",
+    "reason": "Bags needs an API key (BAGS_API_KEY) on the server"
+   },
+   {
+    "id": "flap-sh",
+    "network": "bsc",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "flap-sh-robinhood",
+    "network": "robinhood",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "flap-sh-base",
+    "network": "base",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "pons",
+    "network": "robinhood",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "setup_required",
+    "reason": "Pons launches are paused until Helm's reward splitter passes independent review and is deployed (PONS_REWARDS_ENABLED and PONS_REWARDS_FACTORY)"
+   },
+   {
+    "id": "uniswap-v2",
+    "network": "ethereum",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "four-meme",
+    "network": "bsc",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "meteora-dbc",
+    "network": "solana",
+    "quote_assets": [
+     "SOL",
+     "USDC"
+    ],
+    "status": "setup_required",
+    "reason": "Meteora DBC launches go through Jupiter Studio, which needs a Jupiter API key (JUPITER_API_KEY)"
+   },
+   {
+    "id": "clanker",
+    "network": "base",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "clanker-robinhood",
+    "network": "robinhood",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "available"
+   },
+   {
+    "id": "sunpump",
+    "network": "tron",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "setup_required",
+    "reason": "TRON isn't enabled on this server (EXTRA_NETWORKS)"
+   },
+   {
+    "id": "tolly",
+    "network": "arc",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "setup_required",
+    "reason": "Arc isn't enabled on this server (EXTRA_NETWORKS)"
+   },
+   {
+    "id": "meme-cooking",
+    "network": "near",
+    "quote_assets": [
+     "native"
+    ],
+    "status": "setup_required",
+    "reason": "NEAR isn't enabled on this server (EXTRA_NETWORKS)"
+   },
+   {
+    "id": "printr",
+    "network": "solana",
+    "quote_assets": [],
+    "status": "planned"
+   },
+   {
+    "id": "surge",
+    "network": "solana",
+    "quote_assets": [],
+    "status": "planned"
+   },
+   {
+    "id": "anoncoin",
+    "network": "solana",
+    "quote_assets": [],
+    "status": "planned"
+   },
+   {
+    "id": "stonkfun",
+    "network": "solana",
+    "quote_assets": [],
+    "status": "planned"
+   },
+   {
+    "id": "bankr",
+    "network": "base",
+    "quote_assets": [],
+    "status": "planned"
+   },
+   {
+    "id": "gaspump",
+    "network": "ton",
+    "quote_assets": [],
+    "status": "planned"
+   }
+  ]
+ },
+ "/wallets": {
+  "status": 200,
+  "body": [
+   {
+    "id": "997a9553ad5346cb933c9cf79e4edf81",
+    "network": "solana",
+    "address": "6azhW5JdRj1suXpJ9B1jtYAJtvcsrpeqzmnfiK5aCRF6",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "f11f53b3ba124bceb70820e8f772823b",
+    "network": "base",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "3c0d7d1b37a34b16bad20155e4953f35",
+    "network": "bsc",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "58e00d73ae124d88b41637e094e7c6ee",
+    "network": "ethereum",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "23669f9921dc4ca09eca411003b42cd7",
+    "network": "robinhood",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "bcfe0956163c4254a3c7b64af8c23cf8",
+    "network": "solana",
+    "address": "8973qyYbSijMEy2koZD7vMFdfsV7gcUn43frR5YiWLBv",
+    "kind": "managed",
+    "label": "Desk 1",
+    "folder_id": null,
+    "is_main": false
+   },
+   {
+    "id": "9b1fc51338d94acca4a6f236f2704197",
+    "network": "solana",
+    "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+    "kind": "managed",
+    "label": "Desk 2",
+    "folder_id": null,
+    "is_main": false
+   },
+   {
+    "id": "46155af843b64165920c74b375b84c61",
+    "network": "solana",
+    "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+    "kind": "managed",
+    "label": "Desk 3",
+    "folder_id": null,
+    "is_main": false
+   },
+   {
+    "id": "c401c2169a6244ec93120b0b306cb8c1",
+    "network": "solana",
+    "address": "7fThFyMvdLes9MLQgbcB6YFeV5up4hqWmwD3PnLdkgFr",
+    "kind": "managed",
+    "label": "Desk 4",
+    "folder_id": null,
+    "is_main": false
+   }
+  ]
+ },
+ "/wallets?with_balances=true": {
+  "status": 200,
+  "body": [
+   {
+    "id": "997a9553ad5346cb933c9cf79e4edf81",
+    "network": "solana",
+    "address": "6azhW5JdRj1suXpJ9B1jtYAJtvcsrpeqzmnfiK5aCRF6",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true,
+    "balance": 5.0,
+    "balance_sol": 5.0,
+    "coin_usd": null,
+    "stable": 0.0,
+    "stable_symbol": "USDC"
+   },
+   {
+    "id": "f11f53b3ba124bceb70820e8f772823b",
+    "network": "base",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "3c0d7d1b37a34b16bad20155e4953f35",
+    "network": "bsc",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "58e00d73ae124d88b41637e094e7c6ee",
+    "network": "ethereum",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "23669f9921dc4ca09eca411003b42cd7",
+    "network": "robinhood",
+    "address": "0xf2AeC29ae747E3D31e90be86C2787fa48d8B20A7",
+    "kind": "managed",
+    "label": "Main",
+    "folder_id": null,
+    "is_main": true
+   },
+   {
+    "id": "bcfe0956163c4254a3c7b64af8c23cf8",
+    "network": "solana",
+    "address": "8973qyYbSijMEy2koZD7vMFdfsV7gcUn43frR5YiWLBv",
+    "kind": "managed",
+    "label": "Desk 1",
+    "folder_id": null,
+    "is_main": false,
+    "balance": 4.999995,
+    "balance_sol": 4.999995,
+    "coin_usd": null,
+    "stable": 0.0,
+    "stable_symbol": "USDC"
+   },
+   {
+    "id": "9b1fc51338d94acca4a6f236f2704197",
+    "network": "solana",
+    "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+    "kind": "managed",
+    "label": "Desk 2",
+    "folder_id": null,
+    "is_main": false,
+    "balance": 5.0,
+    "balance_sol": 5.0,
+    "coin_usd": null,
+    "stable": 0.0,
+    "stable_symbol": "USDC"
+   },
+   {
+    "id": "46155af843b64165920c74b375b84c61",
+    "network": "solana",
+    "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+    "kind": "managed",
+    "label": "Desk 3",
+    "folder_id": null,
+    "is_main": false,
+    "balance": 5.0,
+    "balance_sol": 5.0,
+    "coin_usd": null,
+    "stable": 0.0,
+    "stable_symbol": "USDC"
+   },
+   {
+    "id": "c401c2169a6244ec93120b0b306cb8c1",
+    "network": "solana",
+    "address": "7fThFyMvdLes9MLQgbcB6YFeV5up4hqWmwD3PnLdkgFr",
+    "kind": "managed",
+    "label": "Desk 4",
+    "folder_id": null,
+    "is_main": false,
+    "balance": 5.0,
+    "balance_sol": 5.0,
+    "coin_usd": null,
+    "stable": 0.0,
+    "stable_symbol": "USDC"
+   }
+  ]
+ },
+ "/folders": {
+  "status": 200,
+  "body": [
+   {
+    "id": "cbb9fb891c9a45c29caa292dcc873d9b",
+    "name": "Launch desk",
+    "color": "#6366f1",
+    "wallet_count": 0
+   }
+  ]
+ },
+ "/funders": {
+  "status": 200,
+  "body": [
+   {
+    "id": "7da91fd48a3e4d86971f66e84a8f212b",
+    "wallet_id": "997a9553ad5346cb933c9cf79e4edf81",
+    "label": "Main",
+    "is_default": true,
+    "network": "solana"
+   },
+   {
+    "id": "6c7ba236d9c94ddebf2ac38dda7b17a7",
+    "wallet_id": "f11f53b3ba124bceb70820e8f772823b",
+    "label": "Main",
+    "is_default": true,
+    "network": "base"
+   },
+   {
+    "id": "3a4ea7540e12498fbfed88c8f8c0431b",
+    "wallet_id": "3c0d7d1b37a34b16bad20155e4953f35",
+    "label": "Main",
+    "is_default": true,
+    "network": "bsc"
+   },
+   {
+    "id": "6b24ba73f00b4e9f820fb5615af30f8f",
+    "wallet_id": "58e00d73ae124d88b41637e094e7c6ee",
+    "label": "Main",
+    "is_default": true,
+    "network": "ethereum"
+   },
+   {
+    "id": "8bcb8ece4ba94d46a3c753fa11084ef1",
+    "wallet_id": "23669f9921dc4ca09eca411003b42cd7",
+    "label": "Main",
+    "is_default": true,
+    "network": "robinhood"
+   }
+  ]
+ },
+ "/chains": {
+  "status": 200,
+  "body": {
+   "core": [
+    {
+     "id": "solana",
+     "name": "Solana",
+     "family": "solana",
+     "enabled": true,
+     "capabilities": {
+      "wallets": "implemented",
+      "launches": "launchpad_specific",
+      "trading": "adapter_and_pool_specific",
+      "cash_routes": "implemented",
+      "market_metrics": "implemented",
+      "market_charts": "implemented",
+      "eligibility": "checked_per_action"
+     }
+    },
+    {
+     "id": "base",
+     "name": "Base",
+     "family": "evm",
+     "enabled": true,
+     "chain_id": 8453,
+     "capabilities": {
+      "wallets": "implemented",
+      "launches": "launchpad_specific",
+      "trading": "adapter_and_pool_specific",
+      "cash_routes": "implemented",
+      "market_metrics": "implemented",
+      "market_charts": "implemented",
+      "eligibility": "checked_per_action"
+     }
+    },
+    {
+     "id": "bsc",
+     "name": "BNB Chain",
+     "family": "evm",
+     "enabled": true,
+     "chain_id": 56,
+     "capabilities": {
+      "wallets": "implemented",
+      "launches": "launchpad_specific",
+      "trading": "adapter_and_pool_specific",
+      "cash_routes": "implemented",
+      "market_metrics": "implemented",
+      "market_charts": "implemented",
+      "eligibility": "checked_per_action"
+     }
+    },
+    {
+     "id": "ethereum",
+     "name": "Ethereum",
+     "family": "evm",
+     "enabled": true,
+     "chain_id": 1,
+     "capabilities": {
+      "wallets": "implemented",
+      "launches": "launchpad_specific",
+      "trading": "adapter_and_pool_specific",
+      "cash_routes": "implemented",
+      "market_metrics": "implemented",
+      "market_charts": "implemented",
+      "eligibility": "checked_per_action"
+     }
+    },
+    {
+     "id": "robinhood",
+     "name": "Robinhood Chain",
+     "family": "evm",
+     "enabled": true,
+     "chain_id": 4663,
+     "capabilities": {
+      "wallets": "implemented",
+      "launches": "launchpad_specific",
+      "trading": "adapter_and_pool_specific",
+      "cash_routes": "implemented",
+      "market_metrics": "implemented",
+      "market_charts": "implemented",
+      "eligibility": "checked_per_action"
+     }
+    }
+   ],
+   "extra": [
+    {
+     "id": "tron",
+     "family": "tron",
+     "name": "TRON",
+     "native": "TRX",
+     "decimals": 6,
+     "chain_id": null,
+     "network_id": null,
+     "explorer": {
+      "account": "https://tronscan.org/address/",
+      "tx": "https://tronscan.org/transaction/",
+      "token": "https://tronscan.org/token20/"
+     },
+     "notes": "Fees are paid in resources: bandwidth (600 free a day) and energy for contracts, else TRX is burned.",
+     "enabled": false,
+     "capabilities": {
+      "wallets": "yes: Helm-managed keys (secp256k1, TRON address format) and watch-only addresses",
+      "balances": "yes: TRX and TRC-20 by contract address",
+      "token_metadata": "yes: TRC-20 name, symbol, decimals read from the contract",
+      "history": "yes: TronGrid account history",
+      "transfers": "yes: TRX and TRC-20, with bandwidth, energy and account-activation costs in the preview; final once solidified",
+      "launches": "yes: SunPump (name and symbol on-chain; SunPump's own site doesn't show an image for them)",
+      "swaps": "partial: buys and sells on SunPump's bonding curve; SunSwap (after graduation) isn't routed",
+      "market_data": "no: no provider coverage verified for Helm's market views on TRON yet",
+      "cross_chain": "no: Helm's route provider (Relay) isn't wired for TRON",
+      "market_metrics": "implemented",
+      "market_charts": "implemented"
+     },
+     "sources": [
+      "https://developers.tron.network/docs/networks",
+      "https://developers.tron.network/docs/account",
+      "https://developers.tron.network/docs/api-signature-and-broadcast-flow",
+      "https://developers.tron.network/docs/tron-protocol-transaction",
+      "https://developers.tron.network/docs/resource-model",
+      "https://developers.tron.network/docs/paying-for-resources",
+      "https://developers.tron.network/docs/set-feelimit",
+      "https://developers.tron.network/docs/trc20-contract-interaction",
+      "https://developers.tron.network/reference/gettransactioninfobyid-1",
+      "https://developers.tron.network/reference/rate-limits",
+      "https://developers.tron.network/docs/tronlink-integration"
+     ]
+    },
+    {
+     "id": "near",
+     "family": "near",
+     "name": "NEAR",
+     "native": "NEAR",
+     "decimals": 24,
+     "chain_id": null,
+     "network_id": null,
+     "explorer": {
+      "account": "https://nearblocks.io/address/",
+      "tx": "https://nearblocks.io/txns/",
+      "token": "https://nearblocks.io/token/"
+     },
+     "notes": "Accounts are names (alice.near) or 64-hex implicit accounts; tokens need a storage deposit.",
+     "enabled": false,
+     "capabilities": {
+      "wallets": "yes: Helm-managed ed25519 keys as implicit accounts, and watch-only named or implicit accounts",
+      "balances": "yes: NEAR (available, after storage) and NEP-141 tokens by contract account",
+      "token_metadata": "yes: NEP-148 ft_metadata",
+      "history": "partial: Helm's own transfers only; NEAR has no official account-history API",
+      "transfers": "yes: NEAR and NEP-141 (with the recipient's storage registration when needed); final execution awaited",
+      "launches": "yes: Meme.Cooking fair-launch auctions (needs PINATA_JWT for the image)",
+      "swaps": "partial: deposit into and withdraw from Meme.Cooking auctions; Ref Finance isn't routed",
+      "market_data": "no: no provider coverage verified for Helm's market views on NEAR yet",
+      "cross_chain": "no: Helm's route provider isn't wired for NEAR",
+      "market_metrics": "unavailable",
+      "market_charts": "unavailable"
+     },
+     "sources": [
+      "https://docs.near.org/api/rpc/providers",
+      "https://docs.near.org/api/rpc/transactions",
+      "https://docs.near.org/api/rpc/access-keys",
+      "https://nomicon.io/DataStructures/Account",
+      "https://nomicon.io/RuntimeSpec/Transactions",
+      "https://nomicon.io/RuntimeSpec/Actions",
+      "https://docs.near.org/integrations/implicit-accounts",
+      "https://docs.near.org/protocol/transactions/gas",
+      "https://docs.near.org/protocol/storage/storage-staking",
+      "https://docs.near.org/primitives/ft",
+      "https://docs.near.org/tools/near-connect.md"
+     ]
+    },
+    {
+     "id": "arc",
+     "family": "evm",
+     "name": "Arc",
+     "native": "USDC",
+     "decimals": 18,
+     "chain_id": 5042,
+     "network_id": null,
+     "explorer": {
+      "account": "https://explorer.arc.io/address/",
+      "tx": "https://explorer.arc.io/tx/",
+      "token": "https://explorer.arc.io/token/"
+     },
+     "notes": "Gas is paid in USDC. Native USDC has 18 decimals; its ERC-20 interface (0x3600\u2026) shows the same balance with 6 decimals, so it is never counted twice.",
+     "enabled": false,
+     "capabilities": {
+      "wallets": "yes: Helm-managed EVM keys and watch-only addresses",
+      "balances": "yes: USDC (native, 18 decimals) and ERC-20 tokens such as EURC",
+      "token_metadata": "yes: ERC-20 name, symbol, decimals",
+      "history": "partial: Helm's own transfers only; no official Arc history API is documented",
+      "transfers": "yes: USDC and ERC-20, gas paid in USDC; final at one confirmation (deterministic finality)",
+      "launches": "yes: Tolly (Uniswap V3 token/USDC pool with locked liquidity; verified source)",
+      "swaps": "partial: buys and sells of Tolly tokens through Arc's Uniswap V3 SwapRouter02",
+      "market_data": "no: no provider coverage verified for Arc",
+      "cross_chain": "no: not wired in this release",
+      "market_metrics": "implemented",
+      "market_charts": "implemented"
+     },
+     "sources": [
+      "https://docs.arc.io/integrate/connect-to-arc",
+      "https://docs.arc.io/integrate/wallets/add-arc-to-a-wallet",
+      "https://docs.arc.io/arc/references/evm-differences",
+      "https://docs.arc.io/arc/references/contract-addresses",
+      "https://docs.arc.io/arc/references/gas-and-fees.md",
+      "https://docs.arc.io/arc/concepts/deterministic-finality.md"
+     ]
+    },
+    {
+     "id": "ton",
+     "family": "ton",
+     "name": "TON",
+     "native": "TON",
+     "decimals": 9,
+     "chain_id": null,
+     "network_id": "-239",
+     "explorer": {
+      "account": "https://tonviewer.com/",
+      "tx": "https://tonviewer.com/transaction/",
+      "token": "https://tonviewer.com/"
+     },
+     "notes": "Your own wallet signs through TON Connect; Helm never holds TON keys. Jettons move through the sender's jetton wallet with 0.05 TON attached (the unused part comes back).",
+     "enabled": false,
+     "capabilities": {
+      "wallets": "yes: your own wallet via TON Connect (bound with a signed ton_proof) and watch-only addresses; Helm-managed TON keys aren't offered",
+      "balances": "yes: TON and Jettons by master address (toncenter index)",
+      "token_metadata": "yes: Jetton name, symbol, decimals from the index (decimals default to 9)",
+      "history": "yes: toncenter account transactions",
+      "transfers": "yes: TON and Jettons, approved and signed in your wallet; followed by message hash until final",
+      "launches": "no: no TON launchpad integrated with verified contracts and terms",
+      "swaps": "no: no TON DEX route integrated in this release",
+      "market_data": "no: no provider coverage verified for Helm's market views on TON yet",
+      "cross_chain": "no: Helm's route provider isn't wired for TON",
+      "market_metrics": "unavailable",
+      "market_charts": "unavailable"
+     },
+     "sources": [
+      "https://github.com/ton-blockchain/ton-connect/blob/main/spec/connect.md",
+      "https://github.com/ton-blockchain/ton-connect/blob/main/spec/rpc.md",
+      "https://github.com/ton-blockchain/ton-connect/blob/main/spec/manifest.md",
+      "https://docs.ton.org/applications/ton-connect/how-to/ton-proof",
+      "https://docs.ton.org/applications/ton-connect/how-to/send-transaction",
+      "https://docs.ton.org/applications/ton-connect/how-to/message-lookup",
+      "https://github.com/ton-blockchain/TEPs/blob/master/text/0002-address.md",
+      "https://github.com/ton-blockchain/TEPs/blob/master/text/0074-jettons-standard.md",
+      "https://github.com/ton-blockchain/TEPs/blob/master/text/0467-normalized-message-hash.md",
+      "https://docs.ton.org/foundations/addresses/formats",
+      "https://docs.ton.org/foundations/status",
+      "https://docs.ton.org/foundations/fees",
+      "https://docs.ton.org/api/v3/overview",
+      "https://docs.ton.org/api/rate-limit"
+     ]
+    }
+   ],
+   "note": "Enabled networks are the ones the server lists in EXTRA_NETWORKS (mainnets by default; ALLOW_MAINNET_EXTRA_NETWORKS=false turns every mainnet off)."
+  }
+ },
+ "/chains/wallets/overview": {
+  "status": 200,
+  "body": {
+   "networks": [
+    {
+     "id": "tron",
+     "name": "TRON",
+     "family": "tron",
+     "enabled": false,
+     "chain_id": null,
+     "network_id": null,
+     "native": "TRX",
+     "managed": true,
+     "external": "TronLink"
+    },
+    {
+     "id": "near",
+     "name": "NEAR",
+     "family": "near",
+     "enabled": false,
+     "chain_id": null,
+     "network_id": null,
+     "native": "NEAR",
+     "managed": true,
+     "external": "NEAR wallet (NEAR Connect)"
+    },
+    {
+     "id": "arc",
+     "name": "Arc",
+     "family": "evm",
+     "enabled": false,
+     "chain_id": 5042,
+     "network_id": null,
+     "native": "USDC",
+     "managed": true,
+     "external": "Browser EVM wallet"
+    },
+    {
+     "id": "ton",
+     "name": "TON",
+     "family": "ton",
+     "enabled": false,
+     "chain_id": null,
+     "network_id": "-239",
+     "native": "TON",
+     "managed": false,
+     "external": "TON Connect"
+    }
+   ],
+   "wallets": []
+  }
+ },
+ "/activity?limit=300": {
+  "status": 200,
+  "body": [
+   {
+    "id": "087a83cd1c614a5596359464f0b477ee",
+    "kind": "launch.created",
+    "ref_type": "launch",
+    "ref_id": "46ce5d2d9336466abd732285e07bb7d8",
+    "payload": {
+     "launchpad": "pumpfun"
+    },
+    "created_at": "2026-10-06T09:17:02.741468"
+   },
+   {
+    "id": "0fb960042217476dbc3f15d43cf559e2",
+    "kind": "deploy.confirmed",
+    "ref_type": "job",
+    "ref_id": "295b1528345843c4973bfe26db100e0e",
+    "payload": {
+     "preflight_hash": "e366e9e0728205c5adaf7b8ec6d6c1f59c55b2f9a814ffb0d9502a0e71531b0c"
+    },
+    "created_at": "2026-10-06T09:17:02.649436"
+   },
+   {
+    "id": "d2a1632d47d14afa873d72066206c78a",
+    "kind": "launch.created",
+    "ref_type": "launch",
+    "ref_id": "a4f2841e811e433084289f86640faf82",
+    "payload": {
+     "launchpad": "pumpfun"
+    },
+    "created_at": "2026-10-06T09:17:02.569046"
+   },
+   {
+    "id": "afd14a03b87b427faf155e58f689f9c1",
+    "kind": "wallets.created",
+    "ref_type": null,
+    "ref_id": null,
+    "payload": {
+     "count": 4,
+     "network": "solana"
+    },
+    "created_at": "2026-10-06T09:17:02.517519"
+   },
+   {
+    "id": "afa30711e2524c16a74fae5afc404aeb",
+    "kind": "session.created",
+    "ref_type": "session",
+    "ref_id": "2408fb6ec147401687dd5dec6ef784a1",
+    "payload": {},
+    "created_at": "2026-10-06T09:17:02.423062"
+   },
+   {
+    "id": "dabcd2be1d814d66a91ce73ee7ee1e8d",
+    "kind": "account.created",
+    "ref_type": null,
+    "ref_id": null,
+    "payload": {
+     "referred": false
+    },
+    "created_at": "2026-10-06T09:17:02.236756"
+   }
+  ]
+ },
+ "/tracker": {
+  "status": 200,
+  "body": [
+   {
+    "id": "606ec6c009af4a548c8c3b765d0e6201",
+    "address": "7fThFyMvdLes9MLQgbcB6YFeV5up4hqWmwD3PnLdkgFr",
+    "label": "Watched desk",
+    "bookmarked": false,
+    "network": "solana"
+   }
+  ]
+ },
+ "/profile": {
+  "status": 200,
+  "body": {
+   "profile": {
+    "display_name": "operator",
+    "handle": null,
+    "bio": "",
+    "x_handle": "",
+    "telegram_handle": "",
+    "website": "",
+    "avatar_hue": 265,
+    "is_public": false,
+    "public_path": null
+   },
+   "account": {
+    "email": "operator@example.com",
+    "created_at": "2026-10-06T09:17:02.234340",
+    "totp_enabled": false,
+    "telegram_linked": false,
+    "active_sessions": 1,
+    "referred": false,
+    "last_sign_in": "2026-10-06T09:17:02.424523"
+   },
+   "stats": {
+    "launches": {
+     "total": 2,
+     "live": 1,
+     "failed": 0,
+     "draft": 1,
+     "archived": 0,
+     "imported": 0
+    },
+    "launchpads": [
+     {
+      "network": "solana",
+      "launchpad": "pumpfun",
+      "count": 2,
+      "live": 1
+     }
+    ],
+    "networks": [
+     {
+      "network": "solana",
+      "launches": 2,
+      "wallets": 5
+     },
+     {
+      "network": "base",
+      "launches": 0,
+      "wallets": 1
+     },
+     {
+      "network": "bsc",
+      "launches": 0,
+      "wallets": 1
+     },
+     {
+      "network": "ethereum",
+      "launches": 0,
+      "wallets": 1
+     },
+     {
+      "network": "robinhood",
+      "launches": 0,
+      "wallets": 1
+     }
+    ],
+    "trades": {
+     "count": 0,
+     "buys": 0,
+     "sells": 0,
+     "volume_sol": 0.0
+    },
+    "net_sol_flow": -5e-06,
+    "net_flow": {
+     "usd": 0,
+     "priced": false,
+     "flows": [
+      {
+       "network": "solana",
+       "symbol": "SOL",
+       "amount": -5e-06,
+       "usd": null
+      }
+     ],
+     "note": "Measured coin in and out of your wallets, valued in USD at each chain's coin price. Chains without recorded flows aren't included."
+    },
+    "fees_paid_sol": 0.0,
+    "wallets": {
+     "managed": 9,
+     "watch": 0
+    },
+    "tracked": 1
+   },
+   "heatmap": {
+    "start": "2026-04-08",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6
+    ],
+    "total": 6,
+    "active_days": 1,
+    "streak": 1
+   },
+   "milestones": [
+    {
+     "id": "secured",
+     "label": "Account secured",
+     "hint": "Two-factor authentication on",
+     "done": false
+    },
+    {
+     "id": "telegram",
+     "label": "Terminal linked",
+     "hint": "Telegram bot connected",
+     "done": false
+    },
+    {
+     "id": "first_launch",
+     "label": "First launch",
+     "hint": "Deployed a token",
+     "done": true
+    },
+    {
+     "id": "multichain",
+     "label": "Multichain",
+     "hint": "Launched on 2 or more chains",
+     "done": false
+    },
+    {
+     "id": "referrer",
+     "label": "Brought a friend",
+     "hint": "Someone joined with your link",
+     "done": false
+    },
+    {
+     "id": "public",
+     "label": "Went public",
+     "hint": "Public creator page on",
+     "done": false
+    }
+   ],
+   "recent_launches": [
+    {
+     "id": "46ce5d2d9336466abd732285e07bb7d8",
+     "name": "Quiet Draft",
+     "symbol": "QDFT",
+     "network": "solana",
+     "launchpad": "pumpfun",
+     "status": "draft",
+     "mint_address": null,
+     "quote": null,
+     "created_at": "2026-10-06T09:17:02.742617",
+     "deployed_at": null
+    },
+    {
+     "id": "a4f2841e811e433084289f86640faf82",
+     "name": "Harbor Signal",
+     "symbol": "HRBR",
+     "network": "solana",
+     "launchpad": "pumpfun",
+     "status": "live",
+     "mint_address": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+     "quote": null,
+     "created_at": "2026-10-06T09:17:02.571056",
+     "deployed_at": "2026-10-06T09:17:02.707100"
+    }
+   ],
+   "referral": {
+    "codes": [],
+    "referred_users": 0,
+    "earned_sol": 0.0,
+    "owed_sol": 0.0,
+    "payout_address": null,
+    "share_pct": 0,
+    "fee_pct": 0.0,
+    "totp_enabled": false
+   }
+  }
+ },
+ "/referrals": {
+  "status": 200,
+  "body": {
+   "codes": [],
+   "referred_users": 0,
+   "earned_sol": 0.0,
+   "owed_sol": 0.0,
+   "payout_address": null,
+   "share_pct": 0,
+   "fee_pct": 0.0,
+   "totp_enabled": false
+  }
+ },
+ "/auth/sessions": {
+  "status": 200,
+  "body": [
+   {
+    "id": "2408fb6ec147401687dd5dec6ef784a1",
+    "ip": "127.0.0.1",
+    "user_agent": "python-httpx/0.28.1",
+    "created_at": "2026-10-06T09:17:02.424523",
+    "expires_at": "2026-10-06T21:17:02.422415"
+   }
+  ]
+ },
+ "/automations": {
+  "status": 200,
+  "body": []
+ },
+ "/launches/a4f2841e811e433084289f86640faf82": {
+  "status": 200,
+  "body": {
+   "id": "a4f2841e811e433084289f86640faf82",
+   "network": "solana",
+   "launchpad": "pumpfun",
+   "status": "live",
+   "name": "Harbor Signal",
+   "symbol": "HRBR",
+   "description": "Disposable QA launch",
+   "socials": {},
+   "mint_address": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+   "dev_wallet_id": "bcfe0956163c4254a3c7b64af8c23cf8",
+   "dev_buy_sol": 0.25,
+   "imported": false,
+   "has_image": false,
+   "created_at": "2026-10-06T09:17:02.571056",
+   "quote": null,
+   "cloned_from": null,
+   "deployed_at": "2026-10-06T09:17:02.707100",
+   "settings": {},
+   "deploy_tx": null,
+   "deploy_error": null,
+   "deploy_note": null,
+   "creator_share_setup": null,
+   "pons_rewards": null
+  }
+ },
+ "/launches/a4f2841e811e433084289f86640faf82/workspace": {
+  "status": 200,
+  "body": {
+   "launch": {
+    "id": "a4f2841e811e433084289f86640faf82",
+    "network": "solana",
+    "launchpad": "pumpfun",
+    "status": "live",
+    "name": "Harbor Signal",
+    "symbol": "HRBR",
+    "description": "Disposable QA launch",
+    "socials": {},
+    "mint_address": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+    "dev_wallet_id": "bcfe0956163c4254a3c7b64af8c23cf8",
+    "dev_buy_sol": 0.25,
+    "imported": false,
+    "has_image": false,
+    "created_at": "2026-10-06T09:17:02.571056",
+    "quote": null,
+    "cloned_from": null,
+    "deployed_at": "2026-10-06T09:17:02.707100",
+    "settings": {},
+    "deploy_tx": null,
+    "deploy_error": null,
+    "deploy_note": null,
+    "creator_share_setup": null,
+    "pons_rewards": null
+   },
+   "wallets": [
+    {
+     "id": "46155af843b64165920c74b375b84c61",
+     "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+     "label": "Desk 3",
+     "role": "holder",
+     "sol": 5.0,
+     "token_raw": 0,
+     "tokens": 0.0
+    },
+    {
+     "id": "9b1fc51338d94acca4a6f236f2704197",
+     "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+     "label": "Desk 2",
+     "role": "holder",
+     "sol": 5.0,
+     "token_raw": 0,
+     "tokens": 0.0
+    },
+    {
+     "id": "bcfe0956163c4254a3c7b64af8c23cf8",
+     "address": "8973qyYbSijMEy2koZD7vMFdfsV7gcUn43frR5YiWLBv",
+     "label": "Desk 1",
+     "role": "dev",
+     "sol": 4.999995,
+     "token_raw": 0,
+     "tokens": 0.0
+    },
+    {
+     "id": "c401c2169a6244ec93120b0b306cb8c1",
+     "address": "7fThFyMvdLes9MLQgbcB6YFeV5up4hqWmwD3PnLdkgFr",
+     "label": "Desk 4",
+     "role": "holder",
+     "sol": 5.0,
+     "token_raw": 0,
+     "tokens": 0.0
+    }
+   ],
+   "transactions": [
+    {
+     "id": "63809479abbd41cab41ead10c4af7faf",
+     "kind": "deploy",
+     "status": "confirmed",
+     "signature": "216SLf77DXV2QgqKvguwcr41734sYxwyvEwbQApYXZ1cERjhuAkDtHH34Uu3sBsdcunNFuMTkfhB3oBT6oM29A9W",
+     "error": null,
+     "sol_delta": -5e-06,
+     "created_at": "2026-10-06T09:17:02.696332"
+    }
+   ],
+   "transparency": {
+    "total_supply": 1000000000.0,
+    "controlled_supply": 0.0,
+    "controlled_pct": 0.0,
+    "wallets": [
+     {
+      "address": "7hr4jBuerdE3WTZ1o6VhXk3fHG1ZN49DwKjGrqgnb1ow",
+      "amount": 0.0,
+      "pct": 0.0
+     },
+     {
+      "address": "9ABgqaZULX2xDca5EFC7xHnaaX8aaBS3ffpDhPht3fS",
+      "amount": 0.0,
+      "pct": 0.0
+     },
+     {
+      "address": "8973qyYbSijMEy2koZD7vMFdfsV7gcUn43frR5YiWLBv",
+      "amount": 0.0,
+      "pct": 0.0
+     },
+     {
+      "address": "7fThFyMvdLes9MLQgbcB6YFeV5up4hqWmwD3PnLdkgFr",
+      "amount": 0.0,
+      "pct": 0.0
+     }
+    ],
+    "top_holders": [],
+    "warnings": []
+   },
+   "rpc_error": null,
+   "pnl": {
+    "net_sol_flow": -5e-06,
+    "confirmed_txs": 1,
+    "note": "Net SOL flow from confirmed transactions, including fees. Unsold tokens are not valued."
+   }
+  }
+ },
+ "/launches/a4f2841e811e433084289f86640faf82/market": {
+  "status": 200,
+  "body": {
+   "note": "Indicative market data from Codex. Not used for Helm's previews, quotes or execution.",
+   "network": "solana",
+   "token": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+   "whose": "launch",
+   "provider": "Codex",
+   "explorer_url": "https://solscan.io/token/4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+   "chart": {
+    "available": true,
+    "resolutions": [
+     "1",
+     "5",
+     "15",
+     "60",
+     "240",
+     "1D"
+    ]
+   },
+   "state": "ok",
+   "pool": {
+    "address": "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+    "dex": "Raydium",
+    "quote_symbol": "USDC",
+    "quote_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "liquidity_usd": 150000.0,
+    "volume_usd_24h": 50000.0,
+    "quote_side": "token1"
+   },
+   "pairs": [
+    {
+     "address": "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+     "dex": "Raydium",
+     "quote_symbol": "USDC",
+     "quote_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "liquidity_usd": 150000.0,
+     "volume_usd_24h": 50000.0,
+     "quote_side": "token1"
+    }
+   ],
+   "symbol": "WSOL",
+   "name": "Wrapped SOL",
+   "flags": {
+    "is_scam": false
+   },
+   "metric_scope": "token",
+   "metrics": {
+    "price_usd": 120.5,
+    "market_cap_usd": 120500000.0,
+    "fdv_usd": 144600000.0,
+    "liquidity_usd": 150000.0,
+    "holder_count": 4321,
+    "created_at": "2023-11-14T22:13:20Z",
+    "last_trade_at": "2025-10-05T21:33:20Z",
+    "price_change": {
+     "m5": 0.5,
+     "h1": -1.2,
+     "h4": 2.0,
+     "h12": 3.0,
+     "h24": 20.0
+    },
+    "volume_usd": {
+     "m5": 100.0,
+     "h1": 3000.0,
+     "h4": 9000.0,
+     "h12": 20000.0,
+     "h24": 50000.0
+    },
+    "txns": {
+     "m5": {
+      "buys": 1,
+      "sells": 0,
+      "swaps": 1
+     },
+     "h1": {
+      "buys": 10,
+      "sells": 5,
+      "swaps": 15
+     },
+     "h4": {
+      "buys": 30,
+      "sells": 20,
+      "swaps": 50
+     },
+     "h12": {
+      "buys": 60,
+      "sells": 40,
+      "swaps": 100
+     },
+     "h24": {
+      "buys": 120,
+      "sells": 80,
+      "swaps": 200
+     }
+    }
+   },
+   "fetched_at": 1791278224.196266,
+   "stale": false,
+   "age_s": 0
+  }
+ },
+ "/launches/a4f2841e811e433084289f86640faf82/market/candles?resolution=15": {
+  "status": 200,
+  "body": {
+   "provider": "Codex",
+   "network": "solana",
+   "token": "4fQpeughb73MCDPLLoy1yVNLXW2Rcvh4SNwhcjwqhgdA",
+   "resolution": "15",
+   "bars": [
+    {
+     "t": 1791171000,
+     "o": 0.00042,
+     "h": 0.0004242,
+     "l": 0.0004158,
+     "c": 0.00042,
+     "v": 1000.0
+    },
+    {
+     "t": 1791171900,
+     "o": 0.00042,
+     "h": 0.00043017813972292716,
+     "l": 0.0004158,
+     "c": 0.00042591895022071994,
+     "v": 1336.5883939231585
+    },
+    {
+     "t": 1791172800,
+     "o": 0.00042591895022071994,
+     "h": 0.0004388821639800818,
+     "l": 0.0004216597607185127,
+     "c": 0.000434536796019883,
+     "v": 1363.7189707302728
+    },
+    {
+     "t": 1791173700,
+     "o": 0.000434536796019883,
+     "h": 0.0004466035996672248,
+     "l": 0.0004301914280596842,
+     "c": 0.00044218178184873743,
+     "v": 1056.448003223947
+    },
+    {
+     "t": 1791174600,
+     "o": 0.00044218178184873743,
+     "h": 0.0004524314786471089,
+     "l": 0.00043775996403025007,
+     "c": 0.00044795195905654347,
+     "v": 1302.7209981231713
+    },
+    {
+     "t": 1791175500,
+     "o": 0.00044795195905654347,
+     "h": 0.0004590820164874159,
+     "l": 0.000443472439465978,
+     "c": 0.0004545366499875405,
+     "v": 1383.5697098652554
+    },
+    {
+     "t": 1791176400,
+     "o": 0.0004545366499875405,
+     "h": 0.00047022894302387063,
+     "l": 0.00044999128348766505,
+     "c": 0.0004655732109147234,
+     "v": 1111.7661992795704
+    },
+    {
+     "t": 1791177300,
+     "o": 0.0004655732109147234,
+     "h": 0.0004869060516724598,
+     "l": 0.00046091747880557617,
+     "c": 0.0004820851996757028,
+     "v": 1262.7946394875157
+    },
+    {
+     "t": 1791178200,
+     "o": 0.0004820851996757028,
+     "h": 0.0005061925329575447,
+     "l": 0.0004772643476789457,
+     "c": 0.0005011807257005393,
+     "v": 1395.7432986493527
+    },
+    {
+     "t": 1791179100,
+     "o": 0.0005011807257005393,
+     "h": 0.0005232357407559929,
+     "l": 0.000496168918443534,
+     "c": 0.0005180551888673197,
+     "v": 1164.8473940967026
+    },
+    {
+     "t": 1791180000,
+     "o": 0.0005180551888673197,
+     "h": 0.0005352740676857188,
+     "l": 0.0005128746369786464,
+     "c": 0.0005299743244413057,
+     "v": 1217.608444355748
+    },
+    {
+     "t": 1791180900,
+     "o": 0.0005299743244413057,
+     "h": 0.0005441140142809932,
+     "l": 0.0005246745811968927,
+     "c": 0.0005387267468128646,
+     "v": 1399.9960826202814
+    },
+    {
+     "t": 1791181800,
+     "o": 0.0005387267468128646,
+     "h": 0.0005541915556319327,
+     "l": 0.000533339479344736,
+     "c": 0.0005487045105266661,
+     "v": 1214.629167200174
+    },
+    {
+     "t": 1791182700,
+     "o": 0.0005487045105266661,
+     "h": 0.0005680096380116349,
+     "l": 0.0005432174654213995,
+     "c": 0.0005623857802095395,
+     "v": 1168.0668147306565
+    },
+    {
+     "t": 1791183600,
+     "o": 0.0005623857802095395,
+     "h": 0.0005834298512045965,
+     "l": 0.0005567619224074442,
+     "c": 0.000577653318024353,
+     "v": 1396.2429422779483
+    },
+    {
+     "t": 1791184500,
+     "o": 0.000577653318024353,
+     "h": 0.0005951700632460946,
+     "l": 0.0005718767848441094,
+     "c": 0.0005892772903426679,
+     "v": 1260.1151360628467
+    },
+    {
+     "t": 1791185400,
+     "o": 0.0005892772903426679,
+     "h": 0.0005994523177270696,
+     "l": 0.0005833845174392412,
+     "c": 0.0005935171462644253,
+     "v": 1115.161326666026
+    },
+    {
+     "t": 1791186300,
+     "o": 0.0005935171462644253,
+     "h": 0.0005994523177270696,
+     "l": 0.000585931433932081,
+     "c": 0.0005918499332647283,
+     "v": 1384.5589967518226
+    },
+    {
+     "t": 1791187200,
+     "o": 0.0005918499332647283,
+     "h": 0.0005977684325973756,
+     "l": 0.0005838729052402594,
+     "c": 0.0005897706113537974,
+     "v": 1300.3948987086706
+    },
+    {
+     "t": 1791188100,
+     "o": 0.0005897706113537974,
+     "h": 0.0005976377891751585,
+     "l": 0.0005838729052402594,
+     "c": 0.0005917205833417411,
+     "v": 1059.950883865181
+    },
+    {
+     "t": 1791189000,
+     "o": 0.0005917205833417411,
+     "h": 0.000603310778006963,
+     "l": 0.0005858033775083237,
+     "c": 0.0005973374039672902,
+     "v": 1365.1781002910511
+    },
+    {
+     "t": 1791189900,
+     "o": 0.0005973374039672902,
+     "h": 0.0006082066134716661,
+     "l": 0.0005913640299276173,
+     "c": 0.0006021847658135307,
+     "v": 1334.6622554144224
+    },
+    {
+     "t": 1791190800,
+     "o": 0.0006021847658135307,
+     "h": 0.0006082066134716661,
+     "l": 0.0005961138049337267,
+     "c": 0.0006021351564987138,
+     "v": 1003.5405237161616
+    },
+    {
+     "t": 1791191700,
+     "o": 0.0006021351564987138,
+     "h": 0.0006081565080637009,
+     "l": 0.0005917444821072517,
+     "c": 0.0005977216990982341,
+     "v": 1338.4881616700682
+    },
+    {
+     "t": 1791192600,
+     "o": 0.0005977216990982341,
+     "h": 0.0006036989160892165,
+     "l": 0.0005882074063970223,
+     "c": 0.0005941488953505275,
+     "v": 1362.2313448026496
+    },
+    {
+     "t": 1791193500,
+     "o": 0.0005941488953505275,
+     "h": 0.0006027475217818897,
+     "l": 0.0005882074063970223,
+     "c": 0.0005967797245365244,
+     "v": 1052.9407000391093
+    },
+    {
+     "t": 1791194400,
+     "o": 0.0005967797245365244,
+     "h": 0.0006127808206923961,
+     "l": 0.0005908119272911591,
+     "c": 0.0006067136838538576,
+     "v": 1305.0233801918412
+    },
+    {
+     "t": 1791195300,
+     "o": 0.0006067136838538576,
+     "h": 0.0006264368675872865,
+     "l": 0.000600646547015319,
+     "c": 0.00062023452236365,
+     "v": 1382.5503713618014
+    },
+    {
+     "t": 1791196200,
+     "o": 0.00062023452236365,
+     "h": 0.0006385747346815966,
+     "l": 0.0006140321771400134,
+     "c": 0.0006322522125560363,
+     "v": 1108.3623153231476
+    },
+    {
+     "t": 1791197100,
+     "o": 0.0006322522125560363,
+     "h": 0.0006475253050867438,
+     "l": 0.0006259296904304759,
+     "c": 0.0006411141634522215,
+     "v": 1265.453553685187
+    },
+    {
+     "t": 1791198000,
+     "o": 0.0006411141634522215,
+     "h": 0.0006569723979087597,
+     "l": 0.0006347030218176993,
+     "c": 0.0006504677207017423,
+     "v": 1395.2126496371448
+    },
+    {
+     "t": 1791198900,
+     "o": 0.0006504677207017423,
+     "h": 0.0006726562824271204,
+     "l": 0.0006439630434947249,
+     "c": 0.0006659963192347727,
+     "v": 1161.615058129226
+    },
+    {
+     "t": 1791199800,
+     "o": 0.0006659963192347727,
+     "h": 0.0006970786377103657,
+     "l": 0.000659336356042425,
+     "c": 0.000690176869020164,
+     "v": 1220.5706724966763
+    },
+    {
+     "t": 1791200700,
+     "o": 0.000690176869020164,
+     "h": 0.0007270123123902102,
+     "l": 0.0006832751003299623,
+     "c": 0.0007198141706833764,
+     "v": 1399.964744042907
+    },
+    {
+     "t": 1791201600,
+     "o": 0.0007198141706833764,
+     "h": 0.0007557422335341021,
+     "l": 0.0007126160289765426,
+     "c": 0.0007482596371624773,
+     "v": 1211.6330744480097
+    },
+    {
+     "t": 1791202500,
+     "o": 0.0007482596371624773,
+     "h": 0.0007786174305795697,
+     "l": 0.0007407770407908525,
+     "c": 0.0007709083471084849,
+     "v": 1171.2730677984605
+    },
+    {
+     "t": 1791203400,
+     "o": 0.0007709083471084849,
+     "h": 0.0007972590369217531,
+     "l": 0.0007631992636374001,
+     "c": 0.0007893653830908446,
+     "v": 1396.7115413772462
+    },
+    {
+     "t": 1791204300,
+     "o": 0.0007893653830908446,
+     "h": 0.0008177587828524424,
+     "l": 0.0007814717292599361,
+     "c": 0.000809662161240042,
+     "v": 1257.4152533427998
+    },
+    {
+     "t": 1791205200,
+     "o": 0.000809662161240042,
+     "h": 0.0008442696122791409,
+     "l": 0.0008015655396276416,
+     "c": 0.0008359105072070702,
+     "v": 1118.547431483754
+    },
+    {
+     "t": 1791206100,
+     "o": 0.0008359105072070702,
+     "h": 0.0008742437940470493,
+     "l": 0.0008275514021349995,
+     "c": 0.0008655879148980686,
+     "v": 1385.5181545136352
+    },
+    {
+     "t": 1791207000,
+     "o": 0.0008655879148980686,
+     "h": 0.0008995569110198744,
+     "l": 0.0008569320357490879,
+     "c": 0.0008906504069503706,
+     "v": 1298.0452641917395
+    },
+    {
+     "t": 1791207900,
+     "o": 0.0008906504069503706,
+     "h": 0.0009129992985675781,
+     "l": 0.0008817439028808669,
+     "c": 0.0009039597015520575,
+     "v": 1063.4490675218835
+    },
+    {
+     "t": 1791208800,
+     "o": 0.0009039597015520575,
+     "h": 0.0009147951618607621,
+     "l": 0.000894920104536537,
+     "c": 0.0009057377840205566,
+     "v": 1366.6086191662534
+    },
+    {
+     "t": 1791209700,
+     "o": 0.0009057377840205566,
+     "h": 0.0009147951618607621,
+     "l": 0.0008941696791727594,
+     "c": 0.0009032016961341004,
+     "v": 1332.7098970514394
+    },
+    {
+     "t": 1791210600,
+     "o": 0.0009032016961341004,
+     "h": 0.0009123056270086078,
+     "l": 0.0008941696791727594,
+     "c": 0.0009032728980283245,
+     "v": 1007.0807700421655
+    },
+    {
+     "t": 1791211500,
+     "o": 0.0009032728980283245,
+     "h": 0.0009150499669980025,
+     "l": 0.0008942401690480413,
+     "c": 0.0009059900663346559,
+     "v": 1340.3614098136472
+    },
+    {
+     "t": 1791212400,
+     "o": 0.0009059900663346559,
+     "h": 0.0009150499669980025,
+     "l": 0.0008956125114089759,
+     "c": 0.0009046591024333089,
+     "v": 1360.7153390595236
+    },
+    {
+     "t": 1791213300,
+     "o": 0.0009046591024333089,
+     "h": 0.000913705693457642,
+     "l": 0.0008833982640672017,
+     "c": 0.0008923214788557593,
+     "v": 1049.4292490980897
+    },
+    {
+     "t": 1791214200,
+     "o": 0.0008923214788557593,
+     "h": 0.0009012446936443168,
+     "l": 0.0008602621673663316,
+     "c": 0.0008689516842084158,
+     "v": 1307.3018645294667
+    },
+    {
+     "t": 1791215100,
+     "o": 0.0008689516842084158,
+     "h": 0.0008776412010505,
+     "l": 0.0008337587247259325,
+     "c": 0.0008421805300261944,
+     "v": 1381.5010611037887
+    },
+    {
+     "t": 1791216000,
+     "o": 0.0008421805300261944,
+     "h": 0.0008506023353264563,
+     "l": 0.0008123201982002126,
+     "c": 0.0008205254527274875,
+     "v": 1104.9499414815714
+    },
+    {
+     "t": 1791216900,
+     "o": 0.0008205254527274875,
+     "h": 0.0008287307072547623,
+     "l": 0.0007983240885074166,
+     "c": 0.0008063879681893096,
+     "v": 1268.09167033735
+    },
+    {
+     "t": 1791217800,
+     "o": 0.0008063879681893096,
+     "h": 0.0008144518478712027,
+     "l": 0.0007871881970374848,
+     "c": 0.0007951395929671564,
+     "v": 1394.6510368161942
+    },
+    {
+     "t": 1791218700,
+     "o": 0.0007951395929671564,
+     "h": 0.000803090988896828,
+     "l": 0.0007723564705002903,
+     "c": 0.0007801580510103942,
+     "v": 1158.3700600727336
+    },
+    {
+     "t": 1791219600,
+     "o": 0.0007801580510103942,
+     "h": 0.0007879596315204982,
+     "l": 0.0007518276767216021,
+     "c": 0.000759421895678386,
+     "v": 1223.5156195406466
+    },
+    {
+     "t": 1791220500,
+     "o": 0.000759421895678386,
+     "h": 0.0007670161146351699,
+     "l": 0.000730380987557484,
+     "c": 0.0007377585732903879,
+     "v": 1399.902069343448
+    },
+    {
+     "t": 1791221400,
+     "o": 0.0007377585732903879,
+     "h": 0.0007451361590232917,
+     "l": 0.0007151908854501801,
+     "c": 0.0007224150358082627,
+     "v": 1208.6204008347647
+    },
+    {
+     "t": 1791222300,
+     "o": 0.0007224150358082627,
+     "h": 0.0007296391861663454,
+     "l": 0.0007094820804274932,
+     "c": 0.000716648566088377,
+     "v": 1174.46590209913
+    },
+    {
+     "t": 1791223200,
+     "o": 0.000716648566088377,
+     "h": 0.0007244742182711736,
+     "l": 0.0007094820804274932,
+     "c": 0.0007173012062090827,
+     "v": 1397.1490592338148
+    },
+    {
+     "t": 1791224100,
+     "o": 0.0007173012062090827,
+     "h": 0.0007248776669231863,
+     "l": 0.0007101281941469919,
+     "c": 0.0007177006603199865,
+     "v": 1254.6952028556552
+    },
+    {
+     "t": 1791225000,
+     "o": 0.0007177006603199865,
+     "h": 0.0007248776669231863,
+     "l": 0.000706283828885669,
+     "c": 0.0007134180089754232,
+     "v": 1121.9242484408867
+    },
+    {
+     "t": 1791225900,
+     "o": 0.0007134180089754232,
+     "h": 0.0007205521890651774,
+     "l": 0.0006990903077820646,
+     "c": 0.0007061518260424894,
+     "v": 1386.4471080033572
+    },
+    {
+     "t": 1791226800,
+     "o": 0.0007061518260424894,
+     "h": 0.0007132133443029143,
+     "l": 0.0006947768860365756,
+     "c": 0.0007017948343803794,
+     "v": 1295.6722786596893
+    },
+    {
+     "t": 1791227700,
+     "o": 0.0007017948343803794,
+     "h": 0.0007115573525372089,
+     "l": 0.0006947768860365756,
+     "c": 0.0007045122302348603,
+     "v": 1066.9422801211228
+    },
+    {
+     "t": 1791228600,
+     "o": 0.0007045122302348603,
+     "h": 0.000719759828824623,
+     "l": 0.0006974671079325117,
+     "c": 0.0007126334938857654,
+     "v": 1368.0104152787162
+    },
+    {
+     "t": 1791229500,
+     "o": 0.0007126334938857654,
+     "h": 0.0007268430502534294,
+     "l": 0.0007055071589469077,
+     "c": 0.000719646584409336,
+     "v": 1330.7314717960414
+    },
+    {
+     "t": 1791230400,
+     "o": 0.000719646584409336,
+     "h": 0.0007268430502534294,
+     "l": 0.0007122224135281769,
+     "c": 0.0007194165793213907,
+     "v": 1010.6204616095868
+    },
+    {
+     "t": 1791231300,
+     "o": 0.0007194165793213907,
+     "h": 0.0007266107451146046,
+     "l": 0.000704350555249914,
+     "c": 0.0007114652073231455,
+     "v": 1342.207991590129
+    },
+    {
+     "t": 1791232200,
+     "o": 0.0007114652073231455,
+     "h": 0.000718579859396377,
+     "l": 0.0006940408342314964,
+     "c": 0.0007010513477085823,
+     "v": 1359.1710722757166
+    },
+    {
+     "t": 1791233100,
+     "o": 0.0007010513477085823,
+     "h": 0.0007080618611856681,
+     "l": 0.0006867210519216672,
+     "c": 0.0006936576282037043,
+     "v": 1045.913925513275
+    },
+    {
+     "t": 1791234000,
+     "o": 0.0006936576282037043,
+     "h": 0.0007005942044857414,
+     "l": 0.0006827296821711608,
+     "c": 0.0006896259415870311,
+     "v": 1309.5562726231556
+    },
+    {
+     "t": 1791234900,
+     "o": 0.0006896259415870311,
+     "h": 0.0006965222010029015,
+     "l": 0.000676986458814106,
+     "c": 0.0006838247058728343,
+     "v": 1380.42186130175
+    },
+    {
+     "t": 1791235800,
+     "o": 0.0006838247058728343,
+     "h": 0.0006906629529315626,
+     "l": 0.0006636033600705945,
+     "c": 0.0006703064243137318,
+     "v": 1101.5293451048144
+    },
+    {
+     "t": 1791236700,
+     "o": 0.0006703064243137318,
+     "h": 0.0006770094885568691,
+     "l": 0.0006415316897118851,
+     "c": 0.000648011807789783,
+     "v": 1270.708782754923
+    },
+    {
+     "t": 1791237600,
+     "o": 0.000648011807789783,
+     "h": 0.0006544919258676808,
+     "l": 0.0006157895166359051,
+     "c": 0.0006220096127635405,
+     "v": 1394.058504187299
+    },
+    {
+     "t": 1791238500,
+     "o": 0.0006220096127635405,
+     "h": 0.0006282297088911759,
+     "l": 0.0005927952319860939,
+     "c": 0.0005987830626122161,
+     "v": 1155.1126541637723
+    },
+    {
+     "t": 1791239400,
+     "o": 0.0005987830626122161,
+     "h": 0.0006047708932383382,
+     "l": 0.0005748734205542103,
+     "c": 0.0005806802227820306,
+     "v": 1226.4430547592722
+    },
+    {
+     "t": 1791240300,
+     "o": 0.0005806802227820306,
+     "h": 0.000586487025009851,
+     "l": 0.0005590995967959581,
+     "c": 0.0005647470674706648,
+     "v": 1399.8080634322926
+    },
+    {
+     "t": 1791241200,
+     "o": 0.0005647470674706648,
+     "h": 0.0005703945381453715,
+     "l": 0.0005407324960119862,
+     "c": 0.0005461944404161476,
+     "v": 1205.591382395014
+    },
+    {
+     "t": 1791242100,
+     "o": 0.0005461944404161476,
+     "h": 0.0005516563848203091,
+     "l": 0.0005180450648857254,
+     "c": 0.0005232778433189146,
+     "v": 1177.6450674830035
+    },
+    {
+     "t": 1791243000,
+     "o": 0.0005232778433189146,
+     "h": 0.0005285106217521038,
+     "l": 0.0004942439484425095,
+     "c": 0.0004992363115580904,
+     "v": 1397.55546156935
+    },
+    {
+     "t": 1791243900,
+     "o": 0.0004992363115580904,
+     "h": 0.0005042286746736713,
+     "l": 0.0004745721004174046,
+     "c": 0.0004793657579973784,
+     "v": 1251.9551977097815
+    },
+    {
+     "t": 1791244800,
+     "o": 0.0004793657579973784,
+     "h": 0.00048415941557735216,
+     "l": 0.0004617753289111791,
+     "c": 0.0004664397261729082,
+     "v": 1125.2915129732341
+    },
+    {
+     "t": 1791245700,
+     "o": 0.0004664397261729082,
+     "h": 0.00047110412343463726,
+     "l": 0.00045427961345382016,
+     "c": 0.00045886829641800014,
+     "v": 1387.345784440074
+    },
+    {
+     "t": 1791246600,
+     "o": 0.00045886829641800014,
+     "h": 0.0004634569793821801,
+     "l": 0.0004480148470923245,
+     "c": 0.0004525402495882066,
+     "v": 1293.2761280293169
+    },
+    {
+     "t": 1791247500,
+     "o": 0.0004525402495882066,
+     "h": 0.00045706565208408865,
+     "l": 0.00044009991199651374,
+     "c": 0.00044454536565304416,
+     "v": 1070.4302479794349
+    },
+    {
+     "t": 1791248400,
+     "o": 0.00044454536565304416,
+     "h": 0.0004489908193095746,
+     "l": 0.0004314262926495651,
+     "c": 0.0004357841339894597,
+     "v": 1369.3833788016238
+    },
+    {
+     "t": 1791249300,
+     "o": 0.0004357841339894597,
+     "h": 0.0004401419753293543,
+     "l": 0.0004257059012093497,
+     "c": 0.00043000596081752495,
+     "v": 1328.727134652329
+    },
+    {
+     "t": 1791250200,
+     "o": 0.00043000596081752495,
+     "h": 0.0004345374488458158,
+     "l": 0.0004257059012093497,
+     "c": 0.00043023509786714435,
+     "v": 1014.1593210934643
+    },
+    {
+     "t": 1791251100,
+     "o": 0.00043023509786714435,
+     "h": 0.00044044107032094885,
+     "l": 0.0004259327468884729,
+     "c": 0.0004360802676445038,
+     "v": 1344.0277623249813
+    },
+    {
+     "t": 1791252000,
+     "o": 0.0004360802676445038,
+     "h": 0.00044843018276020404,
+     "l": 0.0004317194649680588,
+     "c": 0.00044399027996059806,
+     "v": 1357.5986654402232
+    },
+    {
+     "t": 1791252900,
+     "o": 0.00044399027996059806,
+     "h": 0.0004545873400070622,
+     "l": 0.0004395503771609921,
+     "c": 0.00045008647525451704,
+     "v": 1042.3950047004628
+    },
+    {
+     "t": 1791253800,
+     "o": 0.00045008647525451704,
+     "h": 0.0004579937760817052,
+     "l": 0.00044558561050197186,
+     "c": 0.0004534591842393121,
+     "v": 1311.7864278463219
+    },
+    {
+     "t": 1791254700,
+     "o": 0.0004534591842393121,
+     "h": 0.000461428125495537,
+     "l": 0.00044892459239691897,
+     "c": 0.000456859530193601,
+     "v": 1379.312856507979
+    },
+    {
+     "t": 1791255600,
+     "o": 0.000456859530193601,
+     "h": 0.00046847572526485576,
+     "l": 0.000452290934891665,
+     "c": 0.0004638373517473819,
+     "v": 1098.1007941870616
+    },
+    {
+     "t": 1791256500,
+     "o": 0.0004638373517473819,
+     "h": 0.0004798951164153426,
+     "l": 0.00045919897822990806,
+     "c": 0.0004751436796191511,
+     "v": 1273.3046858944483
+    },
+    {
+     "t": 1791257400,
+     "o": 0.0004751436796191511,
+     "h": 0.0004925331209833511,
+     "l": 0.0004703922428229596,
+     "c": 0.00048765655542906054,
+     "v": 1393.435098173738
+    },
+    {
+     "t": 1791258300,
+     "o": 0.00048765655542906054,
+     "h": 0.0005016440409987656,
+     "l": 0.00048277998987476995,
+     "c": 0.0004966772683156095,
+     "v": 1151.8430956110087
+    },
+    {
+     "t": 1791259200,
+     "o": 0.0004966772683156095,
+     "h": 0.0005049358457702445,
+     "l": 0.0004917104956324534,
+     "c": 0.0004999364809606382,
+     "v": 1229.3527487961692
+    },
+    {
+     "t": 1791260100,
+     "o": 0.0004999364809606382,
+     "h": 0.0005049358457702445,
+     "l": 0.0004946705249872512,
+     "c": 0.0004996671969568193,
+     "v": 1399.6827336745414
+    },
+    {
+     "t": 1791261000,
+     "o": 0.0004996671969568193,
+     "h": 0.0005053220794709426,
+     "l": 0.0004946705249872512,
+     "c": 0.0005003188905652897,
+     "v": 1202.5462564439035
+    },
+    {
+     "t": 1791261900,
+     "o": 0.0005003188905652897,
+     "h": 0.0005092451410040314,
+     "l": 0.0004953157016596368,
+     "c": 0.0005042031099049817,
+     "v": 1180.8103148713403
+    },
+    {
+     "t": 1791262800,
+     "o": 0.0005042031099049817,
+     "h": 0.0005144558970945235,
+     "l": 0.0004991610788059319,
+     "c": 0.0005093622743510133,
+     "v": 1397.9307165433625
+    },
+    {
+     "t": 1791263700,
+     "o": 0.0005093622743510133,
+     "h": 0.000516470274518699,
+     "l": 0.0005042686516075032,
+     "c": 0.0005113567074442564,
+     "v": 1249.1954525769395
+    },
+    {
+     "t": 1791264600,
+     "o": 0.0005113567074442564,
+     "h": 0.000516470274518699,
+     "l": 0.0005023998301213726,
+     "c": 0.0005074745758801743,
+     "v": 1128.6489612650123
+    },
+    {
+     "t": 1791265500,
+     "o": 0.0005074745758801743,
+     "h": 0.000512549321638976,
+     "l": 0.00049463449807688,
+     "c": 0.0004996308061382626,
+     "v": 1388.2141134149938
+    },
+    {
+     "t": 1791266400,
+     "o": 0.0004996308061382626,
+     "h": 0.0005046271141996453,
+     "l": 0.00048790808238116803,
+     "c": 0.0004928364468496647,
+     "v": 1290.8570000323411
+    },
+    {
+     "t": 1791267300,
+     "o": 0.0004928364468496647,
+     "h": 0.0004977648113181613,
+     "l": 0.00048586688539833847,
+     "c": 0.0004907746317154934,
+     "v": 1073.912697824267
+    },
+    {
+     "t": 1791268200,
+     "o": 0.0004907746317154934,
+     "h": 0.0004978798985491304,
+     "l": 0.00048586688539833847,
+     "c": 0.0004929503946030994,
+     "v": 1370.727402167114
+    },
+    {
+     "t": 1791269100,
+     "o": 0.0004929503946030994,
+     "h": 0.0005005744773173951,
+     "l": 0.00048802089065706837,
+     "c": 0.0004956182943736584,
+     "v": 1326.6970426545267
+    },
+    {
+     "t": 1791270000,
+     "o": 0.0004956182943736584,
+     "h": 0.0005005744773173951,
+     "l": 0.0004905158658281509,
+     "c": 0.0004954705715435868,
+     "v": 1017.6970712340284
+    },
+    {
+     "t": 1791270900,
+     "o": 0.0004954705715435868,
+     "h": 0.0005004252772590227,
+     "l": 0.00048811890080660206,
+     "c": 0.0004930493947541435,
+     "v": 1345.8205794442433
+    },
+    {
+     "t": 1791271800,
+     "o": 0.0004930493947541435,
+     "h": 0.0004979798887016849,
+     "l": 0.00048765297082481343,
+     "c": 0.0004925787584089024,
+     "v": 1355.9982417467334
+    },
+    {
+     "t": 1791272700,
+     "o": 0.0004925787584089024,
+     "h": 0.0005032549431554485,
+     "l": 0.00048765297082481343,
+     "c": 0.0004982722209459885,
+     "v": 1038.8727623572836
+    },
+    {
+     "t": 1791273600,
+     "o": 0.0004982722209459885,
+     "h": 0.0005159204461655234,
+     "l": 0.0004932894987365286,
+     "c": 0.0005108123229361618,
+     "v": 1313.9921554725242
+    },
+    {
+     "t": 1791274500,
+     "o": 0.0005108123229361618,
+     "h": 0.0005321985377328292,
+     "l": 0.0005057041997068002,
+     "c": 0.0005269292452800289,
+     "v": 1378.174133609908
+    },
+    {
+     "t": 1791275400,
+     "o": 0.0005269292452800289,
+     "h": 0.0005476449414016457,
+     "l": 0.0005216599528272286,
+     "c": 0.0005422227142590551,
+     "v": 1094.6645573457145
+    },
+    {
+     "t": 1791276300,
+     "o": 0.0005422227142590551,
+     "h": 0.0005607306390663328,
+     "l": 0.0005368004871164645,
+     "c": 0.0005551788505607255,
+     "v": 1275.8791763741556
+    },
+    {
+     "t": 1791277200,
+     "o": 0.0005551788505607255,
+     "h": 0.0005744638647490947,
+     "l": 0.0005496270620551182,
+     "c": 0.000568776103711975,
+     "v": 1392.7808676176335
+    },
+    {
+     "t": 1791278100,
+     "o": 0.000568776103711975,
+     "h": 0.000593615951085817,
+     "l": 0.0005630883426748553,
+     "c": 0.0005877385654315019,
+     "v": 1148.5616405752362
+    }
+   ],
+   "state": "ok",
+   "bar_seconds": 900,
+   "currency": "USD",
+   "scope": "token",
+   "pool": null,
+   "last_bar_at": 1791278100,
+   "fetched_at": 1791278224.2059624,
+   "stale": false,
+   "age_s": 0
+  }
+ },
+ "/launches/a4f2841e811e433084289f86640faf82/automations": {
+  "status": 200,
+  "body": []
+ },
+ "/launches/a4f2841e811e433084289f86640faf82/allocations": {
+  "status": 200,
+  "body": {
+   "launch_id": "a4f2841e811e433084289f86640faf82",
+   "symbol": "HRBR",
+   "network": "solana",
+   "launchpad": "pumpfun",
+   "supply": "1000000000",
+   "supply_source": "on-chain",
+   "decimals": 6,
+   "allocated": "0",
+   "unallocated": "1000000000",
+   "reconciled": false,
+   "rows": [],
+   "warnings": [],
+   "categories": {
+    "public": "Public sale / bonding curve",
+    "liquidity": "Liquidity pool",
+    "creator": "Creator (dev)",
+    "team": "Team",
+    "treasury": "Treasury",
+    "marketing": "Marketing",
+    "community": "Community / airdrop",
+    "advisors": "Advisors",
+    "investors": "Investors",
+    "other": "Other"
+   },
+   "note": "Schedules are what you declare to buyers. Helm enforces a lock only on your own Helm wallets (it refuses sells and transfers of the locked part); other schedules are not enforced on-chain."
+  }
+ },
+ "/launchpads/pumpfun/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (SOL)",
+     "default": 0
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    },
+    {
+     "key": "priority_fee_sol",
+     "type": "number",
+     "min": 0,
+     "default": 0.0005
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ]
+  }
+ },
+ "/launchpads/pumpfun/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "pumpfun",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pumpfun through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pumpfun through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pumpfun through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pumpfun through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "pumpfun offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/pumpfun/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "So11111111111111111111111111111111111111112",
+     "symbol": "SOL",
+     "name": "Solana",
+     "decimals": 9,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/letsbonk/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (SOL)",
+     "default": 0
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    },
+    {
+     "key": "priority_fee_sol",
+     "type": "number",
+     "min": 0,
+     "default": 0.0005
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": true
+  }
+ },
+ "/launchpads/letsbonk/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "letsbonk",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by letsbonk through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by letsbonk through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by letsbonk through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by letsbonk through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "letsbonk offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/letsbonk/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "So11111111111111111111111111111111111111112",
+     "symbol": "SOL",
+     "name": "Solana",
+     "decimals": 9,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/bags/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (SOL)",
+     "default": 0
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": true
+  }
+ },
+ "/launchpads/bags/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "bags",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by bags through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by bags through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by bags through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by bags through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "bags offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/bags/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "So11111111111111111111111111111111111111112",
+     "symbol": "SOL",
+     "name": "Solana",
+     "decimals": 9,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/meteora-dbc/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "max": 0,
+     "label": "Dev buy (SOL)",
+     "default": 0,
+     "hint": "Studio launches have no dev buy; buy right after launch from the workspace."
+    },
+    {
+     "key": "dbc_quote",
+     "type": "select",
+     "options": [
+      "SOL",
+      "USDC"
+     ],
+     "default": "SOL",
+     "label": "Curve currency",
+     "hint": "SOL: opens at 100 SOL market cap, graduates at 400 SOL. USDC: $16k to $69k."
+    },
+    {
+     "key": "anti_sniping",
+     "type": "select",
+     "options": [
+      "on",
+      "off"
+     ],
+     "default": "on",
+     "label": "Anti-sniping",
+     "hint": "Jupiter Studio's anti-sniping setting for the new pool."
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": true
+  }
+ },
+ "/launchpads/meteora-dbc/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "meteora-dbc",
+   "items": [
+    {
+     "id": "anti_sniping",
+     "label": "Jupiter Studio anti-sniping",
+     "available": true,
+     "configurable": true,
+     "options": [
+      "anti_sniping"
+     ],
+     "effect": "Jupiter Studio's anti-sniping setting for the pool: early buys pay a higher fee in the first moments after launch.",
+     "fee": "Set by Jupiter Studio and paid to the pool by early buyers. No Helm fee.",
+     "source": "Jupiter Studio create-tx (antiSniping)"
+    },
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by meteora-dbc through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by meteora-dbc through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by meteora-dbc through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by meteora-dbc through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "Available: Jupiter Studio anti-sniping"
+  }
+ },
+ "/launchpads/meteora-dbc/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "So11111111111111111111111111111111111111112",
+     "symbol": "SOL",
+     "name": "Solana",
+     "decimals": 9,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/flap-sh/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (native coin)",
+     "default": 0
+    },
+    {
+     "key": "tax_rate_pct",
+     "type": "select",
+     "options": [
+      0,
+      1,
+      3,
+      5,
+      10
+     ],
+     "default": 0,
+     "label": "Trading tax (%)",
+     "hint": "A tax token charges this on buys and sells for a year, paid to your dev wallet. Base supports tax tokens only through Helm; 0 on other chains makes a standard token."
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": true
+  }
+ },
+ "/launchpads/flap-sh/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "flap-sh",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by flap-sh through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by flap-sh through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by flap-sh through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by flap-sh through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "flap-sh offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/flap-sh/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "0x0000000000000000000000000000000000000000",
+     "symbol": "BNB",
+     "name": "BNB Chain",
+     "decimals": 18,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/clanker/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (ETH)",
+     "default": 0
+    },
+    {
+     "key": "sniper_start_pct",
+     "type": "select",
+     "options": [
+      66.6777,
+      80,
+      50,
+      25,
+      10
+     ],
+     "default": 66.6777,
+     "label": "Sniper fee at launch (%)",
+     "hint": "Clanker's anti-sniping fee on the first swaps, falling to about 4% over the decay time."
+    },
+    {
+     "key": "sniper_decay_s",
+     "type": "select",
+     "options": [
+      15,
+      30,
+      60,
+      120,
+      5
+     ],
+     "default": 15,
+     "label": "Sniper fee decay (seconds)"
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": false
+  }
+ },
+ "/launchpads/clanker/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "clanker",
+   "items": [
+    {
+     "id": "sniper_fee",
+     "label": "Descending sniper fee",
+     "available": true,
+     "configurable": true,
+     "options": [
+      "sniper_start_pct",
+      "sniper_decay_s"
+     ],
+     "effect": "The first swaps pay a high LP fee (you choose up to 80%) that falls to about 4.17% over the decay time (up to 2 minutes), so bots that buy in the first block pay heavily.",
+     "fee": "Paid by early buyers as LP fees to the reward recipients (you, plus Helm's reward share if set). No separate Helm fee.",
+     "source": "Clanker v4 MEV module (ClankerMevDescendingFees)"
+    },
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by clanker through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by clanker through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by clanker through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by clanker through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "Available: Descending sniper fee"
+  }
+ },
+ "/launchpads/clanker/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "0x0000000000000000000000000000000000000000",
+     "symbol": "ETH",
+     "name": "Base",
+     "decimals": 18,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/four-meme/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (BNB)",
+     "default": 0
+    },
+    {
+     "key": "label",
+     "type": "select",
+     "options": [
+      "Meme",
+      "AI",
+      "Defi",
+      "Games",
+      "Infra",
+      "De-Sci",
+      "Social",
+      "Depin",
+      "Charity",
+      "Others"
+     ],
+     "default": "Meme",
+     "label": "Category",
+     "hint": "Four.meme's category for the token."
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": true
+  }
+ },
+ "/launchpads/four-meme/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "four-meme",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by four-meme through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by four-meme through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by four-meme through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by four-meme through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "four-meme offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/four-meme/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "0x0000000000000000000000000000000000000000",
+     "symbol": "BNB",
+     "name": "BNB Chain",
+     "decimals": 18,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/uniswap-v2/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Starting liquidity (ETH)",
+     "default": 0.1,
+     "hint": "The ETH you put in the pool next to your tokens. It sets the starting price."
+    },
+    {
+     "key": "lp_share_pct",
+     "type": "select",
+     "options": [
+      100,
+      90,
+      80,
+      50
+     ],
+     "default": 100,
+     "label": "Supply into the pool (%)",
+     "hint": "The rest stays in your dev wallet and shows in the supply panel."
+    },
+    {
+     "key": "lp_tokens",
+     "type": "select",
+     "options": [
+      "burn",
+      "keep"
+     ],
+     "default": "burn",
+     "label": "LP tokens",
+     "hint": "burn locks the liquidity for good (sent to the dead address); keep lets you remove it later."
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [],
+   "requires_image": false
+  }
+ },
+ "/launchpads/uniswap-v2/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "uniswap-v2",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by uniswap-v2 through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by uniswap-v2 through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by uniswap-v2 through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by uniswap-v2 through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "uniswap-v2 offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/uniswap-v2/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "0x0000000000000000000000000000000000000000",
+     "symbol": "ETH",
+     "name": "Ethereum",
+     "decimals": 18,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "/launchpads/pons/options": {
+  "status": 200,
+  "body": {
+   "fields": [
+    {
+     "key": "dev_buy_sol",
+     "type": "number",
+     "min": 0,
+     "label": "Dev buy (ETH)",
+     "default": 0
+    },
+    {
+     "key": "creator_tax_pct",
+     "type": "select",
+     "options": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      10
+     ],
+     "default": 0,
+     "label": "Creator tax (%)",
+     "hint": "Added to Pons' curve fee. The launch preview shows the recipient and any Helm reward split. 0 for no extra tax."
+    },
+    {
+     "key": "slippage_pct",
+     "type": "number",
+     "min": 0,
+     "max": 50,
+     "default": 10
+    }
+   ],
+   "socials": [
+    "twitter",
+    "telegram",
+    "website"
+   ],
+   "requires_image": false
+  }
+ },
+ "/launchpads/pons/protections": {
+  "status": 200,
+  "body": {
+   "launchpad": "pons",
+   "items": [
+    {
+     "id": "launch_phases",
+     "label": "Launch phases (e.g. allowlist first, then public)",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pons through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "per_wallet_limit",
+     "label": "Per-wallet purchase limit",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pons through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "allowlist",
+     "label": "Allowlist",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pons through Helm's integration.",
+     "fee": null,
+     "source": null
+    },
+    {
+     "id": "cooldown",
+     "label": "Cooldown between buys",
+     "available": false,
+     "configurable": false,
+     "effect": "Not offered by pons through Helm's integration.",
+     "fee": null,
+     "source": null
+    }
+   ],
+   "summary": "pons offers no configurable anti-sniping or fair-launch settings through Helm."
+  }
+ },
+ "/launchpads/pons/quote-assets": {
+  "status": 200,
+  "body": {
+   "assets": [
+    {
+     "mint": "0x0000000000000000000000000000000000000000",
+     "symbol": "ETH",
+     "name": "Robinhood Chain",
+     "decimals": 18,
+     "kind": "native",
+     "pool": "Bonding curve"
+    }
+   ],
+   "notice": null
+  }
+ },
+ "_launch_id": "a4f2841e811e433084289f86640faf82"
+}

@@ -45,7 +45,7 @@ export default function Activity() {
     <>
       <PageHeader title="Activity" sub="An audit trail of your account, newest first. Repeated entries are grouped; expand one to see each time." />
       <Card flush title="Account log" icon="activity" sub={rows ? `${rows.length} entries` : undefined} actions={<>
-        <Seg value={g} onChange={setG} options={GROUPS.map(([k, l]) => [k, <>{l}{rows && <span className="muted num"> {count(k)}</span>}</>])} />
+        <Seg className="wrap-sm" value={g} onChange={setG} options={GROUPS.map(([k, l]) => [k, <>{l}{rows && <span className="muted num"> {count(k)}</span>}</>])} />
         <button className="btn icon sm secondary" onClick={load} disabled={busy} aria-label="Reload activity"><Icon name="refresh" size={13} /></button>
       </>}>
         {error && !rows ? (

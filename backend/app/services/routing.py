@@ -47,11 +47,78 @@ async def asset_balance(ex: Executor, network: str, asset: str, address: str) ->
     return int(await ex.evm(network).rpc.erc20_balance(token, address))
 
 
+# Selectors that move or authorise ERC-20/721/1155 balances. A Relay step may only use them on the route's own
+# input token, within the approved amount; anywhere else they could move assets the user never offered.
+_ASSET_SELECTORS = {
+    bytes.fromhex("a9059cbb"): "transfer", bytes.fromhex("23b872dd"): "transferFrom",
+    bytes.fromhex("095ea7b3"): "approve", bytes.fromhex("39509351"): "increaseAllowance",
+    bytes.fromhex("d505accf"): "permit", bytes.fromhex("a22cb465"): "setApprovalForAll",
+    bytes.fromhex("42842e0e"): "safeTransferFrom", bytes.fromhex("f242432a"): "safeTransferFrom",
+}
+
+
+def route_input(network: str, asset: str) -> str | None:
+    """The route's input token address, or None when it spends the chain's native coin."""
+    if asset == "native":
+        return None
+    return stable_for(network)[1] if asset == "stable" else asset
+
+
+def check_route_call(call: EvmCall, wallet: str, input_token: str | None, amount_raw: int) -> str | None:
+    """Bound a provider-built EVM route step to the approved input (audit HT-02).
+
+    Native input: the step may carry at most `amount_raw` wei and may not touch token balances. Token input: the
+    step carries no native value; on the input token it may only approve, increase an allowance or transfer up to
+    `amount_raw`; on any other contract it may not call a balance-moving selector. The router then pulls at most
+    the approved allowance. This bounds loss to the amount the user chose to route, whatever the provider sends."""
+    from eth_abi import decode
+
+    if call.to is None:
+        return "the route asks to deploy a contract"
+    data = call.data or b""
+    selector = data[:4]
+    if input_token is None:
+        if call.value > amount_raw:
+            return "the route step sends more native coin than approved"
+        if selector in _ASSET_SELECTORS:
+            return f"a native-coin route step calls {_ASSET_SELECTORS[selector]} on a token"
+        return None
+    if call.value:
+        return "a token route step also sends native coin"
+    if call.to.lower() == input_token.lower():
+        if selector not in (bytes.fromhex("095ea7b3"), bytes.fromhex("39509351"), bytes.fromhex("a9059cbb")) \
+                or len(data) != 68:
+            return "the route calls an unexpected function on the input token"
+        try:
+            _, value = decode(["address", "uint256"], data[4:])
+        except Exception:
+            return "the route's token call is malformed"
+        if value > amount_raw:
+            return "the route moves or approves more of the input token than approved"
+        return None
+    if selector in _ASSET_SELECTORS:
+        return f"the route calls {_ASSET_SELECTORS[selector]} on a contract other than its input token"
+    return None
+
+
+def route_limits(w: Wallet, from_asset: str, amount_raw: int):
+    """Solana spend bound for a Relay origin transaction (audit HT-01)."""
+    from .solana_guard import TRADE_OVERHEAD_LAMPORTS, SpendLimits, budget
+
+    token = route_input("solana", from_asset)
+    if token is None:
+        return SpendLimits(w.address, budget(amount_raw, 0, TRADE_OVERHEAD_LAMPORTS), label="route")
+    return SpendLimits(w.address, TRADE_OVERHEAD_LAMPORTS, token_out={token: amount_raw}, label="route")
+
+
 async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
-                    kind: str = "bridge", max_allowance: int | None = None) -> SubmitResult:
+                    kind: str = "bridge", max_allowance: int | None = None,
+                    from_asset: str | None = None, amount_raw: int | None = None) -> SubmitResult:
     """Send one Relay step item from wallet `w`. `max_allowance` caps provider-built ERC-20 approvals
     at the quoted need (tx_guard), so a compromised Relay response can't grant a route's spender more
-    than the route was quoted for."""
+    than the route was quoted for. With `from_asset`/`amount_raw` every step is bounded to the approved
+    input: Solana steps by simulated wallet effects, EVM steps by `check_route_call`."""
+    bounded = from_asset is not None and amount_raw is not None
     if w.network == "solana":
         ixs = [Instruction(Pubkey.from_string(i["programId"]), bytes.fromhex(i.get("data") or ""),
                            [AccountMeta(Pubkey.from_string(k["pubkey"]), bool(k.get("isSigner")),
@@ -66,15 +133,21 @@ async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
                 return SubmitResult(None, "failed", "Relay lookup table could not be resolved; no transaction was signed")
             tables.append(table)
         raw = build_unsigned(Pubkey.from_string(w.address), ixs, await ex.rpc.get_latest_blockhash(), tables)
+        limits = route_limits(w, from_asset, amount_raw) if bounded else None
         if job is None:  # test/utility call without a user-facing job record
-            return await ex.submit(raw, {w.address: w.signer_ref or ""})
-        return await submit_tracked(ex, job, w, kind, raw, {w.address: w.signer_ref or ""})
+            return await ex.submit(raw, {w.address: w.signer_ref or ""}, limits=limits)
+        return await submit_tracked(ex, job, w, kind, raw, {w.address: w.signer_ref or ""}, limits=limits)
     hexdata = data.get("data") or "0x"
     from ..chains.relay import relay_chain_id
     if data.get("chainId") != relay_chain_id(w.network) or (data.get("from") and data["from"].lower() != w.address.lower()):
         return SubmitResult(None, "failed", "Relay transaction targets a different chain or signer")
-    call = EvmCall(to=data["to"], data=bytes.fromhex(hexdata[2:] if hexdata.startswith("0x") else hexdata),
-                   value=int(data.get("value") or 0))
+    try:
+        call = EvmCall(to=data["to"], data=bytes.fromhex(hexdata[2:] if hexdata.startswith("0x") else hexdata),
+                       value=int(data.get("value") or 0))
+    except (KeyError, TypeError, ValueError):
+        return SubmitResult(None, "failed", "Relay returned a malformed transaction; nothing was signed")
+    if bounded and (reason := check_route_call(call, w.address, route_input(w.network, from_asset), amount_raw)):
+        return SubmitResult(None, "failed", f"refused before signing: {reason}")
     sender = ex.evm(w.network)
     if job is None:
         return await sender.send(w.address, w.signer_ref or "", call, max_allowance=max_allowance,
@@ -123,9 +196,10 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
         q = await quote(ex, src, dst, from_asset, to_asset, amount_raw, slippage_pct)  # fresh: quotes expire fast
         if not approved_bounds:
             raise AdapterError("This route has no approved output bound; request a new preview")
-        from .quote_approval import check_relay_bounds
+        from .quote_approval import check_relay_bounds, check_relay_recipient
 
         check_relay_bounds(q, approved_bounds, currency(dst.network, to_asset)[1], dst.network)
+        check_relay_recipient(q, dst.address, dst.network)
     except AdapterError as e:
         res = SubmitResult(None, "failed", str(e))
         await _record(session, job, src, kind, res, None)
@@ -151,7 +225,8 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
             except AdapterError as e:
                 return SubmitResult(last.signature if last else None, "timeout" if last else "failed", str(e)), "not_sent"
             tx_kind = kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
-            res = await send_item(ex, src, item.get("data") or {}, job, tx_kind, max_allowance=amount_raw)
+            res = await send_item(ex, src, item.get("data") or {}, job, tx_kind, max_allowance=amount_raw,
+                                  from_asset=from_asset, amount_raw=amount_raw)
             await _record(session, job, src, tx_kind, res, None)
             await session.commit()
             last = res

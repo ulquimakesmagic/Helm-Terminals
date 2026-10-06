@@ -72,7 +72,7 @@ export default function Networks() {
           <div key={n.id} className="stack tight">
             <b>{n.name}</b>{n.notes && <span className="muted small">{n.notes}</span>}
             {Object.entries(n.capabilities).map(([k, v]) => <span key={k} className="small"><span className="muted">{CAP_LABEL[k]}:</span> {v}</span>)}
-            <span className="small muted">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
+            <span className="small muted net-sources">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
           </div>))}</div>
       </details>
       {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (

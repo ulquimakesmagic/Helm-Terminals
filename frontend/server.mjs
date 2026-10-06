@@ -6,7 +6,14 @@ import { securityHeaders } from "./security-headers.mjs";
 
 const types = {".html":"text/html; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".css":"text/css; charset=utf-8",
   ".json":"application/json", ".svg":"image/svg+xml", ".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg",
-  ".webp":"image/webp", ".ico":"image/x-icon", ".woff":"font/woff", ".woff2":"font/woff2", ".txt":"text/plain"};
+  ".webp":"image/webp", ".ico":"image/x-icon", ".xml":"application/xml; charset=utf-8",
+  ".webmanifest":"application/manifest+json", ".woff":"font/woff", ".woff2":"font/woff2", ".txt":"text/plain"};
+
+// Client routes the app renders. Anything else still gets the app shell (so it can show its not-found page and
+// navigation), but with HTTP 404 so crawlers and monitors see a real miss instead of a soft 200.
+const APP_ROUTES = [/^\/$/, /^\/(login|recover|terms|privacy|risk|launches|wallets|networks|tracker|activity|profile|settings|admin|automation)\/?$/,
+  /^\/launches\/[A-Za-z0-9_-]{1,64}\/?$/, /^\/automation\/.*$/, /^\/u\/[A-Za-z0-9_.-]{1,40}\/?$/];
+export const isAppRoute = (path) => APP_ROUTES.some((r) => r.test(path));
 
 export function staticServer(root = fileURLToPath(new URL("./dist", import.meta.url))) {
   const directory = resolve(root);
@@ -21,10 +28,12 @@ export function staticServer(root = fileURLToPath(new URL("./dist", import.meta.
       let file = resolve(directory, `.${path}`);
       if (file !== directory && !file.startsWith(directory + sep)) { res.writeHead(403); res.end(); return; }
       let info;
+      let status = 200;
       try { info = await stat(file); } catch {}
       if (!info?.isFile()) {
         if (extname(path) || !(req.headers.accept ?? "").includes("text/html")) { res.writeHead(404); res.end(); return; }
         file = resolve(directory, "index.html");
+        if (!isAppRoute(path)) status = 404;
       }
       const actual = await realpath(file);
       if (!actual.startsWith(directory + sep)) { res.writeHead(403); res.end(); return; }
@@ -32,7 +41,7 @@ export function staticServer(root = fileURLToPath(new URL("./dist", import.meta.
       res.setHeader("Content-Type", types[extname(file)] ?? "application/octet-stream");
       res.setHeader("Cache-Control", path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
       res.setHeader("Content-Length", body.length);
-      res.writeHead(200); res.end(req.method === "HEAD" ? undefined : body);
+      res.writeHead(status); res.end(req.method === "HEAD" ? undefined : body);
     } catch { res.writeHead(400); res.end(); }
   });
 }

@@ -371,12 +371,16 @@ async def delete_folder(folder_id: str, user: User = Depends(current_user), db: 
 
 @router.post("/folders/merge-duplicates")
 async def merge_duplicate_folders(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    """Folders with the same name (ignoring case) are merged into the oldest one; wallets move with them."""
+    """Folders with the same name (ignoring case) are merged into the one holding the most wallets (ties: the lowest
+    ID), so the fewest wallets move and the result does not depend on row order; wallets move with them."""
     groups: dict[str, list[Folder]] = {}
     for f in (await db.execute(select(Folder).where(Folder.user_id == user.id).order_by(Folder.id))).scalars():
         groups.setdefault(f.name.strip().lower(), []).append(f)
+    counts = dict((await db.execute(select(Wallet.folder_id, func.count()).where(
+        Wallet.user_id == user.id, Wallet.folder_id.is_not(None)).group_by(Wallet.folder_id))).all())
     removed = moved = 0
     for same in groups.values():
+        same.sort(key=lambda f: (-counts.get(f.id, 0), f.id))
         keep, extra = same[0], same[1:]
         for f in extra:
             for w in (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.folder_id == f.id))).scalars():
@@ -758,7 +762,15 @@ async def swap(body: SwapBody, user: User = Depends(current_user), db: AsyncSess
 
 async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: SolanaRPC, ex: Executor, w: Wallet):
     """Swap through Jupiter: quote -> preflight -> confirm -> a fresh quote and an unsigned transaction
-    Helm signs for the wallet (the executor simulates before broadcast)."""
+    Helm signs for the wallet.
+
+    The confirmation is bound to the stable intent (wallet, tokens, raw amount, slippage) and, through an
+    authenticated quote approval, to the minimum output the user reviewed. Execution refuses a fresh quote whose
+    minimum is lower, and the signed transaction must deliver that minimum in simulation while spending at most
+    the approved input (audits HT-01, HT-03, HT-04)."""
+    from ..services import quote_approval
+    from ..services.solana_guard import TRADE_OVERHEAD_LAMPORTS, SpendLimits, budget
+
     jup = Jupiter()
     in_mint = WSOL if body.input_mint == "native" else body.input_mint
     out_mint = WSOL if body.output_mint == "native" else body.output_mint
@@ -768,16 +780,30 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
     out_meta = {"symbol": "SOL", "decimals": 9} if body.output_mint == "native" else await jup.token(out_mint)
     if not in_meta or not out_meta:
         raise HTTPException(400, "one of these tokens isn't on Jupiter's list; check the mint address")
-    amount_raw = int(round(body.amount * 10 ** int(in_meta["decimals"])))
-    slippage_bps = int(body.slippage_pct * 100)
+    from decimal import ROUND_DOWN, Decimal
+
+    amount_raw = int((Decimal(str(body.amount)) * 10 ** int(in_meta["decimals"])).to_integral_value(rounding=ROUND_DOWN))
+    if amount_raw <= 0:
+        raise HTTPException(400, "amount is smaller than the token's smallest unit")
+    slippage_bps = int(round(body.slippage_pct * 100))
 
     async def quote():
         return await jup.quote(in_mint, out_mint, amount_raw, slippage_bps)
 
+    scope = {"kind": "jupiter_swap", "wallet_id": w.id, "input_mint": in_mint, "output_mint": out_mint,
+             "amount_raw": str(amount_raw), "slippage_bps": slippage_bps}
+    approved = quote_approval.verify(body.quote_approval, user.id, scope) if body.confirm else None
     q = await quote()
     out_dec = int(out_meta["decimals"])
-    out_amount = int(q["outAmount"]) / 10 ** out_dec
-    min_out = int(q["otherAmountThreshold"]) / 10 ** out_dec
+    try:
+        floor_raw = int(q["otherAmountThreshold"])
+        out_raw = int(q["outAmount"])
+        if floor_raw <= 0 or out_raw < floor_raw or str(q.get("inAmount")) != str(amount_raw):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(502, "Jupiter returned an unusable quote; try again")
+    if approved:
+        floor_raw = int(approved["minimum_raw"])  # the reviewed floor, never a lower re-quote
     route = " → ".join(dict.fromkeys(
         (s.get("swapInfo") or {}).get("label") or "pool" for s in q.get("routePlan") or [])) or "Jupiter"
     impact = float(q.get("priceImpactPct") or 0)
@@ -786,26 +812,57 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
         warnings.append(f"price impact is {impact * 100:.1f}% — check the route before confirming")
     warnings += two_fa_warnings(user, "swap")
     pf = build_preflight("swap", {
-        "wallet": w.address, "network": "solana",
-        "input": f"{body.amount:g} {in_meta['symbol']}",
-        "output": f"at least {min_out:g} {out_meta['symbol']}",
-        "estimated_output": f"{out_amount:g} {out_meta['symbol']}",
-        "route": route, "price_impact": f"{impact * 100:.2f}%", "slippage": f"{body.slippage_pct:g}%",
-        "platform_fee": "none",
+        "wallet": w.address, "network": "solana", "provider": "Jupiter",
+        "input": f"{body.amount:g} {in_meta['symbol']}", "input_raw": str(amount_raw),
+        "output_asset": out_meta["symbol"], "output_mint": out_mint,
+        "slippage": f"{body.slippage_pct:g}%", "platform_fee": "none",
     }, warnings)
+    # Display-only quote details; the approved floor is bound by the quote approval, not by this hash.
+    pf["preflight"].update({
+        "output": f"at least {floor_raw / 10 ** out_dec:g} {out_meta['symbol']}",
+        "estimated_output": f"{out_raw / 10 ** out_dec:g} {out_meta['symbol']}",
+        "route": route, "price_impact": f"{impact * 100:.2f}%",
+        "quote_expires_in_s": quote_approval.TTL_SECONDS,
+    })
     if not body.confirm:
+        if not warnings:
+            pf["quote_approval"] = quote_approval.issue(user.id, scope, {"minimum_raw": str(floor_raw)})
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
+    if not approved:
+        raise HTTPException(409, "quote_expired_or_changed: request a new preview and confirm again")
     job, created = await begin_spend(db, user, body, pf, "swap", None, {
         "wallet_id": w.id, "input_mint": in_mint, "output_mint": out_mint, "amount_raw": amount_raw,
-        "slippage_bps": slippage_bps,
+        "slippage_bps": slippage_bps, "approved_minimum_raw": str(floor_raw), "network": "solana",
     })
     if created:
+        if body.input_mint == "native":
+            limits = SpendLimits(w.address, budget(amount_raw), watch_mints=(out_mint,), label="swap")
+        else:
+            limits = SpendLimits(w.address, TRADE_OVERHEAD_LAMPORTS, token_out={in_mint: amount_raw},
+                                 watch_mints=(in_mint,) if body.output_mint == "native" else (in_mint, out_mint),
+                                 label="swap")
+        if body.output_mint == "native":
+            limits = SpendLimits(limits.wallet, limits.max_lamports_out, limits.token_out,
+                                 min_lamports_in=max(0, floor_raw - TRADE_OVERHEAD_LAMPORTS),
+                                 watch_mints=limits.watch_mints, label="swap")
+        else:
+            limits = SpendLimits(limits.wallet, limits.max_lamports_out, limits.token_out,
+                                 token_in_min={out_mint: floor_raw}, watch_mints=limits.watch_mints, label="swap")
+
         async def work(session, j):
             fresh = await quote()  # quotes expire; a new one is taken at execution time
+            try:
+                if int(fresh["otherAmountThreshold"]) < floor_raw:
+                    raise ValueError()
+            except (KeyError, TypeError, ValueError):
+                j.status, j.params = "failed", {**j.params, "error": "The new quote is below the approved "
+                                               "minimum; nothing was signed. Review a new preview."}
+                await session.commit()
+                return
             raw = await jup.swap_tx(fresh, w.address)
-            await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""})
+            await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""}, limits=limits)
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
 
@@ -850,13 +907,23 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                                     from_currency=in_cur, to_currency=out_cur, amount=amount_raw,
                                     slippage_pct=body.slippage_pct)
 
+    from ..services import quote_approval
+
+    scope = {"kind": "relay_swap", "wallet_id": w.id, "network": net, "input": in_cur.lower(), "output": out_cur.lower(),
+             "amount_raw": str(amount_raw), "slippage_pct": body.slippage_pct, "fee_bps": ex.relay.fee_bps,
+             "fee_recipient": ex.relay.fee_recipient}
+    approved = quote_approval.verify(body.quote_approval, user.id, scope) if body.confirm else None
     warnings: list[str] = []
+    bounds = None
     try:
         q = await quote()
         summary = ex.relay.summarize(q)
+        bounds = quote_approval.relay_bounds(q, destination_asset=out_cur, destination_network=net)
     except AdapterError as e:
         q, summary = None, None
         warnings.append(str(e))
+    if approved:
+        bounds = {k: v for k, v in approved.items() if k != "expires"}
     try:
         gas = await fee_reserve(ex, net, 2, ROUTE_GAS)
         native_bal = await sender.rpc.get_balance(w.address) / WEI
@@ -871,38 +938,57 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
     warnings += two_fa_warnings(user, "swap")
     pf = build_preflight("swap", {
         "wallet": w.address, "network": net, "chain": chain_name(net),
-        "input": f"{body.amount:g} {in_sym}",
-        "output": (f"at least {summary['receive_minimum']:g} {out_sym}"
-                   if summary and summary.get("receive_minimum") is not None else f"at least some {out_sym}"),
-        "estimated_output": (f"{summary['receive_estimate']:g} {out_sym}"
-                             if summary and summary.get("receive_estimate") is not None else None),
-        "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%",
-        "quote": summary, "provider": "Relay (relay.link)",
+        "input": f"{body.amount:g} {in_sym}", "input_raw": str(amount_raw), "output_asset": out_sym,
+        "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%", "provider": "Relay (relay.link)",
         "platform_fee": ex.relay.fee_note,
     }, warnings)
+    # Display-only quote details. The reviewed minimum is bound by the quote approval (audits HT-03, HT-04).
+    minimum = int(bounds["minimum_raw"]) / 10 ** out_dec if bounds else None
+    pf["preflight"].update({
+        "output": f"at least {minimum:g} {out_sym}" if minimum is not None else f"at least some {out_sym}",
+        "estimated_output": (f"{summary['receive_estimate']:g} {out_sym}"
+                             if summary and summary.get("receive_estimate") is not None else None),
+        "quote": summary, "quote_expires_in_s": quote_approval.TTL_SECONDS,
+    })
     if not body.confirm:
+        if bounds and not warnings:
+            pf["quote_approval"] = quote_approval.issue(user.id, scope, bounds)
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
+    if not approved:
+        raise HTTPException(409, "quote_expired_or_changed: request a new preview and confirm again")
     job, created = await begin_spend(db, user, body, pf, "swap", None, {
         "wallet_id": w.id, "network": net, "input_currency": in_cur, "output_currency": out_cur,
-        "amount_raw": amount_raw, "slippage_pct": body.slippage_pct,
+        "amount_raw": amount_raw, "slippage_pct": body.slippage_pct, "approved_minimum_raw": bounds["minimum_raw"],
     })
     if created:
         async def work(session, j):
             j.status = "submitted"
             await session.commit()
-            fresh = await quote()  # re-quote at execution time
+            try:
+                fresh = await quote()  # re-quote at execution time, never below the reviewed minimum
+                quote_approval.check_relay_bounds(fresh, approved, out_cur, net)
+                quote_approval.check_relay_recipient(fresh, w.address, net)
+            except AdapterError as e:
+                j.status, j.params = "failed", {**(j.params or {}), "error": f"{e}; nothing was signed"}
+                await session.commit()
+                return
             info = ex.relay.summarize(fresh)
             j.params = {**(j.params or {}), "request_id": info["request_id"], "quote": info}
             await session.commit()
+            from ..services.execution_journal import require_steps
+            await require_steps(session, j, w.id, [
+                "swap" if step.get("id") == "deposit" else f"swap_{step.get('id')}"[:24]
+                for step in fresh["steps"] for item in step.get("items") or [] if item.get("status") != "complete"])
             results = []
             for step in fresh["steps"]:
                 for item in step.get("items") or []:
                     if item.get("status") == "complete":
                         continue
                     tx_kind = "swap" if step.get("id") == "deposit" else f"swap_{step.get('id')}"[:24]
-                    res = await send_item(ex, w, item.get("data") or {}, j, tx_kind, max_allowance=amount_raw)
+                    res = await send_item(ex, w, item.get("data") or {}, j, tx_kind, max_allowance=amount_raw,
+                                          from_asset=body.input_mint, amount_raw=amount_raw)
                     await _record(session, j, w, tx_kind, res, None)
                     await session.commit()
                     results.append(res)

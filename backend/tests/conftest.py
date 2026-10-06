@@ -74,6 +74,18 @@ class FakeRPC:
             return None
         return await self.get_balance(address) + self.next_delta
 
+    async def wallet_effects(self, tx, wallet, watch_mints=()):
+        """Simulated effects for the spend guard: by default the wallet pays `next_delta` lamports and no token
+        balance changes. Tests set `effects_override` to model a provider-built transaction that misbehaves."""
+        from app.services.solana_guard import WalletEffects
+
+        if self.sim_error:
+            return WalletEffects(0, 0, "11111111111111111111111111111111", {}, {}, error=self.sim_error)
+        if getattr(self, "effects_override", None) is not None:
+            return self.effects_override(tx, wallet)
+        before = await self.get_balance(wallet)
+        return WalletEffects(before, before + self.next_delta, "11111111111111111111111111111111", {}, {})
+
     async def send(self, tx):
         self.sent.append(tx)
         payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])
@@ -225,16 +237,16 @@ def offline_evm(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def offline_prices(monkeypatch):
-    """No test reaches DefiLlama: fixed coin prices, and no historical data unless a test provides it."""
+    """No test reaches Codex: fixed current coin prices, and no historical prices unless a test provides them."""
+    from app.services import market as mk
     from app.services import portfolio as pf
 
-    async def prices(client=None):
+    async def prices(market=None):
         return {"SOL": 150.0, "ETH": 3000.0, "BNB": 600.0}
 
-    async def history(coin, cid, days, client):
+    async def no_history(self, inputs):
         return {}
 
     monkeypatch.setattr(pf, "coin_prices", prices)
-    monkeypatch.setattr(pf, "_fetch_history", history)
-    pf._price_cache = (0.0, {})
-    pf._day_prices.clear()
+    monkeypatch.setattr(mk.Market, "prices", no_history)
+    mk._market = None

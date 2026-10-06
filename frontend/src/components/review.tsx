@@ -95,27 +95,25 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
     }
     case "swap": {
       const q = pre.quote;
+      const wallet: [string, ReactNode] = ["Wallet", pre.wallet ? <span className="mono" title={pre.wallet}>{short(pre.wallet)}</span> : "—"];
+      const bound = "If a fresh quote at execution would deliver less than the minimum shown, nothing is signed and you review again.";
       if (q?.fees_usd) {
         // Relay-routed swap on an EVM chain: the quote carries fees and the arrival estimate like a bridge.
         const f = q.fees_usd;
         return {
           label: `Swap on ${pre.chain ?? "EVM"}`, value: String(pre.input ?? ""), unit: "",
-          sub: q.receive_estimate != null
-            ? <>Receive about {fmt(q.receive_estimate, 6)} {q.receive_symbol}, at least {fmt(q.receive_minimum ?? 0, 6)}</>
-            : <>Receive {pre.output}</>,
-          cells: [["Route", pre.route ?? "Relay"], ["Relay + gas", `$${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)}`],
+          sub: <>Receive {pre.output}{q.receive_estimate != null ? <> · about {fmt(q.receive_estimate, 6)} {q.receive_symbol}</> : null}</>,
+          cells: [wallet, ["Minimum received", pre.output ?? "—"], ["Route", pre.route ?? "Relay"], ["Relay + gas", `$${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)}`],
             ["Helm route fee", fee(pre.platform_fee)], ["Slippage", pre.slippage ?? "—"]],
           tone: "danger",
-          next: ["A fresh quote is taken when the swap executes; the final output is bounded by the slippage shown here.",
-            "Relay builds the transactions; Helm checks their signatures and simulates them before sending."],
+          next: [bound, "Relay builds the transactions; Helm limits them to the amount you are swapping and simulates them before sending."],
         };
       }
       return {
-        label: "Swap", value: `${pre.input} → ${pre.output}`, unit: "", sub: <>Through Jupiter on Solana from {pre.wallet ? short(pre.wallet) : "the wallet"}</>,
-        cells: [["Estimated out", pre.estimated_output ?? "—"], ["Route", pre.route ?? "—"], ["Price impact", pre.price_impact ?? "—"],
-          ["Slippage", pre.slippage ?? "—"], ["Platform fee", fee(pre.platform_fee)]], tone: "danger",
-        next: ["A fresh quote is taken when the swap executes; the final output is bounded by the slippage shown here.",
-          "Jupiter builds the transaction; Helm checks its signatures and simulates it before sending."],
+        label: "Swap", value: String(pre.input ?? ""), unit: "", sub: <>Receive {pre.output} through Jupiter on Solana</>,
+        cells: [wallet, ["Minimum received", pre.output ?? "—"], ["Estimated out", pre.estimated_output ?? "—"], ["Route", pre.route ?? "—"],
+          ["Price impact", pre.price_impact ?? "—"], ["Slippage", pre.slippage ?? "—"], ["Platform fee", fee(pre.platform_fee)]], tone: "danger",
+        next: [bound, "Jupiter builds the transaction; Helm simulates it and refuses it if it would spend more than this swap or deliver less than the minimum."],
       };
     }
     case "sweep": {

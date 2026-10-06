@@ -1,0 +1,17 @@
+# Public pages may be indexed. App and account pages are behind sign-in and also send "noindex";
+# this file is a crawl hint, not an access control.
+User-agent: *
+Allow: /
+Disallow: /launches
+Disallow: /wallets
+Disallow: /networks
+Disallow: /tracker
+Disallow: /activity
+Disallow: /profile
+Disallow: /settings
+Disallow: /admin
+Disallow: /recover
+Disallow: /login
+Disallow: /automation
+
+Sitemap: https://helmterminals.xyz/sitemap.xml

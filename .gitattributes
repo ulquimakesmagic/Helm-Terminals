@@ -1,3 +1,6 @@
 # Build-check artifacts are compared byte-for-byte; keep line endings stable everywhere
 backend/app/chains/contracts/*.json text eol=lf
 backend/tests/fixtures/*.json text eol=lf
+# The reviewed artifacts above were compiled from CRLF sources, and solc's metadata hash covers the exact source
+# bytes. Pin the line endings so every checkout (Windows or a Linux CI runner) reproduces the same bytecode.
+contracts/*.sol text eol=crlf
