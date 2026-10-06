@@ -446,6 +446,7 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
         plan_stable: list[tuple[Wallet, int]] = []
         plan_native: list[tuple[Wallet, int]] = []
         skipped: list[str] = []
+        warnings: list[str] = []
         for s in sources:
             stable_bal = await _balance(ex, net, a_stable, s.address)
             native_bal = await _balance(ex, net, a_native, s.address)
@@ -467,7 +468,6 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
     except Exception as e:
         raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
 
-    warnings: list[str] = []
     if not plan_stable and not plan_native:
         warnings.append("None of the selected wallets has anything to sweep.")
     legs = len(plan_stable) + len(plan_native)
