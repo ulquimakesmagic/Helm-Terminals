@@ -31,7 +31,7 @@ export function chainsIn(pads: Pad[]) {
 
 export function Brand({ compact }: { compact?: boolean }) {
   return (
-    <Link to="/" className="pub-brand" aria-label="Helm Terminals home">
+    <Link to="/" className="pub-brand">
       <Logo size={compact ? 30 : 34} />
       <span className="logo-name">Helm Terminals<small>Multichain launch desk</small></span>
     </Link>

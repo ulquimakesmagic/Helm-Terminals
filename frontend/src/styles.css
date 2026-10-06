@@ -1310,3 +1310,4 @@ p a:not(.btn):hover, .small a:not(.btn):hover, .market-note a:hover { text-decor
 @media (max-width: 860px) { .legal-nav a { padding: 6px 8px; font-size: var(--fs-sm); } }
 .main { min-height: 100vh; min-height: 100dvh; }
 .main > .content { flex: 1 0 auto; }
+.legal-toc li a { display: inline-block; min-height: 24px; padding: 2px 0; line-height: 20px; }
