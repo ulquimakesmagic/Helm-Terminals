@@ -25,3 +25,25 @@ test("production server serves deep links, enforces script CSP and refuses missi
     await rm(root, {recursive:true, force:true});
   }
 });
+
+test("unknown paths get the app shell with HTTP 404; app and legal deep links get 200", async () => {
+  const root = await mkdtemp(join(tmpdir(), "helm-static-404-"));
+  await writeFile(join(root, "index.html"), "<!doctype html><title>Fixture</title>");
+  await writeFile(join(root, "site.webmanifest"), "{}");
+  const server = staticServer(root);
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const html = {headers: {Accept: "text/html"}};
+  try {
+    for (const path of ["/", "/terms", "/privacy", "/risk", "/launches/abc123", "/u/someone", "/login?next=%2Fwallets"])
+      assert.equal((await fetch(url + path, html)).status, 200, path);
+    const miss = await fetch(`${url}/definitely-not-a-page`, html);
+    assert.equal(miss.status, 404);
+    assert.match(await miss.text(), /Fixture/);  // the shell still renders its own not-found page
+    assert.equal((await fetch(`${url}/launches/a/b/c`, html)).status, 404);
+    assert.match((await fetch(`${url}/site.webmanifest`)).headers.get("content-type"), /manifest\+json/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(root, {recursive:true, force:true});
+  }
+});

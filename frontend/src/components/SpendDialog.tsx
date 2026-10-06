@@ -19,7 +19,7 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "quote_expires_in_s", "input_raw", "output_mint"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
@@ -35,6 +35,8 @@ const LABELS: Record<string, string> = {
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
   commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
   pons_rewards: "Pons reward recipients", reward_terms: "Permanent reward terms",
+  input: "You pay", output: "You receive (minimum)", output_asset: "Receive asset", estimated_output: "Estimated receive",
+  price_impact: "Price impact", slippage: "Slippage", route: "Route", approved_minimum_raw: "Approved minimum",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -188,12 +190,30 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [route, setRoute] = useState<any>(null);
   const key = useRef(crypto.randomUUID());
 
-  useEffect(() => {
-    api(path, { body })
-      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
+  const [quoteUntil, setQuoteUntil] = useState(0);
+  const [clock, setClock] = useState(Date.now());
+  const [notice, setNotice] = useState("");
+  // Preview (and re-preview): a confirmation is only ever sent for the preview currently on screen.
+  function load(reason = "") {
+    setNotice(reason);
+    return api(path, { body })
+      .then((r) => {
+        setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setNeeds2fa(Boolean(r.requires_2fa));
+        // Quotes bound to a minimum output expire server-side; count down from a little under the server's window.
+        const ttl = Number(r.preflight?.quote_expires_in_s ?? (r.quote_approval ? 120 : 0));
+        setQuoteUntil(ttl ? Date.now() + (ttl - 5) * 1000 : 0);
+        setPhase("review");
+      })
       .catch((e) => { setError(errMsg(e)); setPhase("error"); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    if (!quoteUntil || phase !== "review") return;
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [quoteUntil, phase]);
+  const quoteLeft = quoteUntil ? Math.max(0, Math.ceil((quoteUntil - clock) / 1000)) : null;
+  const quoteExpired = quoteLeft === 0;
 
   // A bridge job ends when the origin transaction is settled; Relay's destination fill continues on its own.
   // Keep asking for the route status so the result shows the second leg (or its refund) instead of stopping early.
@@ -236,7 +256,14 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       setPhase("done");
       onDone?.();
     } catch (e) {
-      setError(errMsg(e));
+      const d = errMsg(e);
+      if (/^(preflight_changed|quote_expired_or_changed)/.test(d)) {
+        // Nothing was sent. Show the new preview instead of a dead end; the user confirms again deliberately.
+        setError(""); setTotp("");
+        await load("The preview changed since you opened it (prices, balances or the quote moved). Nothing was sent. Review the updated preview below and confirm again.");
+        return;
+      }
+      setError(d);
       setPhase("review");
     }
   }
@@ -252,7 +279,8 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     phase === "loading" ? <button className="btn ghost" onClick={onClose}>Cancel</button> : (
       <>
         <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
-        <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || (needs2fa && totp.length !== 6)}>
+        {quoteExpired && !busy && <button className="btn secondary" onClick={() => { setPhase("loading"); void load("Refreshed with a new quote. Review it before confirming."); }}><Icon name="refresh" size={14} />Refresh quote</button>}
+        <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || quoteExpired || (needs2fa && totp.length !== 6)}>
           {busy ? <><Spinner />{phase === "polling" ? (kind === "deploy" && pre?.funding ? "Routing USDC, then deploying…" : "Waiting for confirmation…") : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
         </button>
       </>
@@ -267,7 +295,11 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
 
       {pre && phase !== "done" && phase !== "error" && (
         <>
+          {notice && <Callout tone="warn">{notice}</Callout>}
           {summary && <ReviewHero s={summary} />}
+          {quoteLeft != null && phase === "review" && (quoteExpired
+            ? <Callout tone="warn"><b>This quote expired.</b> Refresh it to see current terms; confirming needs a fresh quote.</Callout>
+            : <p className="muted small row" role="timer" aria-live="off" style={{ gap: 6 }}><Icon name="clock" size={13} />Quote held for {quoteLeft}s. The minimum output shown is locked until then.</p>)}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
           {summary && !blocked && (
             <div className="review-section">

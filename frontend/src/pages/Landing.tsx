@@ -2,9 +2,10 @@ import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CHAINS, padName, padsByChain } from "../chains";
 import { ChainMark, PadLabel, PadMark } from "../components/marks";
-import { Brand, ChainStrip, PublicHeader, RISK_NOTE, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
+import { ChainStrip, PublicFooter, PublicHeader, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
 import { ReviewHero, summarize } from "../components/review";
 import { Icon, IconName, Spinner } from "../components/ui";
+import { setMeta } from "../meta";
 
 /*
  * The public front door at "/" for signed-out visitors. Every claim is something the product does today; counts
@@ -40,7 +41,7 @@ export default function Landing() {
   const live = pads.filter((p) => p.status === "available").length;
   const example = summarize(EXAMPLE_PREVIEW, "solana")!;
   const refQ = refCode ? `&ref=${encodeURIComponent(refCode)}` : "";
-  useEffect(() => { document.title = "Helm Terminals · Multichain launch desk"; }, []);
+  useEffect(() => { setMeta({ title: "Helm Terminals · Multichain launch desk", path: "/" }); }, []);
 
   return (
     <div className="pub">
@@ -153,8 +154,8 @@ export default function Landing() {
                 workspace shows how much of the supply your wallets hold next to the largest holders.
               </Capability>
               <Capability icon="eye" title="Review before you confirm" spec={["Wallets, amounts, fees, gas", "Confirmation tied to the preview"]}>
-                Deploys, trades, transfers and routes all start as a preview. You see the exact wallets, amounts and fees,
-                then confirm that preview, not a new one.
+                Deploys, trades, transfers, swaps and routes all start as a preview of the exact wallets, amounts, fees and
+                limits. Swaps and routes are held to the minimum output you saw; if a fresh quote is worse, you review again.
               </Capability>
               <Capability icon="calendar" title="Finite scheduled plans" spec={["2 to 12 orders per plan", "At least 5 minutes apart", "Buys or sells, never both", "Budget caps per chain"]}>
                 Schedule a set number of buys, or staged sells of a share of your holdings, on a live launch. Each plan
@@ -197,12 +198,7 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="pub-footer">
-        <div className="pub-wrap pub-footer-in">
-          <Brand compact />
-          <p className="muted small">{RISK_NOTE}</p>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

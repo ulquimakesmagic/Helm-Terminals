@@ -116,3 +116,45 @@ export function SignerNote({ health }: { health: PublicInfo["health"] }) {
 }
 
 export const RISK_NOTE = "Launching and trading tokens is risky and can lose money. Helm doesn't promise prices, liquidity or a successful launch.";
+
+const FOOTER_LINKS: [string, [string, string][]][] = [
+  ["Product", [["Overview", "/"], ["Coverage", "/#coverage"], ["What it does", "/#capabilities"], ["Safeguards", "/#safeguards"]]],
+  ["Account", [["Sign in", "/login?mode=login"], ["Create account", "/login?mode=register"], ["Recover access", "/recover"]]],
+  ["Legal", [["Terms of Service", "/terms"], ["Privacy Policy", "/privacy"], ["Risk Disclosure", "/risk"]]],
+];
+
+/** Footer for every public page: navigation, legal links, risk statement and data attribution. */
+export function PublicFooter() {
+  return (
+    <footer className="pub-footer">
+      <div className="pub-wrap">
+        <div className="pub-footer-grid">
+          <div className="pub-footer-brand">
+            <Brand compact />
+            <p className="muted small">{RISK_NOTE}</p>
+          </div>
+          {FOOTER_LINKS.map(([group, links]) => (
+            <nav key={group} aria-label={group} className="pub-footer-col">
+              <h2>{group}</h2>
+              <ul>{links.map(([label, to]) => <li key={to}>{to.includes("#") ? <a href={to}>{label}</a> : <Link to={to}>{label}</Link>}</li>)}</ul>
+            </nav>
+          ))}
+        </div>
+        <div className="pub-footer-base muted small">
+          <span>© {new Date().getFullYear()} Helm Terminals</span>
+          <span>Market data by <a href="https://www.codex.io" target="_blank" rel="noreferrer">Codex</a>. Not investment advice.</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/** Compact footer inside the signed-in app. */
+export function AppFooter() {
+  return (
+    <footer className="app-footer muted small">
+      <nav aria-label="Legal"><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/risk">Risk disclosure</Link></nav>
+      <span>Market data by Codex · indicative only</span>
+    </footer>
+  );
+}

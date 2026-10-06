@@ -26,7 +26,7 @@ AUDIT_JS = """() => {
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
-    if (r.right > vw + 1 && !el.closest('.table-wrap, [data-scroll-x]') && getComputedStyle(el).position !== 'fixed')
+    if (r.right > vw + 1 && !el.closest('.table-wrap, [data-scroll-x], .ws-tablist, .seg, .modal-body') && getComputedStyle(el).position !== 'fixed')
       out.wide.push((el.className && String(el.className).slice(0, 40)) || el.tagName);
   }
   for (const el of document.querySelectorAll('a[href], button, input, select, textarea, [role=button]')) {

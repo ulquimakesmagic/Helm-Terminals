@@ -65,7 +65,7 @@ export default function Tracker() {
       <Card flush title={`Tracked addresses`} icon="eye" sub={items ? `${items.length} total · ${items.filter((i) => i.bookmarked).length} starred` : undefined}
         actions={<>
           <Seg value={filter} onChange={setFilter} options={[["all", "All"], ["starred", <><Icon name="star" size={12} /> Starred</>]]} />
-          <div style={{ width: 220 }}><SearchInput placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div style={{ width: 220, maxWidth: "100%" }}><SearchInput aria-label="Search tracked wallets" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         </>}>
         {loadErr && !items ? <LoadError what="Tracked addresses" error={loadErr} onRetry={load} /> : !items ? <Loading /> : items.length === 0 ? (
           <Empty icon="radar" title="Nothing tracked yet" text="Paste any Solana or EVM address (Base, BNB Chain, Robinhood Chain, Ethereum) above to start watching it." />
