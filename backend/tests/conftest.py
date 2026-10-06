@@ -237,16 +237,16 @@ def offline_evm(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def offline_prices(monkeypatch):
-    """No test reaches DefiLlama: fixed coin prices, and no historical data unless a test provides it."""
+    """No test reaches Codex: fixed current coin prices, and no historical prices unless a test provides them."""
+    from app.services import market as mk
     from app.services import portfolio as pf
 
-    async def prices(client=None):
+    async def prices(market=None):
         return {"SOL": 150.0, "ETH": 3000.0, "BNB": 600.0}
 
-    async def history(coin, cid, days, client):
+    async def no_history(self, inputs):
         return {}
 
     monkeypatch.setattr(pf, "coin_prices", prices)
-    monkeypatch.setattr(pf, "_fetch_history", history)
-    pf._price_cache = (0.0, {})
-    pf._day_prices.clear()
+    monkeypatch.setattr(mk.Market, "prices", no_history)
+    mk._market = None

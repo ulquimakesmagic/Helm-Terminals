@@ -1098,7 +1098,7 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
 .term-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .term-panel { border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .tp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
-.win-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+.win-tabs { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--line); }
 .win-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; background: transparent; border: 0; border-left: 1px solid var(--line); color: var(--muted); cursor: pointer; min-height: 48px; }
 .win-tabs button:first-child { border-left: 0; }
 .win-tabs button span { font-size: var(--fs-2xs); font-weight: 600; }
@@ -1126,14 +1126,10 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
 .term-side { position: sticky; top: 16px; }
 .term-main:has(.chart-expanded) { grid-template-columns: minmax(0, 1fr); }
 .term-main:has(.chart-expanded) .term-side { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-.gmgn-frame-wrap { position: relative; min-height: 440px; border-radius: var(--radius-sm); overflow: hidden; background: #101014; }
-.gmgn-frame { display: block; width: 100%; height: 480px; border: 0; color-scheme: dark; }
-.chart-expanded .gmgn-frame { height: 70vh; min-height: 480px; }
-.gmgn-loading { display: flex; align-items: center; gap: 10px; position: absolute; inset: 0; justify-content: center; color: var(--muted); pointer-events: none; background: var(--panel); }
 .chart-support { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
 .chart-support p { flex: 1 1 240px; }
 .chart-unavailable { min-height: 360px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 16px; }
-.gmgn-pool .pool-facts { border: 0; border-radius: 0; }
+.market-pool .pool-facts { border: 0; border-radius: 0; }
 .pool-placeholder { padding: 16px; }
 .market-notices:empty { display: none; }
 .market-notices { display: flex; flex-direction: column; gap: 8px; }
@@ -1175,15 +1171,12 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
   .terminal-mobile-nav { display: flex; gap: 4px; border: 1px solid var(--line-2); padding: 4px; background: var(--panel); border-radius: var(--radius); }
   .terminal-mobile-nav button { display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; min-height: 44px; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--muted); font-weight: 600; cursor: pointer; }
   .terminal-mobile-nav button.on { color: var(--accent); background: var(--panel-3); }
-  .terminal-view-chart .terminal-ticket, .terminal-view-trade .term-analysis, .terminal-view-trade .gmgn-activity,
+  .terminal-view-chart .terminal-ticket, .terminal-view-trade .term-analysis, .terminal-view-trade .market-activity,
   .terminal-view-trade .term-head, .terminal-view-trade .market-notices, .terminal-view-trade > .market-note,
   .terminal-view-activity, .terminal-records-chart { display: none; }
   .terminal-records-trade .your-position { display: none; }
   .terminal-records-trade { margin-top: 8px; }
   .term-main:has(.chart-expanded) .term-side { display: flex; }
-  .gmgn-frame { height: 420px; }
-  .gmgn-frame-wrap { min-height: 420px; }
-  .chart-expanded .gmgn-frame { height: 65vh; min-height: 420px; }
   .term-chart { padding: 8px; }
   .fresh { white-space: normal; }
   .th-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1258,3 +1251,27 @@ p a:not(.btn):hover, .small a:not(.btn):hover, .market-note a:hover { text-decor
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* Codex candle chart */
+.candles { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.candle-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; min-height: 18px; color: var(--text-2); }
+.candle-legend b { font-weight: 500; color: var(--text); }
+.candle-plot { position: relative; border-radius: var(--radius-sm); background: var(--bg-2); outline: none; touch-action: pan-y; cursor: crosshair; }
+.candle-plot:focus-visible { box-shadow: var(--focus); }
+.candle-plot svg { display: block; }
+.candle-plot .grid { stroke: var(--line); stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.candle-plot .axis { fill: var(--muted); font: 10px var(--mono); }
+.candle-plot .up .body, .candle-plot .up .wick { fill: var(--good); stroke: var(--good); }
+.candle-plot .down .body, .candle-plot .down .wick { fill: var(--bad); stroke: var(--bad); }
+.candle-plot .wick { stroke-width: 1; vector-effect: non-scaling-stroke; }
+.candle-plot .vol { opacity: 0.22; }
+.candle-plot .up .vol { fill: var(--good); } .candle-plot .down .vol { fill: var(--bad); }
+.candle-plot .last { stroke-dasharray: 3 3; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.candle-plot .last.up { stroke: var(--good); } .candle-plot .last.down { stroke: var(--bad); }
+.candle-plot .last-tag.up { fill: var(--good); } .candle-plot .last-tag.down { fill: var(--bad); }
+.candle-plot .last-text { fill: var(--accent-ink); font: 600 10px var(--mono); }
+.candle-plot .cross { stroke: var(--line-3); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.candle-table .table-wrap { max-height: 280px; overflow: auto; }
+.res-seg button { min-width: 38px; }
+.pool-pick { padding: 10px 14px 0; }
+@media (max-width: 520px) { .res-seg { width: 100%; } .res-seg button { flex: 1; min-width: 0; } .win-tabs button { padding: 8px 2px; } }

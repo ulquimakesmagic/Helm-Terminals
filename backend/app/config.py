@@ -62,11 +62,8 @@ class Settings(BaseSettings):
     turnkey_api_private_key: str = ""  # P-256 private scalar, hex
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    # GMGN display-only OpenAPI. No private key or GMGN trading access required.
-    gmgn_api_key: str = Field(default="", repr=False)
-    gmgn_requests_per_minute: int = Field(default=30, ge=1, le=300)
-    # Codex (codex.io) display-only GraphQL data API. When set it is Helm's primary market source —
-    # its coverage includes tokens DexScreener does not index; DexScreener stays the keyless fallback.
+    # Codex (codex.io) GraphQL data API: Helm's only third-party market-data source (prices, candles, pools,
+    # liquidity, volume, holders, market cap / FDV). Display only; without a key market panels say "not configured".
     codex_api_key: str = Field(default="", repr=False)
     codex_requests_per_minute: int = Field(default=120, ge=1, le=600)
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"

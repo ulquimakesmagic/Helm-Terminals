@@ -40,17 +40,20 @@ def _net_out(n) -> dict:
 
 
 def _caps(n) -> dict:
-    return dict(CAPABILITIES[n.family])
+    from ..services.market import CODEX_NETWORK
+
+    market = "implemented" if n.id in CODEX_NETWORK else "unavailable"
+    return {**CAPABILITIES[n.family], "market_metrics": market, "market_charts": market}
 
 
 @router.get("/chains")
 async def chains():
-    from ..services.market import DEX_CHAIN, CHART_CHAIN
+    from ..services.market import CODEX_NETWORK
     def core_caps(network):
+        market = "implemented" if network in CODEX_NETWORK else "unavailable"  # Codex is the only market source
         return {"wallets": "implemented", "launches": "launchpad_specific",
                 "trading": "adapter_and_pool_specific", "cash_routes": "implemented",
-                "market_metrics": "implemented" if network in DEX_CHAIN else "unavailable",
-                "market_charts": "implemented" if network in CHART_CHAIN else "unavailable",
+                "market_metrics": market, "market_charts": market,
                 "eligibility": "checked_per_action"}
     core = [{"id": "solana", "name": "Solana", "family": "solana", "enabled": True,
              "capabilities": core_caps("solana")}] + [
