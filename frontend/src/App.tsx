@@ -4,9 +4,9 @@ import { api, hasToken, setToken } from "./api";
 import { Icon, IconName, Loading, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
-import Recovery from "./pages/Recovery";
+const Recovery = lazy(() => import("./pages/Recovery"));
 import Landing from "./pages/Landing";
-import Dashboard from "./pages/Dashboard";
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 import NotFound from "./pages/NotFound";
 import { setMeta } from "./meta";
 import { AppFooter } from "./components/public";
@@ -137,7 +137,7 @@ function Private({ children }: { children: React.ReactNode }) {
 
 /** "/" is the dashboard when signed in and the public landing page otherwise. Decided on each render, not once. */
 function Home() {
-  return hasToken() ? <Shell><Dashboard /></Shell> : <Landing />;
+  return hasToken() ? <Shell><Dashboard /></Shell> : <Landing />;  // Shell supplies the Suspense boundary
 }
 
 /** Unknown paths: the not-found page inside the app when signed in, the public one otherwise. Decided per render. */
@@ -155,7 +155,7 @@ export default function App() {
     <SessionProvider>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
-        <Route path="/recover" element={<Recovery />} />
+        <Route path="/recover" element={<Suspense fallback={null}><Recovery /></Suspense>} />
         <Route path="/" element={<Home />} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
