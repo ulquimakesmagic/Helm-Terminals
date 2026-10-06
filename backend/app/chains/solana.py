@@ -170,6 +170,67 @@ class SolanaRPC:
             return None
         return int(value["accounts"][0]["lamports"])
 
+    async def wallet_effects(self, tx_bytes: bytes, wallet: str, watch_mints: Sequence[str] = ()):
+        """What an unsigned transaction would do to `wallet` (see services/solana_guard.py).
+
+        Reads the wallet's system account and every token account it owns, then simulates the transaction with
+        those accounts returned post-state. Raises on anything it cannot read, so callers fail closed."""
+        from ..services.solana_guard import MAX_GUARDED_TOKEN_ACCOUNTS, TokenState, WalletEffects
+
+        before_wallet = await self._call("getAccountInfo", [wallet, {"encoding": "base64", "commitment": "confirmed"}])
+        value = (before_wallet or {}).get("value")  # type: ignore[union-attr]
+        lamports_before = int(value["lamports"]) if value else 0
+        tokens_before: dict[str, TokenState] = {}
+        for program in (TOKEN_PROGRAM, TOKEN_2022_PROGRAM):
+            res = await self._call("getTokenAccountsByOwner", [
+                wallet, {"programId": str(program)}, {"encoding": "jsonParsed", "commitment": "confirmed"}])
+            for acc in res["value"]:  # type: ignore[index]
+                state = _token_state(acc["pubkey"], acc["account"])
+                if state is None:
+                    raise ValueError("unreadable token account")
+                tokens_before[acc["pubkey"]] = state
+        watched = list(tokens_before)
+        owner_key = Pubkey.from_string(wallet)
+        for mint in watch_mints:
+            for program in (TOKEN_PROGRAM, TOKEN_2022_PROGRAM):
+                ata = str(find_ata(owner_key, Pubkey.from_string(mint), program))
+                if ata not in tokens_before:
+                    watched.append(ata)
+        if len(watched) > MAX_GUARDED_TOKEN_ACCOUNTS:
+            # Keep accounts that hold something or carry an authority; empty, plain accounts cannot lose value.
+            keep = [a for a in watched if a not in tokens_before or tokens_before[a].amount
+                    or tokens_before[a].delegate or tokens_before[a].close_authority]
+            if len(keep) > MAX_GUARDED_TOKEN_ACCOUNTS:
+                raise ValueError("wallet holds too many token accounts to verify in one simulation")
+            watched = keep
+            tokens_before = {a: s for a, s in tokens_before.items() if a in keep}
+        b64 = base64.b64encode(tx_bytes).decode()
+        sim = await self._call("simulateTransaction", [b64, {
+            "encoding": "base64", "sigVerify": False, "replaceRecentBlockhash": True, "commitment": "confirmed",
+            "accounts": {"addresses": [wallet, *watched], "encoding": "jsonParsed"},
+        }])
+        result = sim["value"]  # type: ignore[index]
+        if result.get("err") is not None:
+            return WalletEffects(lamports_before, lamports_before, "11111111111111111111111111111111",
+                                 tokens_before, {}, error=str(result["err"])[:200])
+        accounts = result.get("accounts")
+        if not isinstance(accounts, list) or len(accounts) != 1 + len(watched):
+            raise ValueError("simulation did not return the requested accounts")
+        wallet_after = accounts[0]
+        tokens_after: dict[str, TokenState | None] = {}
+        for address, acc in zip(watched, accounts[1:]):
+            if acc is None:
+                tokens_after[address] = None
+                continue
+            state = _token_state(address, acc)
+            if state is None:
+                raise ValueError("unreadable simulated token account")
+            tokens_after[address] = state
+        return WalletEffects(lamports_before,
+                             int(wallet_after["lamports"]) if wallet_after else None,
+                             wallet_after.get("owner") if wallet_after else None,
+                             tokens_before, tokens_after)
+
     async def send(self, tx_bytes: bytes) -> str:
         b64 = base64.b64encode(tx_bytes).decode()
         return await self._call(  # type: ignore[return-value]
@@ -211,6 +272,25 @@ class SolanaRPC:
 
 
 # --- Transaction building -------------------------------------------------------------------------
+
+
+def _token_state(address: str, account: dict):
+    """A jsonParsed SPL Token / Token-2022 account as TokenState, or None when it isn't one."""
+    from ..services.solana_guard import TokenState
+
+    data = (account or {}).get("data")
+    if not isinstance(data, dict) or data.get("program") not in ("spl-token", "spl-token-2022"):
+        return None
+    parsed = data.get("parsed") or {}
+    if parsed.get("type") != "account":
+        return None
+    info = parsed.get("info") or {}
+    try:
+        amount = int((info.get("tokenAmount") or {})["amount"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return TokenState(address, info.get("mint"), amount, info.get("owner"), info.get("delegate"),
+                      info.get("closeAuthority"))
 
 
 def build_unsigned(payer: Pubkey, instructions: list[Instruction], blockhash: str,

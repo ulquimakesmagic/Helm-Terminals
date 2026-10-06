@@ -83,10 +83,6 @@ class Settings(BaseSettings):
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
     pons_rewards_factory: str = ""
-    # Jupiter swaps on Solana: the lite endpoint serves quotes and swaps without a key (rate-limited);
-    # set JUPITER_API_URL=https://api.jup.ag and an API key for production volume.
-    jupiter_api_url: str = ""
-    jupiter_api_key: str = ""
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
     extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
@@ -104,7 +100,9 @@ class Settings(BaseSettings):
     # Jupiter API key(s) (free at https://developers.jup.ag/portal), comma-separated to rotate. Enables Meteora DBC
     # launches through Jupiter Studio. Without one, Meteora DBC shows as "needs setup".
     jupiter_api_key: str = ""
-    jupiter_api_url: str = "https://api.jup.ag"
+    # Blank: https://api.jup.ag when a key is set (Meteora DBC always needs one), otherwise Jupiter's keyless lite
+    # endpoint for swaps (rate-limited). Declared once: an earlier duplicate silently overrode this (audit HT-08).
+    jupiter_api_url: str = ""
     # DEX trading on EVM chains (graduated launchpad tokens, Uniswap V2 launches) goes through KyberSwap's aggregator.
     kyber_api_url: str = "https://aggregator-api.kyberswap.com"
     kyber_client_id: str = "HelmTerminals"

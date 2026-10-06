@@ -56,7 +56,7 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                "four-meme": lambda: FourMemeAdapter(shared_evm("bsc")),
                "meteora-dbc": lambda: MeteoraDbcAdapter(get_settings().jupiter_api_key,
                                                         shared_rpc(get_settings().solana_rpc_url),
-                                                        get_settings().jupiter_api_url),
+                                                        get_settings().jupiter_api_url or "https://api.jup.ag"),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood"),
                # TRON, NEAR and Arc (see chains/extra_pads.py and services/extra_launch.py)
                "sunpump": SunPump, "tolly": Tolly,

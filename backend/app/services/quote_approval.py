@@ -63,3 +63,13 @@ def check_relay_bounds(quote: dict, bounds: dict, destination_asset: str, destin
     if (bounds.get("asset") != destination_asset or bounds.get("network") != destination_network
             or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
         raise AdapterError("The new quote is below the approved minimum; review a new preview")
+
+
+def check_relay_recipient(quote: dict, recipient: str, network: str) -> None:
+    """When Relay states who receives the fill, it must be the destination wallet the user chose (audit HT-02)."""
+    stated = ((quote or {}).get("details") or {}).get("recipient")
+    if stated is None:
+        return
+    same = stated == recipient if network == "solana" else str(stated).lower() == recipient.lower()
+    if not same:
+        raise AdapterError("The quote pays a different recipient than the selected wallet; nothing was signed")

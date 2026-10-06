@@ -143,7 +143,7 @@ class CreateLaunch(BaseModel):
     name: str = Field(min_length=1, max_length=32)
     symbol: str = Field(min_length=1, max_length=10)
     description: str = Field(default="", max_length=500)
-    image_b64: str | None = None
+    image_b64: str | None = Field(default=None, max_length=2_800_000)  # base64 of the 2 MB image limit (HT-07)
     # twitter, telegram, website: a handful of short strings, never an unbounded blob
     socials: dict[Annotated[str, StringConstraints(max_length=32)], Annotated[str, StringConstraints(max_length=300)]] = \
         Field(default_factory=dict, max_length=10)
@@ -155,12 +155,33 @@ class CreateLaunch(BaseModel):
     options: dict = Field(default_factory=dict)  # launchpad-specific settings from /launchpads/{id}/options
 
 
+def _clean_socials(socials: dict) -> dict:
+    """Links written into token metadata that other sites render: https only, no credentials (audit HT-13)."""
+    from urllib.parse import urlsplit
+
+    out = {}
+    for key, value in (socials or {}).items():
+        value = (value or "").strip()
+        if not value:
+            continue
+        try:
+            parts = urlsplit(value)
+        except ValueError:
+            parts = None
+        if not parts or parts.scheme != "https" or not parts.hostname or parts.username or parts.password \
+                or any(c.isspace() for c in value):
+            raise HTTPException(400, f"{key} must be a full https:// link")
+        out[key] = value
+    return out
+
+
 @router.post("/launches", status_code=201)
 async def create_launch(body: CreateLaunch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     if body.launchpad not in IMPLEMENTED:
         raise HTTPException(400, f"launchpad '{body.launchpad}' is not implemented yet")
     if (reason := needs_setup(body.launchpad)):
         raise HTTPException(400, reason)
+    socials = _clean_socials(body.socials)
     image = None
     if body.image_b64:
         try:
@@ -212,7 +233,7 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
         if dev.network != network:
             raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {network}")
     l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
-               description=body.description, image_blob=image, socials=body.socials, dev_wallet_id=body.dev_wallet_id,
+               description=body.description, image_blob=image, socials=socials, dev_wallet_id=body.dev_wallet_id,
                dev_buy_sol=body.dev_buy_sol, launchpad_params=params)
     db.add(l)
     await log_activity(db, user.id, "launch.created", "launch", l.id, {"launchpad": body.launchpad})
@@ -463,8 +484,11 @@ async def _activate_pumpfun_share(session, ex: Executor, job: Job, launch: Launc
                                    "deploy_note": error}
         await session.commit()
         return False
+    from ..services.solana_guard import TRADE_OVERHEAD_LAMPORTS, SpendLimits
+
     result = await run_required_followup(session, ex, job, dev, "deploy_fee_share", raw,
-                                         {dev.address: dev.signer_ref or ""})
+                                         {dev.address: dev.signer_ref or ""},
+                                         limits=SpendLimits(dev.address, TRADE_OVERHEAD_LAMPORTS, label="fee-share setup"))
     if result.status == "confirmed":
         return True
     error = result.error or "the fee-sharing transaction did not confirm"
@@ -590,7 +614,14 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                     launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share,
                                                "creator_share_setup": {"status": "waiting_for_token"}}
                 await session.commit()
-            res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""})
+            from ..services.executor import sol_to_lamports
+            from ..services.solana_guard import CREATE_OVERHEAD_LAMPORTS, SpendLimits, budget
+
+            # Provider-built create: at most the dev buy, the builder's fee and creation rent (audit HT-01).
+            res = await run_built(session, ex, j, dev, "deploy", built, {dev.address: dev.signer_ref or ""},
+                                  limits=SpendLimits(dev.address, budget(sol_to_lamports(l.dev_buy_sol), 0,
+                                                                         CREATE_OVERHEAD_LAMPORTS), label="deploy"),
+                                  setup_limits=SpendLimits(dev.address, CREATE_OVERHEAD_LAMPORTS, label="deploy setup"))
             if res.status == "confirmed":
                 launch.mint_address, launch.deployed_at = built.mint, utcnow()
                 share_ready = await _activate_pumpfun_share(session, ex, j, launch, dev, adapter, share)
@@ -1001,7 +1032,12 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
                 j.status, j.params = "failed", {**j.params, "error": "nothing to claim"}
                 await session.commit()
                 return
-            await run_built(session, ex, j, w, "claim_fees", built, {w.address: w.signer_ref or ""})
+            from ..services.solana_guard import TRADE_OVERHEAD_LAMPORTS, SpendLimits
+
+            # A claim only receives: fees and rent at most, and no token may leave the wallet (audit HT-01).
+            claim_limits = SpendLimits(w.address, TRADE_OVERHEAD_LAMPORTS, label="claim")
+            await run_built(session, ex, j, w, "claim_fees", built, {w.address: w.signer_ref or ""},
+                            limits=claim_limits, setup_limits=claim_limits)
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}

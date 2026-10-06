@@ -88,6 +88,7 @@ class Executor:
     async def submit(
         self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None,
         fast_poll_s: float = 0.25, on_signed: Callable[[str], Awaitable[None]] | None = None,
+        limits=None,
     ) -> SubmitResult:
         """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
         endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
@@ -97,6 +98,12 @@ class Executor:
         held = set(refs) | {str(k.pubkey()) for k in extra or []}
         if reason := check_solana_signers(raw, held, allow_missing=submit_via is not None):
             return SubmitResult(None, "failed", f"refused before signing: {reason}")
+        if limits is not None:
+            # Provider-built: bound what it may do to the wallet before any signature exists (audit HT-01).
+            from .solana_guard import enforce
+
+            if reason := await enforce(self.rpc, raw, limits):
+                return SubmitResult(None, "failed", reason)
         try:
             signed = await sign_versioned(raw, self.signer, refs, extra or [], allow_missing=submit_via is not None)
         except SigningError as e:
@@ -215,12 +222,12 @@ async def _persist_pending_transaction(
 
 async def submit_tracked(
     ex: Executor, job: Job, wallet: Wallet | None, kind: str, raw: bytes, refs: dict[str, str],
-    extra: list[Keypair] | None = None, submit_via=None,
+    extra: list[Keypair] | None = None, submit_via=None, limits=None,
 ) -> SubmitResult:
     async def persist(signature: str) -> None:
         await _persist_pending_transaction(job, wallet, kind, signature)
 
-    return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist)
+    return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist, limits=limits)
 
 
 async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call,
@@ -267,6 +274,42 @@ async def _can_receive(rpc: SolanaRPC, address: str, lamports: int) -> bool:
     return lamports >= RENT_EXEMPT_MIN or await rpc.get_balance(address) >= RENT_EXEMPT_MIN
 
 
+def sol_to_lamports(amount) -> int:
+    """Exact decimal SOL -> lamports (half-even), so previews, transactions and ledgers agree (audit HT-16)."""
+    from decimal import ROUND_HALF_EVEN, Decimal
+
+    return int((Decimal(str(amount)) * LAMPORTS_PER_SOL).quantize(Decimal(1), rounding=ROUND_HALF_EVEN))
+
+
+def _percent(amount) -> float:
+    text = str(amount).strip().rstrip("%")
+    value = float(text)
+    if not 0 < value <= 100:
+        raise ValueError("sell percentage out of range")
+    return value
+
+
+async def trade_limits(rpc: SolanaRPC, wallet: str, mint: str, side: str, amount, denominated_in_sol: bool,
+                       helm_fee_lamports: int):
+    """The most a launchpad-built buy or sell may take from `wallet` (audit HT-01)."""
+    from .solana_guard import SpendLimits, budget
+
+    if side == "buy":
+        if not denominated_in_sol:
+            raise ValueError("token-denominated buys have no SOL bound")
+        return SpendLimits(wallet, budget(sol_to_lamports(amount), helm_fee_lamports), watch_mints=(mint,),
+                           label="buy")
+    held = int(await rpc.get_token_balance(wallet, mint))
+    if denominated_in_sol:
+        raise ValueError("SOL-denominated sells have no token bound")
+    pct = _percent(amount)
+    from decimal import ROUND_CEILING, Decimal
+
+    allowed = int((Decimal(held) * Decimal(str(pct)) / 100).to_integral_value(rounding=ROUND_CEILING))
+    return SpendLimits(wallet, budget(0, helm_fee_lamports), token_out={mint: allowed}, watch_mints=(mint,),
+                       label="sell")
+
+
 async def run_trade(
     db: AsyncSession,
     ex: Executor,
@@ -297,7 +340,7 @@ async def run_trade(
         if not plan.active:
             return None, []
         if side == "buy":
-            basis = int(float(amount) * LAMPORTS_PER_SOL) if denominated_in_sol else 0
+            basis = sol_to_lamports(amount) if denominated_in_sol else 0
         else:
             after = await ex.rpc.simulate_balance_after(built.raw, w.address)
             basis = max(0, after - await ex.rpc.get_balance(w.address)) if after is not None else 0
@@ -339,6 +382,12 @@ async def run_trade(
         if execution_guard and not await execution_guard():
             before_task.cancel()
             return [(side, SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent."), None)], None
+        try:
+            limits = await trade_limits(ex.rpc, w.address, mint, side, amount, denominated_in_sol,
+                                        sum(n for _, n in transfers) if fee and fee.mode == "in_tx" else 0)
+        except Exception as e:  # noqa: BLE001 - no bound, no signature
+            before_task.cancel()
+            return [(side, SubmitResult(None, "failed", f"couldn't bound this order before signing ({type(e).__name__})"), None)], None
         before = await before_task
 
         async def persist_trade_signature(signature: str) -> None:
@@ -358,7 +407,7 @@ async def run_trade(
             await _persist_pending_transaction(job, w, side, signature, pending_fee, destination)
 
         res = await ex.submit(raw, refs, built.extra_signers, fast_poll_s=fast_poll,
-                              on_signed=persist_trade_signature)
+                              on_signed=persist_trade_signature, limits=limits)
         delta = None
         if res.status == "confirmed":
             delta = await ex.rpc.get_balance(w.address) - before
@@ -449,11 +498,12 @@ async def run_single(
     refs: dict[str, str],
     extra: list[Keypair] | None = None,
     submit_via=None,
+    limits=None,
 ) -> SubmitResult:
     job.status = "submitted"
     await db.commit()
     before = await ex.rpc.get_balance(wallet.address) if wallet else None
-    res = await submit_tracked(ex, job, wallet, kind, raw, refs, extra, submit_via)
+    res = await submit_tracked(ex, job, wallet, kind, raw, refs, extra, submit_via, limits=limits)
     delta = None
     if res.status == "confirmed" and wallet is not None and before is not None:
         delta = await ex.rpc.get_balance(wallet.address) - before
@@ -471,10 +521,13 @@ async def run_built(
     kind: str,
     built: BuiltTx,
     refs: dict[str, str],
+    limits=None,
+    setup_limits=None,
 ) -> SubmitResult:
     """Run a launchpad action that may need setup transactions first (e.g. Bags' fee-share config).
 
-    Setup transactions go in order; if one fails, nothing more is sent and the job fails.
+    Setup transactions go in order; if one fails, nothing more is sent and the job fails. `limits` bounds the
+    main transaction and `setup_limits` each setup and clean-up transaction (provider-built, audit HT-01).
     """
     job.status = "submitted"
     await db.commit()
@@ -486,14 +539,15 @@ async def run_built(
         async def persist_setup(signature: str) -> None:
             await _persist_pending_transaction(job, wallet, setup_kind, signature)
 
-        res = await ex.submit(raw, refs, on_signed=persist_setup)
+        res = await ex.submit(raw, refs, on_signed=persist_setup, limits=setup_limits)
         await _record(db, job, wallet, setup_kind, res, None)
         if res.status != "confirmed":
             _finish(job, [res])
             await db.commit()
             return res
     await db.commit()
-    res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers, built.submit_via)
+    res = await run_single(db, ex, job, wallet, kind, built.raw, refs, built.extra_signers, built.submit_via,
+                           limits=limits)
     if res.status == "confirmed":
         for raw in built.post:
             cleanup_kind = f"{kind}_cleanup"[:24]
@@ -501,7 +555,7 @@ async def run_built(
             async def persist_cleanup(signature: str) -> None:
                 await _persist_pending_transaction(job, wallet, cleanup_kind, signature)
 
-            cleanup = await ex.submit(raw, refs, on_signed=persist_cleanup)
+            cleanup = await ex.submit(raw, refs, on_signed=persist_cleanup, limits=setup_limits)
             await _record(db, job, wallet, cleanup_kind, cleanup, None)
         await db.commit()
     return res
@@ -515,6 +569,7 @@ async def run_required_followup(
     kind: str,
     raw: bytes,
     refs: dict[str, str],
+    limits=None,
 ) -> SubmitResult:
     """Send a required transaction after an already-confirmed primary action.
 
@@ -523,7 +578,7 @@ async def run_required_followup(
     """
     job.status = "submitted"
     await db.commit()
-    res = await submit_tracked(ex, job, wallet, kind, raw, refs)
+    res = await submit_tracked(ex, job, wallet, kind, raw, refs, limits=limits)
     await _record(db, job, wallet, kind, res, None)
     if res.status == "confirmed":
         job.params = {**job.params, "required_followup_pending": False}

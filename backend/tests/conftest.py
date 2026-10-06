@@ -74,6 +74,18 @@ class FakeRPC:
             return None
         return await self.get_balance(address) + self.next_delta
 
+    async def wallet_effects(self, tx, wallet, watch_mints=()):
+        """Simulated effects for the spend guard: by default the wallet pays `next_delta` lamports and no token
+        balance changes. Tests set `effects_override` to model a provider-built transaction that misbehaves."""
+        from app.services.solana_guard import WalletEffects
+
+        if self.sim_error:
+            return WalletEffects(0, 0, "11111111111111111111111111111111", {}, {}, error=self.sim_error)
+        if getattr(self, "effects_override", None) is not None:
+            return self.effects_override(tx, wallet)
+        before = await self.get_balance(wallet)
+        return WalletEffects(before, before + self.next_delta, "11111111111111111111111111111111", {}, {})
+
     async def send(self, tx):
         self.sent.append(tx)
         payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])
