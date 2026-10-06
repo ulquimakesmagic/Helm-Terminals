@@ -138,7 +138,7 @@ An initial reading suggested public profiles reuse the private launch serializer
 
 ### HT-12 — Test-suite blind spots (Low, confirmed)
 
-`tests/test_wallet_export_swap.py:96` and `:144` define the same test name; the first is never run. `test_folders.py` is order-dependent. Swap tests use static quotes, which hid HT-03/HT-04.
+`tests/test_wallet_export_swap.py:96` and `:144` define the same test name; the first is never run. `test_folders.py` is order-dependent because `merge-duplicates` keeps whichever duplicate has the lowest random ID, not the oldest folder its docstring promises. Swap tests use static quotes, which hid HT-03/HT-04.
 
 ### HT-13 — Launch social links are not validated (Low, confirmed)
 
