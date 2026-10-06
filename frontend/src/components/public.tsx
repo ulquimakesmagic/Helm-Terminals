@@ -154,7 +154,7 @@ export function AppFooter() {
   return (
     <footer className="app-footer muted small">
       <nav aria-label="Legal"><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/risk">Risk disclosure</Link></nav>
-      <span>Market data by Codex · indicative only</span>
+      <span>Market data by Codex · charts by GMGN · indicative only</span>
     </footer>
   );
 }

@@ -1156,6 +1156,10 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
 .term-main:has(.chart-expanded) .term-side { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .chart-support { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
 .chart-support p { flex: 1 1 240px; }
+.gmgn-frame-wrap { position: relative; min-height: 440px; border-radius: var(--radius-sm); overflow: hidden; background: #101014; }
+.gmgn-frame { display: block; width: 100%; height: 480px; border: 0; color-scheme: dark; }
+.chart-expanded .gmgn-frame { height: 70vh; min-height: 480px; }
+.gmgn-loading { display: flex; align-items: center; gap: 10px; position: absolute; inset: 0; justify-content: center; color: var(--muted); pointer-events: none; background: var(--panel); }
 .chart-unavailable { min-height: 360px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 16px; }
 .market-pool .pool-facts { border: 0; border-radius: 0; }
 .pool-placeholder { padding: 16px; }
@@ -1206,6 +1210,8 @@ tr:hover .row-action, tr:focus-within .row-action, .row-action:focus-visible { o
   .terminal-records-trade { margin-top: 8px; }
   .term-main:has(.chart-expanded) .term-side { display: flex; }
   .term-chart { padding: 8px; }
+  .gmgn-frame, .gmgn-frame-wrap { height: 420px; min-height: 420px; }
+  .chart-expanded .gmgn-frame { height: 65vh; min-height: 420px; }
   .fresh { white-space: normal; }
   .th-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .th-stat { padding: 8px 12px; }

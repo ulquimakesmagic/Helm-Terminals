@@ -2,6 +2,8 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg } from "../api";
 import { chainOf } from "../chains";
 import CandleChart, { Bar, fmtPrice } from "./CandleChart";
+import GmgnChart from "./GmgnChart";
+import { CHART_INTERVALS, ChartInterval, gmgnChartUrl } from "../gmgn";
 import { Address, Callout, Empty, Icon, Seg, Skeleton, Spinner } from "./ui";
 
 type Win = "m5" | "h1" | "h4" | "h12" | "h24";
@@ -65,18 +67,21 @@ function usePoll<T>(path: string | null, intervalMs: number, deps: unknown[]) {
   return { data, error, busy, refresh: () => setRev((r) => r + 1) };
 }
 
-/** Indicative market data from Codex, kept separate from balances, quotes and transaction history. */
+/** Indicative market data from Codex, kept separate from balances, quotes and transaction history. The chart is GMGN's
+ *  embed on the chains GMGN covers (Solana, Ethereum, BNB Chain) and Codex candles everywhere else. */
 export default function MarketTerminal({ launchId, network, token, symbol, ticket, mobileView = "chart" }: {
   launchId: string; network: string; token: string | null; symbol: string; ticket?: ReactNode; mobileView?: string;
 }) {
   const [win, setWin] = useState<Win>("h24");
   const [res, setRes] = useState<Res>("15");
+  const [gInt, setGInt] = useState<ChartInterval>("15");
   const [pool, setPool] = useState("");
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
   useEffect(() => setPool(""), [launchId, network, token]);
   const m = usePoll<MarketRes>(`/launches/${launchId}/market`, 30000, [network, token]);
-  const chartOn = !!m.data?.chart?.available && ["ok", "no_pool"].includes(m.data.state);
+  const gmgnUrl = gmgnChartUrl(m.data?.network ?? network, m.data?.token ?? token, gInt);
+  const chartOn = !gmgnUrl && !!m.data?.chart?.available && ["ok", "no_pool"].includes(m.data.state);
   const c = usePoll<CandleRes>(chartOn ? `/launches/${launchId}/market/candles?resolution=${res}${pool ? `&pool=${pool}` : ""}` : null,
     res === "1" || res === "5" ? 20000 : 60000, [chartOn]);
 
@@ -96,7 +101,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   let notice: ReactNode = null;
   if (m.error) notice = <Callout tone="warn"><b>Market refresh failed.</b> {m.error}{r?.fetched_at ? " The last response is shown and marked stale." : ""}</Callout>;
   else if (r?.state === "not_configured") notice = <Callout icon="info"><b>Market data isn't configured on this server.</b> The operator needs to add a Codex API key. Wallets and trading are unaffected.</Callout>;
-  else if (r?.state === "unsupported") notice = <Callout icon="globe">Codex doesn't cover {net}, so Helm shows no market data or chart here. Wallets and Helm trading remain available where supported.</Callout>;
+  else if (r?.state === "unsupported") notice = <Callout icon="globe">Codex doesn't cover {net}, so Helm shows no market data here. Wallets and Helm trading remain available where supported.</Callout>;
   else if (r?.state === "not_indexed") notice = <Callout icon="radar"><b>Codex hasn't indexed this token yet.</b> New tokens usually appear after their first trades.{r.explorer_url && <> <a href={r.explorer_url} target="_blank" rel="noreferrer">View token on explorer</a></>}</Callout>;
   else if (r?.state === "no_pool") notice = <Callout icon="radar"><b>No pool indexed yet.</b> Codex knows this token but lists no trading pool for it.</Callout>;
   else if (r?.state === "error" || r?.stale) notice = <Callout tone="warn"><b>{r.stale ? "Showing previously fetched Codex data." : "Market data is unavailable right now."}</b> {r.error}</Callout>;
@@ -134,11 +139,13 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
       <div className="term-analysis">
         <section className="term-chart" aria-label="Price chart">
           <div className="chart-head">
-            <div className="row small"><span className="term-kicker"><Icon name="trend" size={13} />Price · USD</span>
-              <span className="badge">{pool && shownPool ? `${shownPool.dex ?? "Pool"} pool` : "All pools"}</span></div>
-            <Seg value={res} onChange={setRes} options={RES} className="res-seg" />
+            <div className="row small"><span className="term-kicker"><Icon name="trend" size={13} />{gmgnUrl ? "Chart · GMGN" : "Price · USD"}</span>
+              <span className="badge">{gmgnUrl ? "Token view" : pool && shownPool ? `${shownPool.dex ?? "Pool"} pool` : "All pools"}</span></div>
+            {gmgnUrl ? <Seg value={gInt} onChange={setGInt} options={CHART_INTERVALS} className="res-seg" />
+              : <Seg value={res} onChange={setRes} options={RES} className="res-seg" />}
           </div>
-          {!token ? <div className="chart-unavailable"><Empty icon="trend" title="No token yet" text="The chart appears once this launch has a token address and trades are indexed." /></div>
+          {!(r?.token ?? token) ? <div className="chart-unavailable"><Empty icon="trend" title="No token yet" text="The chart appears once this launch has a token address and trades are indexed." /></div>
+            : gmgnUrl ? <GmgnChart url={gmgnUrl} symbol={r?.symbol ?? symbol} />
             : !r && !m.error ? <Skeleton h={380} />
             : !chartOn ? <div className="chart-unavailable"><Empty icon="globe" title="Chart unavailable" text={r?.state === "unsupported" ? `Codex doesn't cover ${net}.` : r?.state === "not_configured" ? "Market data isn't configured on this server." : "No candles are available for this token yet."} />{r?.explorer_url && <a href={r.explorer_url} target="_blank" rel="noreferrer">View token on explorer <Icon name="ext" size={12} /></a>}</div>
             : !c.data && !c.error ? <Skeleton h={380} />
@@ -146,12 +153,13 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
             : <div className="chart-unavailable"><Empty icon="activity" title={c.data?.state === "error" ? "Chart data unavailable" : "No trades in this range"}
                 text={c.data?.state === "error" ? c.data.error : "Codex returned no candles for this timeframe. Try a longer timeframe; candles appear after trades."} /></div>}
           {c.data?.stale && <Callout tone="warn">Showing previously fetched candles; Codex could not be reached just now.</Callout>}
-          <p className="market-note">Candles are Codex OHLCV data in US dollars{pool ? " for the selected pool" : ", aggregated across the token's indexed pools"}. Bars appear only where trades happened; Helm never fills gaps. Times are in your local time zone.</p>
+          {gmgnUrl ? <p className="market-note">The chart is GMGN's and loads from GMGN in your browser. GMGN picks the pool and controls its updates, so it can differ from the Codex figures on this page; Helm can't check what the embedded chart shows.</p>
+            : <p className="market-note">Candles are Codex OHLCV data in US dollars{pool ? " for the selected pool" : ", aggregated across the token's indexed pools"}. Bars appear only where trades happened; Helm never fills gaps. Times are in your local time zone.</p>}
         </section>
         <div className="term-panel market-pool" aria-label="Pools">
           <div className="tp-head"><b>Pools</b><span className="muted small">Codex · by liquidity</span></div>
           {!r && !m.error ? <Skeleton h={90} /> : pools.length ? <>
-            {pools.length > 1 && <label className="field pool-pick">Chart<select value={pool} onChange={(e) => setPool(e.target.value)}>
+            {pools.length > 1 && !gmgnUrl && <label className="field pool-pick">Chart<select value={pool} onChange={(e) => setPool(e.target.value)}>
               <option value="">All pools (token)</option>
               {pools.map((p) => <option key={p.address} value={p.address}>{p.dex ?? "DEX"} · {p.quote_symbol ?? "Quote"} · {p.address.slice(0, 6)}…</option>)}
             </select></label>}
@@ -184,6 +192,6 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
         </div>
       </div>
     </div>
-    <p className="market-note">Market data and charts from <a href="https://www.codex.io" target="_blank" rel="noreferrer">Codex</a>. Indicative only: never used for wallet balances, trade previews, quotes or execution, which come from each chain and the launchpad or router that builds the transaction.</p>
+    <p className="market-note">Market data from <a href="https://www.codex.io" target="_blank" rel="noreferrer">Codex</a>; charts from <a href="https://gmgn.ai" target="_blank" rel="noreferrer">GMGN</a> on Solana, Ethereum and BNB Chain, and from Codex on other chains. Indicative only: never used for wallet balances, trade previews, quotes or execution, which come from each chain and the launchpad or router that builds the transaction.</p>
   </section>;
 }

@@ -1,8 +1,15 @@
 # Market data: Codex integration and coverage report
 
 Updated 6 October 2026 (audit HT-06). **Codex (codex.io) is Helm's only source of third-party DEX and token-market
-data.** GMGN, DEX Screener and the GMGN chart embed were removed, and portfolio/dashboard USD prices moved from
-DefiLlama to Codex. There is no fallback provider: when Codex cannot answer, Helm says so.
+data.** GMGN's API and DEX Screener were removed, and portfolio/dashboard USD prices moved from DefiLlama to Codex.
+There is no fallback provider for data: when Codex cannot answer, Helm says so.
+
+**Charts (changed later on 6 October 2026):** on Solana, Ethereum and BNB Chain the workspace chart is GMGN's public
+chart embed (`https://www.gmgn.cc/kline/{sol|eth|bsc}/{token}?theme=dark&interval=…`, intervals 5m/15m/1H/4H/1D),
+the only chains and parameters in GMGN's embed guide. It needs no API key; the visitor's browser loads it straight
+from GMGN (sandboxed iframe, no referrer). On every other Codex chain the chart is Helm's own Codex candle chart.
+Every figure outside the chart (price, change, market cap, FDV, liquidity, volume, holders, pools, activity,
+portfolio values) still comes from Codex only. The privacy policy names GMGN as a third party the browser contacts.
 
 ## What is and isn't market data
 
@@ -39,9 +46,9 @@ against recorded response shapes from the documentation.
 
 | Helm chain | Codex networkId | Market panel | Chart |
 |---|---|---|---|
-| Solana | 1399811149 | Yes | Yes |
-| Ethereum | 1 | Yes | Yes |
-| BNB Chain | 56 | Yes | Yes |
+| Solana | 1399811149 | Yes | GMGN embed |
+| Ethereum | 1 | Yes | GMGN embed |
+| BNB Chain | 56 | Yes | GMGN embed |
 | Base | 8453 | Yes (previously metrics only) | Yes (new) |
 | Robinhood Chain | 4663 | Yes | Yes (new) |
 | Arc | 5042 | Yes | Yes (new) |
@@ -67,8 +74,9 @@ messages or token addresses.
 
 ## Features lost or changed
 
-- **GMGN page link and GMGN's chart drawing tools** are gone. Helm draws Codex candles itself (keyboard and touch
-  inspection, data table) without indicators or drawing tools.
+- **GMGN chart** is back on Solana, Ethereum and BNB Chain (with GMGN's own indicators and drawing tools). Other
+  chains use Helm's Codex candle chart (keyboard and touch inspection, data table) without indicators or drawing
+  tools. GMGN picks its own pool and update timing, so its chart can differ from the Codex figures beside it.
 - **6-hour window** replaced by Codex's 4h and 12h windows.
 - **NEAR and TON USD valuation** in the portfolio is unavailable (not Codex networks); amounts still show.
 - **DexScreener pair links** removed. Pool rows link to the chain explorer.
