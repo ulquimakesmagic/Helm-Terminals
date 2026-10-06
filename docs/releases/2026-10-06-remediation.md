@@ -1,6 +1,7 @@
 # Release notes and deployment guide — audit remediation, 6 October 2026
 
-Branch `audit-remediation-2026-10` (local commits on top of `main` at `c69ddc0`). Not pushed, not deployed.
+Branch `audit-remediation-2026-10` (commits on top of `main` at `c69ddc0`). Pushed to GitHub for review; not merged,
+not deployed.
 
 ## Reports
 
