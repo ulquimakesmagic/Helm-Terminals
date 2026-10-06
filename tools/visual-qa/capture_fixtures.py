@@ -98,7 +98,6 @@ async def main(out_path):
                 r = await c.get(p, headers=h)
                 out[p] = {"status": r.status_code, "body": r.json() if r.content else None}
         out["_launch_id"] = lid
-        out["_token"] = tok
     with open(out_path, "w") as f:
         json.dump(out, f, indent=1, default=str)
     print(f"captured {len(out) - 2} responses for launch {lid}")
