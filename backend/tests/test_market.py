@@ -169,10 +169,10 @@ async def test_other_users_cannot_read_a_launch_market(client, codex):
     assert (await client.get(f"/launches/{lid}/market/candles", headers=other)).status_code == 404
 
 
-async def test_unsupported_networks_and_missing_key_make_no_calls(client, codex):
+async def test_removed_networks_and_missing_key_make_no_calls(client, codex):
     c, m = codex
-    h, lid = await launch(client, network="near", mint="token.near")
-    assert (await client.get(f"/launches/{lid}/market", headers=h)).json()["state"] == "unsupported"
+    h, lid = await launch(client, network="near", mint="token.near")  # NEAR was removed: its launches are hidden
+    assert (await client.get(f"/launches/{lid}/market", headers=h)).status_code == 404
     m.api_key = ""
     h2, lid2 = await launch(client, email="k@example.com")
     assert (await client.get(f"/launches/{lid2}/market", headers=h2)).json()["state"] == "not_configured"

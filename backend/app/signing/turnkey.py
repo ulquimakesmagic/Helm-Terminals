@@ -86,13 +86,8 @@ class TurnkeySigner:
         from .base import family
 
         fam = family(network)
-        if fam == "ton":  # never derive a TON address from another chain's key format
-            raise SigningError("Helm doesn't create TON keys; TON wallets connect through TON Connect")
-        evm = fam in ("evm", "tron")  # secp256k1
-        # TRON has its own Turnkey address format. NEAR has none, so its ed25519 key is created with the Solana
-        # format (base58 of the public key) and shown as the NEAR implicit account (hex of the same public key).
-        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "tron": "ADDRESS_FORMAT_TRON",
-                          "solana": "ADDRESS_FORMAT_SOLANA", "near": "ADDRESS_FORMAT_SOLANA"}[fam]
+        evm = fam == "evm"  # secp256k1
+        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "solana": "ADDRESS_FORMAT_SOLANA"}[fam]
         result = await self._submit(
             "/public/v1/submit/create_private_keys",
             "ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2",
@@ -114,10 +109,6 @@ class TurnkeySigner:
             raise SigningError("Turnkey created no key (unexpected response shape)")
         pk = found["privateKeys"][0]
         address = pk["addresses"][0]["address"]
-        if fam == "near":
-            from ..chains.near import implicit_from_solana_style
-
-            address = implicit_from_solana_style(address)
         return WalletRef(signer_ref=pk["privateKeyId"], address=address)
 
     async def _whoami(self) -> str:
@@ -140,10 +131,9 @@ class TurnkeySigner:
         from .base import family
 
         fam = family(network)
-        raw, address = parse_private_key(network, secret)  # refuses TON and anything that isn't a key
-        evm = fam in ("evm", "tron")  # secp256k1
-        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "tron": "ADDRESS_FORMAT_TRON",
-                          "solana": "ADDRESS_FORMAT_SOLANA", "near": "ADDRESS_FORMAT_SOLANA"}[fam]
+        raw, address = parse_private_key(network, secret)  # refuses anything that isn't a key
+        evm = fam == "evm"  # secp256k1
+        address_format = {"evm": "ADDRESS_FORMAT_ETHEREUM", "solana": "ADDRESS_FORMAT_SOLANA"}[fam]
         tk_user = await self._whoami()
         init = await self._submit("/public/v1/submit/init_import_private_key", "ACTIVITY_TYPE_INIT_IMPORT_PRIVATE_KEY",
                                   {"userId": tk_user})
@@ -163,10 +153,6 @@ class TurnkeySigner:
         got = ((found.get("addresses") or [{}])[0]).get("address")
         if not found.get("privateKeyId") or not got:
             raise SigningError("Turnkey imported no key (unexpected response shape)")
-        if fam == "near":
-            from ..chains.near import implicit_from_solana_style
-
-            got = implicit_from_solana_style(got)
         if (got.lower() if fam == "evm" else got) != (address.lower() if fam == "evm" else address):
             raise SigningError("Turnkey's address for the imported key doesn't match the key's own address")
         return WalletRef(signer_ref=found["privateKeyId"], address=address)

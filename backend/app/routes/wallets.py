@@ -75,11 +75,11 @@ class WatchWallet(BaseModel):
 
 
 def _core_only(network: str) -> None:
-    """TRON, NEAR and Arc wallets move funds through /chains/{network}/transfer, which knows their fee models."""
+    """Arc wallets move funds through /chains/{network}/transfer, which knows Arc's fee model."""
     from ..chains.networks import is_extra
 
     if is_extra(network):
-        raise HTTPException(400, "use the network's own transfer for TRON, NEAR and Arc wallets")
+        raise HTTPException(400, "use the network's own transfer for Arc wallets")
 
 
 @router.get("/wallets")
@@ -102,7 +102,7 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
         bal = stable = None
         from ..chains.networks import EXTRA_NETWORKS, extra_enabled
 
-        if w.network in EXTRA_NETWORKS:  # TRON, NEAR, Arc: native balance in its own units
+        if w.network in EXTRA_NETWORKS:  # Arc: native balance in its own units
             out = _wallet_out(w, mains=mains)
             if w.network in extra_enabled():
                 from ..services import extra_chains as xc
@@ -142,11 +142,9 @@ async def create_wallets(body: CreateWallets, user: User = Depends(current_user)
         from ..chains.networks import require_enabled
 
         try:
-            net = require_enabled(body.network)
+            require_enabled(body.network)
         except HTTPException:
             raise HTTPException(400, f"unsupported network {body.network}")
-        if net.family == "ton":
-            raise HTTPException(400, "Helm doesn't hold TON keys: connect your own wallet with TON Connect instead")
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     await _check_room(db, user, body.count)
@@ -174,12 +172,6 @@ async def watch_wallet(body: WatchWallet, user: User = Depends(current_user), db
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     address = body.address.strip()
-    from ..chains.networks import EXTRA_NETWORKS
-
-    if EXTRA_NETWORKS.get(body.network) and EXTRA_NETWORKS[body.network].family == "ton":
-        from ..services.extra_chains import ton_address
-
-        address = ton_address(body.network, address)  # one canonical form, so the same wallet isn't added twice
     await _check_room(db, user, 1)
     existing = (await db.execute(select(Wallet).where(
         Wallet.user_id == user.id, Wallet.network == body.network, Wallet.address == address))).scalar_one_or_none()
@@ -220,8 +212,7 @@ async def import_wallet(body: ImportWallet, user: User = Depends(web_user), db: 
 
         if body.network not in EXTRA_NETWORKS:
             raise HTTPException(400, f"unsupported network {body.network}")
-        if require_enabled(body.network).family == "ton":
-            raise HTTPException(400, "Helm doesn't hold TON keys: connect your own wallet with TON Connect instead")
+        require_enabled(body.network)
     if body.folder_id:
         await _owned_folder(db, user, body.folder_id)
     networks = list(EVM_CHAINS) if evm and body.all_evm else [body.network]

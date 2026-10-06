@@ -94,12 +94,10 @@ async def config_diagnostics(user: User = Depends(any_admin)):
         "rpc_configured": {
             "solana": bool(s.solana_rpc_url),
             **{name: bool(getattr(s, f"evm_rpc_{name}", "")) for name in EVM_CHAINS},
-            "tron": bool(s.tron_rpc_url), "near": bool(s.near_rpc_url),
-            "arc": bool(s.arc_rpc_url), "ton": bool(s.ton_rpc_url),
+            "arc": bool(s.arc_rpc_url),
         },
         "external_provider_keys_configured": {
             "turnkey": bool(s.turnkey_org_id and s.turnkey_api_public_key and s.turnkey_api_private_key),
-            "tron_grid": bool(s.trongrid_api_key), "toncenter": bool(s.toncenter_api_key),
             "bags": bool(s.bags_api_key), "jupiter": bool(s.jupiter_api_key),
         },
     }

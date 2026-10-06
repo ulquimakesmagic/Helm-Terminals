@@ -37,7 +37,7 @@ const TERMS: Doc = {
     </>],
     ["Wallets and keys", <>
       <p><b>Managed wallets.</b> Keys for wallets Helm creates or imports are held by a third-party key-management service (Turnkey) under Helm's organisation. Helm stores each key's reference and public address and asks the service to sign only when you confirm an action, or when a finite scheduled plan you created places one of its orders. Helm does not show or export private keys. Keep enough of your own records to identify your wallets and assets.</p>
-      <p><b>Connected wallets</b> (for example TON, TRON, NEAR or Arc wallets you link) are signed in your own wallet app; Helm never holds their keys. <b>Watch-only</b> addresses are read, never signed for.</p>
+      <p><b>Connected wallets</b> (Arc wallets you link) are signed in your own wallet app; Helm never holds their keys. <b>Watch-only</b> addresses are read, never signed for.</p>
       <p>Account recovery is limited to the methods the app offers (verified-email reset and recovery codes). After a recovery, spending is held for 24 hours. <Pending>Operator procedure if both password and email access are lost</Pending></p>
     </>],
     ["Previews, confirmations and transactions", <>
@@ -51,7 +51,7 @@ const TERMS: Doc = {
       <p>You must not use Helm to break the law, evade sanctions, launder money, manipulate markets, create artificial trading volume, misrepresent token ownership or distribution, defraud buyers, infringe others' rights in token names or images, or interfere with Helm or third-party services. Helm deliberately excludes wash-trading and holder-disguising features. We may suspend accounts that breach these terms.</p>
     </>],
     ["Third-party services and data", <>
-      <p>Helm depends on third parties including Turnkey (signing), launchpads such as Pump.fun, Bags, Meteora (via Jupiter), Flap, Four.meme, Clanker, Pons, SunPump, Meme.Cooking and Tolly, routers and bridges such as Jupiter, KyberSwap and Relay, chain RPC providers, Codex for market data, and GMGN for embedded charts. Their outages, changes or errors can affect what Helm can do. Market data is indicative and is never used to price your transactions.</p>
+      <p>Helm depends on third parties including Turnkey (signing), launchpads such as Pump.fun, Bags, Meteora (via Jupiter), Flap, Four.meme, Clanker, Pons and Tolly, routers and bridges such as Jupiter, KyberSwap and Relay, chain RPC providers, Codex for market data, and GMGN for embedded charts. Their outages, changes or errors can affect what Helm can do. Market data is indicative and is never used to price your transactions.</p>
     </>],
     ["Suspension and termination", <>
       <p>You may stop using Helm at any time. We may suspend or end access for breach, legal requirement or security risk. Suspension does not move your assets. <Pending>Process for users to move assets out of managed wallets after closure</Pending></p>
@@ -86,13 +86,13 @@ const PRIVACY: Doc = {
     ["Who processes data for us", <><p>We share only what each service needs:</p><ul>
       <li>Turnkey (key management and signing): wallet key references and the transactions to sign.</li>
       <li>Blockchain RPC providers and indexers for each chain: addresses and transactions to read or broadcast.</li>
-      <li>Launchpads, routers and bridges (for example PumpPortal/Pump.fun, Bags, Jupiter, KyberSwap, Relay, Flap, Four.meme, Pinata for Meme.Cooking images): wallet addresses, amounts and token metadata needed to build your transactions.</li>
+      <li>Launchpads, routers and bridges (for example PumpPortal/Pump.fun, Bags, Jupiter, KyberSwap, Relay, Flap, Four.meme): wallet addresses, amounts and token metadata needed to build your transactions.</li>
       <li>Codex: token and pool addresses for market data. No account data is sent.</li>
       <li>GMGN: on Solana, Ethereum and BNB Chain, token charts are GMGN's own page embedded in Helm. Your browser loads it directly from GMGN, which receives the token address and, like any website you visit, your IP address and browser details, and applies its own privacy policy. Helm sends GMGN no account data.</li>
       <li>Our hosting and database provider (Railway) and our email provider, if account recovery email is enabled.</li>
       <li>Telegram, if you link it.</li>
     </ul><p><Pending>Processor agreements, international transfer safeguards and data locations</Pending></p></>],
-    ["Cookies and browser storage", <p>Helm does not use advertising or analytics cookies or trackers. The embedded GMGN chart is GMGN's page and may use its own storage under GMGN's policies. Your sign-in token is kept in the page's memory only and disappears when you reload or close the tab. When you connect a TON or NEAR wallet, the wallet connector stores its session in your browser's local storage so the connection survives a reload; signing out removes it. Because this storage is needed for features you request, Helm shows no cookie banner. <Pending>Confirm this assessment for each market you serve</Pending></p>],
+    ["Cookies and browser storage", <p>Helm does not use advertising or analytics cookies or trackers. The embedded GMGN chart is GMGN's page and may use its own storage under GMGN's policies. Your sign-in token is kept in the page's memory only and disappears when you reload or close the tab. Helm stores nothing else in your browser, so it shows no cookie banner. <Pending>Confirm this assessment for each market you serve</Pending></p>],
     ["Retention", <p>We keep account, wallet and transaction records while your account is open and afterwards as long as needed for security, accounting and legal purposes. Failed sign-in and code attempt records are pruned after about an hour. <Pending>Specific retention periods</Pending></p>],
     ["Your rights", <p>Depending on where you live, you may have rights to access, correct, delete, restrict or port your data and to object to processing. The app does not yet provide self-service export or deletion; contact {CONTACT} and we will respond within the time the law requires. Deleting an account cannot erase on-chain records, and we may need to keep some records for legal reasons. You can complain to your data protection authority.</p>],
     ["Security", <p>Passwords are hashed with Argon2, two-factor secrets are encrypted, session tokens are stored only as hashes, private keys are not stored in our database in production, and sensitive actions require recent re-authentication. No system is perfectly secure.</p>],

@@ -133,15 +133,14 @@ type Dialog = null | { title: string; path: string; body: Record<string, unknown
 
 export interface ExtraNet { id: string; name: string; family: string; chain_id: number | null; enabled: boolean }
 type AddTab = "managed" | "import" | "connect" | "watch";
-const OWN_APP: Record<string, string> = { tron: "TronLink", evm: "your EVM wallet", near: "your NEAR wallet", ton: "TON Connect" };
+const OWN_APP: Record<string, string> = { evm: "your EVM wallet" };
 
 /** Why a chain can't be used on a tab (null when it can). Solana and the core EVM chains are Helm-managed or imported;
- * TRON, NEAR and Arc can also link your own wallet; TON only connects through TON Connect (Helm never holds TON keys). */
+ * Arc can also link your own wallet. */
 function unavailable(tab: AddTab, id: string, extras: ExtraNet[]): string | null {
   const x = extras.find((n) => n.id === id);
   if (tab === "watch") return null;
   if (tab === "connect") return x ? null : "Solana and EVM wallets are created or imported in Helm";
-  if (x?.family === "ton") return "Helm doesn't hold TON keys: use Connect";
   return null;
 }
 
@@ -215,16 +214,12 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
     );
   };
   const importHint = fam === "solana" ? "The base58 key your wallet app exports, or a solana-keygen JSON array"
-    : fam === "tron" ? "The 64-character hex private key your TRON wallet (e.g. TronLink) exports"
-    : fam === "near" ? "The ed25519:… private key your NEAR wallet exports"
     : "64 hex characters, with or without 0x";
-  const ready = tab === "connect" ? !!extra && extra.family !== "ton"
+  const ready = tab === "connect" ? !!extra
     : tab === "watch" ? !!addr.trim()
     : tab === "import" ? !!secret.trim() && !!password && (!me?.totp_enabled || importCode.length === 6)
     : count >= 1 && count <= 50;
-  const primary = tab === "connect" && extra?.family === "ton"
-    ? <Link className="btn" to={`/networks?network=${extra.id}`} onClick={onClose}><Icon name="plus" size={14} />Open TON Connect</Link>
-    : <button className="btn" onClick={go} disabled={busy || !ready || (tab !== "connect" && folder === NEW_FOLDER && !newFolder.trim())}>
+  const primary = <button className="btn" onClick={go} disabled={busy || !ready || (tab !== "connect" && folder === NEW_FOLDER && !newFolder.trim())}>
         {busy && <Spinner />}{tab === "managed" ? `Create ${count}` : tab === "import" ? "Import wallet" : tab === "connect" ? `Connect ${OWN_APP[fam]}` : "Add address"}</button>;
 
   return (
@@ -245,8 +240,6 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
       {tab === "managed" ? (
         <>
           <p className="muted small">New keypairs are created by the signing service. Keys are never shown to you or stored by this app; you can move funds out with a 2FA-protected withdrawal.
-            {fam === "tron" && " A new TRON address activates when it first receives TRX."}
-            {fam === "near" && " A new NEAR wallet is an implicit account (64 hex characters); it exists on-chain once it first receives NEAR."}
             {fam === "evm" && extra && ` Gas on ${extra.name} is paid in USDC.`}</p>
           <div className="row nowrap" style={{ alignItems: "flex-start" }}>
             <Field label="How many" hint="1 to 50" style={{ width: 120 }}><input type="number" min={1} max={50} value={count} onChange={(e) => setCount(+e.target.value)} /></Field>
@@ -260,7 +253,6 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
           <Field label={`${name} private key`} hint={importHint}>
             <input className="mono" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
           </Field>
-          {fam === "near" && <Callout icon="info">Helm adds this key as its own implicit account (64 hex characters). For a named account such as alice.near, use <b>Connect</b> instead.</Callout>}
           <Field label="Label"><input value={importLabel} onChange={(e) => setImportLabel(e.target.value)} maxLength={80} /></Field>
           <div className="row" style={{ alignItems: "flex-start" }}>
             <Field label="Your Helm password" hint="Imported wallets can receive funds without a 2FA code, so Helm checks it's you" style={{ flex: "1 1 220px", minWidth: 0 }}>
@@ -281,22 +273,18 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
           <FolderSelect folders={folders} value={folder} onChange={setFolder} newName={newFolder} onNewName={setNewFolder} />
         </>
       ) : tab === "connect" ? (
-        !extra ? <Callout icon="info">Connect your own wallet on TRON, NEAR, Arc or TON. {extras.length === 0 && "None of these networks is enabled on this server yet."}</Callout>
-        : extra.family === "ton" ? (
-          <p className="muted small">TON wallets connect through TON Connect on the Networks page. Your wallet proves the address is yours with ton_proof; Helm never sees its keys.</p>
-        ) : (
+        !extra ? <Callout icon="info">Connect your own wallet on Arc. {extras.length === 0 && "Arc isn't enabled on this server yet."}</Callout>
+        : (
           <>
             <p className="muted small">Helm asks {OWN_APP[fam]} to sign a message naming this site, {extra.name} and a one-time code that expires in 15 minutes. That proves the address is yours. It doesn't approve any transaction, and Helm never sees the wallet's keys.</p>
             <p className="muted small">Every send from a connected wallet is reviewed in Helm first, then approved in {OWN_APP[fam]}.
-              {fam === "tron" && " Install TronLink and switch it to " + extra.name + " first."}
-              {fam === "evm" && ` Your wallet will be asked to switch to ${extra.name} (chain ID ${extra.chain_id}).`}
-              {fam === "near" && " You'll choose a NEAR wallet in the next window."}</p>
+              {fam === "evm" && ` Your wallet will be asked to switch to ${extra.name} (chain ID ${extra.chain_id}).`}</p>
           </>
         )
       ) : (
         <>
           <p className="muted small">Track any {name} address. Watch-only wallets can't sign, so they can't trade or be funded from here.</p>
-          <Field label={`${name} ${fam === "near" ? "account" : "address"}`} hint={fam === "near" ? "e.g. alice.near, or a 64-character implicit account" : undefined}>
+          <Field label={`${name} address`}>
             <input className="mono" value={addr} onChange={(e) => setAddr(e.target.value)} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
           </Field>
           <FolderSelect folders={folders} value={folder} onChange={setFolder} newName={newFolder} onNewName={setNewFolder} />
@@ -405,7 +393,7 @@ export default function Wallets() {
   const coin = chainOf(selNet).native;
   const cashDestCoin = chainOf(managed.find((w) => w.id === cashDest)?.network ?? selNet).native;
   const evmSel = !!selNet && selNet !== "solana";
-  const extraSel = isExtraChain(selNet);  // TRON, NEAR, Arc and TON move funds through their own transfer
+  const extraSel = isExtraChain(selNet);  // Arc moves funds through its own transfer
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const allShownSelected = shown.length > 0 && shown.every((w) => selected.has(w.id));
   const funderOf = (id: string) => funders.find((f) => f.wallet_id === id);
@@ -501,7 +489,7 @@ export default function Wallets() {
                     <td data-label="Address"><span className="row nowrap" style={{ gap: 8 }}><Address address={w.address} network={w.network} />
                       {sharedKey.has(w.address) && <span className="muted" style={{ fontSize: 11 }} title="Same key as the other rows with this address — one wallet, balances held per chain.">shared key</span>}</span></td>
                     {/* managed is the default kind: a chip on every row is noise, deviations are the signal */}
-                    <td className="hide-sm">{w.kind !== "managed" && <StatusBadge status={w.kind} label={w.kind === "connected" ? `your wallet (${OWN_APP[extras.find((n) => n.id === w.network)?.family ?? (w.network.startsWith("ton") ? "ton" : "evm")]})` : "watch-only"} />}</td>
+                    <td className="hide-sm">{w.kind !== "managed" && <StatusBadge status={w.kind} label={w.kind === "connected" ? `your wallet (${OWN_APP[extras.find((n) => n.id === w.network)?.family ?? "evm"] ?? "your wallet"})` : "watch-only"} />}</td>
                     <td className="hide-sm text-2">{folderOf(w.folder_id)?.name ?? <span className="muted">—</span>}</td>
                     <td className="r num" data-label="Balance">{isExtraChain(w.network) ? (
                       <span className="stack tight" style={{ alignItems: "flex-end", gap: 1 }}>

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
 import { ALL_CHAIN_ORDER, chainOf } from "../chains";
-import { EVM_ADDR, NEAR_ACCOUNT, SOLANA_ADDR, TON_ADDR, TRON_ADDR } from "../validate";
+import { EVM_ADDR, SOLANA_ADDR } from "../validate";
 import { ChainLabel } from "../components/marks";
 import {
   Address, Card, Empty, Icon, LoadError, Loading, PageHeader, SearchInput, Seg, TableWrap, useToast,
@@ -29,12 +29,9 @@ export default function Tracker() {
   }
 
   const addr = address.trim();
-  // Quick format hints per chain; the server does the full check (checksums, NEAR account rules, TON forms).
+  // Quick format hints per chain; the server does the full check (checksums included).
   const FORMAT: Record<string, [RegExp, string, string]> = {
     solana: [SOLANA_ADDR, "Solana address", "That doesn't look like a Solana address."],
-    tron: [TRON_ADDR, "T… TRON address", "TRON addresses start with T and have 34 characters."],
-    near: [NEAR_ACCOUNT, "alice.near or a 64-character account", "NEAR accounts are lowercase names like alice.near, or 64 hex characters."],
-    ton: [TON_ADDR, "EQ… / UQ… TON address", "TON addresses are 48 characters (EQ… or UQ…) or the raw 0:… form."],
   };
   const fmtFor = FORMAT[network] ?? [EVM_ADDR, "0x… address", `${chainOf(network).name} addresses start with 0x and have 40 hex characters.`];
   const valid = fmtFor[0].test(addr);

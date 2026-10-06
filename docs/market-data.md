@@ -39,7 +39,7 @@ portfolio values) still comes from Codex only. The privacy policy names GMGN as 
 
 Not verified against a live Codex account (no key was available in the audit environment): exact field availability
 per plan, holder-count availability (Codex documents its `holders` query as Growth/Enterprise; `filterTokens.holders`
-may be null on lower plans and is then shown as "—"), and TRON address formatting. The integration was tested
+may be null on lower plans and is then shown as "—"). The integration was tested
 against recorded response shapes from the documentation.
 
 ## Network coverage
@@ -52,13 +52,12 @@ against recorded response shapes from the documentation.
 | Base | 8453 | Yes (previously metrics only) | Yes (new) |
 | Robinhood Chain | 4663 | Yes | Yes (new) |
 | Arc | 5042 | Yes | Yes (new) |
-| TRON | 728126428 | Yes (new) | Yes (new) |
-| NEAR | — | Unsupported | Unsupported |
-| TON | — | Unsupported | Unsupported |
+
+TRON, NEAR and TON were removed from Helm on 6 October 2026, so they have no market panel.
 
 ## Honest states
 
-`not_configured` (no key), `unsupported` (NEAR, TON), `no_token` (draft), `not_indexed` (Codex doesn't know the
+`not_configured` (no key), `unsupported` (a network without a Codex id), `no_token` (draft), `not_indexed` (Codex doesn't know the
 token yet), `no_pool`, `no_bars` (no trades in the range; never filled), `stale` (last good response shown with a
 label after a failure, up to 5 minutes), `error` (`unavailable`, `rate_limited` with retry time, `access_denied`
 naming `CODEX_API_KEY`, `request_budget`, `invalid_response`, `unknown_pool`, `invalid_resolution`). Missing values
@@ -78,7 +77,6 @@ messages or token addresses.
   chains use Helm's Codex candle chart (keyboard and touch inspection, data table) without indicators or drawing
   tools. GMGN picks its own pool and update timing, so its chart can differ from the Codex figures beside it.
 - **6-hour window** replaced by Codex's 4h and 12h windows.
-- **NEAR and TON USD valuation** in the portfolio is unavailable (not Codex networks); amounts still show.
 - **DexScreener pair links** removed. Pool rows link to the chain explorer.
 - **Holder counts** depend on the Codex plan.
 

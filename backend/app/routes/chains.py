@@ -1,15 +1,14 @@
-"""Network registry and the TRON / NEAR / Arc features Helm supports on a documented path.
+"""Network registry and the Arc features Helm supports on a documented path.
 
 GET  /chains                                   every network, whether it's enabled, and what Helm supports on it
-GET  /chains/{network}/tokens/{token}           token metadata (TRC-20, NEP-141, ERC-20), matched by address
+GET  /chains/{network}/tokens/{token}           token metadata (ERC-20), matched by address
 GET  /chains/{network}/wallets/{id}/balances    native balance plus requested/known tokens
-GET  /chains/{network}/wallets/{id}/history     account history (TRON: TronGrid; others: Helm's own transfers)
+GET  /chains/{network}/wallets/{id}/history     Helm's own transfers (Arc has no official history API)
 POST /chains/{network}/transfer                 preview, then confirm, a native or token transfer
 
 Launches, swaps, market data and cross-chain routes are not offered on these networks; the matrix says why.
 """
 
-import math
 from decimal import Decimal, InvalidOperation, localcontext
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,7 +33,7 @@ router = APIRouter()
 
 def _net_out(n) -> dict:
     return {"id": n.id, "family": n.family, "name": n.name, "native": n.native,
-            "decimals": n.decimals, "chain_id": n.chain_id, "network_id": n.network_id, "explorer": n.explorer,
+            "decimals": n.decimals, "chain_id": n.chain_id, "explorer": n.explorer,
             "notes": n.notes,
             "enabled": n.id in extra_enabled(), "capabilities": _caps(n), "sources": SOURCES[n.family]}
 
@@ -66,22 +65,15 @@ async def chains():
 
 @router.get("/chains/{network}/health")
 async def network_health(network: str, user: User = Depends(current_user), ex: Executor = Depends(get_executor)):
-    """A live read from the network's endpoint: TRON chain parameters, NEAR's final block, Arc's chain id."""
+    """A live read from the network's endpoint: Arc's chain id."""
     import time
 
     net = require_enabled(network)
     t0 = time.monotonic()
     try:
-        if net.family == "tron":
-            await xc.tron_client(network).chain_parameters()
-        elif net.family == "near":
-            await xc.near_client(network).final_block_hash()
-        elif net.family == "ton":
-            await xc.ton_client(network).get("/api/v3/masterchainInfo", {})
-        else:
-            got = int(await ex.evm(network).rpc.call("eth_chainId", []), 16)
-            if got != net.chain_id:
-                return {"network": network, "ok": False, "error": f"endpoint reports chain {got}, expected {net.chain_id}"}
+        got = int(await ex.evm(network).rpc.call("eth_chainId", []), 16)
+        if got != net.chain_id:
+            return {"network": network, "ok": False, "error": f"endpoint reports chain {got}, expected {net.chain_id}"}
     except Exception as e:
         return {"network": network, "ok": False, "error": _why(e)}
     return {"network": network, "ok": True, "latency_ms": round((time.monotonic() - t0) * 1000)}
@@ -91,8 +83,6 @@ def _token_ok(network: str, token: str) -> str:
     token = token.strip()
     if not valid_address_for(network, token):
         raise HTTPException(400, f"that isn't a valid {EXTRA_NETWORKS[network].name} token address")
-    if EXTRA_NETWORKS[network].family == "ton":  # one form per Jetton master, so it's matched by address
-        token = xc.ton_address(network, token, wallet=False)
     return token
 
 
@@ -143,12 +133,6 @@ async def balances(network: str, wallet_id: str, tokens: str = Query(default="",
     return out
 
 
-def _ton_hash(h):
-    from .ton import _hex_hash
-
-    return _hex_hash(h)
-
-
 def _why(e: Exception) -> str:
     return str(e)[:160] if isinstance(e, (AdapterError, HTTPException)) else type(e).__name__
 
@@ -163,62 +147,9 @@ async def history(network: str, wallet_id: str, user: User = Depends(current_use
             "error": t.error, "explorer": net.explorer["tx"] + t.signature if t.signature else None,
             "details": {k: j.params.get(k) for k in ("to", "amount", "asset", "token") if k in (j.params or {})}}
            for t, j in helm]
-    chain, note = [], None
-    if net.family == "tron":
-        from ..chains import tron
-
-        try:
-            client = xc.tron_client(network)
-            for item in await client.history(w.address, 20):
-                row = {"at_ms": item.get("block_timestamp"), "reference": item.get("txID"),
-                       "status": ((item.get("ret") or [{}])[0]).get("contractRet"),
-                       "explorer": net.explorer["tx"] + (item.get("txID") or "")}
-                try:  # a plain TRX transfer: show its amount and counterparty (TronGrid gives hex addresses)
-                    ct = item["raw_data"]["contract"][0]
-                    if ct.get("type") == "TransferContract":
-                        v = ct["parameter"]["value"]
-                        row.update({"raw": str(int(v["amount"])), "decimals": 6,
-                                    "to": tron.encode_address(bytes.fromhex(v["to_address"]))})
-                except (KeyError, IndexError, TypeError, ValueError):
-                    pass
-                chain.append(row)
-            for item in await client.history(w.address, 20, trc20=True):
-                ti = item.get("token_info") or {}
-                chain.append({"at_ms": item.get("block_timestamp"), "reference": item.get("transaction_id"),
-                              "token": ti.get("address"), "symbol": ti.get("symbol"), "from": item.get("from"),
-                              "to": item.get("to"), "raw": item.get("value"), "decimals": ti.get("decimals"),
-                              "explorer": net.explorer["tx"] + (item.get("transaction_id") or "")})
-            chain.sort(key=lambda x: -(x.get("at_ms") or 0))
-        except AdapterError as e:
-            note = f"TronGrid history is unavailable right now: {e}"
-    elif net.family == "ton":
-        from ..chains import ton
-
-        try:
-            for tx in await xc.ton_client(network).transactions(w.address, 20):
-                status, err = ton.tx_outcome(tx)
-                inm = tx.get("in_msg") or {}
-                out = (tx.get("out_msgs") or [{}])[0] or {}
-                incoming = bool(inm.get("source"))  # an external message (no source) is the wallet sending
-                ref = _ton_hash(tx.get("hash"))
-                op = out.get("opcode")
-                if not incoming and (op == ton.JETTON_TRANSFER or str(op).lower() in ("0x0f8a7ea5", "jetton_transfer")
-                                     or out.get("decoded_opcode") == "jetton_transfer"):
-                    chain.append({"at_ms": (tx.get("now") or 0) * 1000, "reference": ref, "status": status,
-                                  "error": err, "symbol": "Jetton transfer", "direction": "out",
-                                  "explorer": net.explorer["tx"] + ref if ref else None})
-                    continue
-                chain.append({"at_ms": (tx.get("now") or 0) * 1000, "reference": ref, "status": status,
-                              "error": err, "raw": (inm if incoming else out).get("value"), "decimals": 9,
-                              "from": inm.get("source") if incoming else None,
-                              "to": None if incoming else out.get("destination"),
-                              "direction": "in" if incoming else "out",
-                              "explorer": net.explorer["tx"] + ref if ref else None})
-        except AdapterError as e:
-            note = f"The TON index is unavailable right now: {e}"
-    else:
-        note = (f"{net.name} has no official account-history API, so only transfers made through Helm are listed. "
-                "The explorer link shows everything.")
+    chain = []
+    note = (f"{net.name} has no official account-history API, so only transfers made through Helm are listed. "
+            "The explorer link shows everything.")
     return {"network": network, "wallet": w.address, "explorer": net.explorer["account"] + w.address,
             "helm": own, "chain": chain, "note": note}
 
@@ -272,8 +203,6 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
     if (prior := await find_replay(db, user, body)):
         return prior
     net = require_enabled(network)
-    if net.family == "ton":
-        raise HTTPException(400, "TON transfers are approved in your own wallet: use /chains/{network}/ton/transfer")
     w = await _wallet(db, user, body.wallet_id, network, managed=True)
     to = body.to.strip()
     if not valid_address_for(network, to):
@@ -282,12 +211,7 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
         raise HTTPException(400, "the recipient is the sending wallet")
     token = _token_ok(network, body.token) if body.token else None
     try:
-        if net.family == "tron":
-            plan = await _tron_plan(network, w, to, token, body.amount)
-        elif net.family == "near":
-            plan = await _near_plan(network, w, to, token, body.amount)
-        else:
-            plan = await _arc_plan(ex, network, w, to, token, body.amount)
+        plan = await _arc_plan(ex, network, w, to, token, body.amount)
     except AdapterError as e:
         raise HTTPException(502, str(e))
     if token:  # a token of one of the user's own launches: its allocation locks apply here too
@@ -314,172 +238,6 @@ async def transfer(network: str, body: TransferBody, user: User = Depends(curren
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
-
-
-async def _tron_plan(network: str, w: Wallet, to: str, token: str | None, amount: str) -> dict:
-    from ..chains import tron
-
-    c = xc.tron_client(network)
-    params = await c.chain_parameters()
-    energy_price = params.get("getEnergyFee", 100)
-    byte_price = params.get("getTransactionFee", 1000)
-    res = await c.resources(w.address)
-    trx = await c.balance(w.address)
-    recipient_active = bool(await c.account(to))
-    warnings, display = [], {}
-    if token:
-        meta = await c.trc20_metadata(token, w.address)
-        raw = _raw_amount(amount, meta["decimals"])
-        held = await c.trc20_balance(token, w.address)
-        if raw > held:
-            warnings.append(f"The wallet holds {xc.human(held, meta['decimals'])} {meta['symbol']}, less than {amount}.")
-        energy = await c.trc20_transfer_energy(token, w.address, to, raw) if raw <= held else 65_000
-        energy_burn = max(energy - res["energy"], 0) * energy_price
-        fee_limit = min(max(int(math.ceil(energy * energy_price * 1.3)), 1_000_000), params.get("getMaxFeeLimit", 15_000 * tron.SUN))
-        bandwidth = 345  # a TRC-20 transfer is ~345 bytes on-chain
-        bw_burn = 0 if res["free_bandwidth"] + res["staked_bandwidth"] >= bandwidth else bandwidth * byte_price
-        fee = energy_burn + bw_burn
-        display = {"energy_needed": energy, "energy_available": res["energy"], "energy_fee_trx": xc.human(energy_burn, 6),
-                   "bandwidth_bytes_about": bandwidth, "bandwidth_fee_trx": xc.human(bw_burn, 6),
-                   "fee_limit_trx": xc.human(fee_limit, 6), "network_fee_trx_about": xc.human(fee, 6)}
-        if trx < fee:
-            warnings.append(f"The wallet needs about {xc.human(fee, 6)} TRX for energy and bandwidth; it holds "
-                            f"{xc.human(trx, 6)} TRX. (TRON burns TRX when a wallet has no energy or bandwidth.)")
-        if not recipient_active:
-            display["recipient_note"] = ("The recipient address isn't activated yet. A token transfer doesn't activate "
-                                         "it; it will need TRX before it can move these tokens.")
-        symbol, decimals = meta["symbol"], meta["decimals"]
-
-        async def unsigned():
-            tx = await c.build_trc20_transfer(w.address, token, to, raw, fee_limit)
-            tron.check_transaction(tx, owner=w.address, token=token, token_to=to, token_amount=raw,
-                                   max_fee_limit=fee_limit)
-            return tx
-
-        async def execute(ex):
-            return await _tron_send(ex, c, w, await unsigned())
-    else:
-        raw = _raw_amount(amount, 6)
-        tx = await c.build_trx_transfer(w.address, to, raw)  # read-only: sizes the transaction for the estimate
-        tron.check_transaction(tx, owner=w.address, to=to, amount=raw)
-        size = tron.bandwidth_bytes(tx)
-        has_bw = res["free_bandwidth"] + res["staked_bandwidth"] >= size
-        activation = 0
-        if not recipient_active:
-            activation = params.get("getCreateNewAccountFeeInSystemContract", 1_000_000) + \
-                (0 if has_bw else params.get("getCreateAccountFee", 100_000))
-        bw_burn = 0 if (has_bw or not recipient_active) else size * byte_price
-        fee = activation + bw_burn
-        display = {"bandwidth_bytes": size, "bandwidth_available": res["free_bandwidth"] + res["staked_bandwidth"],
-                   "bandwidth_fee_trx": xc.human(bw_burn, 6), "activation_fee_trx": xc.human(activation, 6),
-                   "network_fee_trx_about": xc.human(fee, 6)}
-        if not recipient_active:
-            display["recipient_note"] = "The recipient isn't activated yet; this transfer activates it (fee above)."
-        if raw + fee > trx:
-            warnings.append(f"The wallet holds {xc.human(trx, 6)} TRX, less than {amount} TRX plus about "
-                            f"{xc.human(fee, 6)} TRX in fees.")
-        symbol, decimals = "TRX", 6
-
-        async def unsigned():
-            fresh = await c.build_trx_transfer(w.address, to, raw)
-            tron.check_transaction(fresh, owner=w.address, to=to, amount=raw)
-            return fresh
-
-        async def execute(ex):
-            return await _tron_send(ex, c, w, await unsigned())
-    display["finality"] = "Final once the solidity node returns the receipt (about a minute)."
-    return {"symbol": symbol, "decimals": decimals, "raw": raw, "amount": xc.human(raw, decimals),
-            "warnings": warnings, "display": display, "execute": execute, "unsigned": unsigned}
-
-
-async def _tron_send(ex, c, w: Wallet, tx: dict) -> SubmitResult:
-    from ..chains import tron
-
-    try:
-        txid, status, err, _ = await tron.sign_and_send(c, ex.signer, w.signer_ref or "", tx)
-    except Exception as e:
-        return SubmitResult(None, "failed", f"signing or sending failed: {_why(e)}")
-    return SubmitResult(txid, status, err)
-
-
-def _fc(method: str, args: dict, gas: int, deposit: int) -> dict:
-    """A FunctionCall in the action format NEAR wallets accept (near-connect / wallet-selector)."""
-    return {"type": "FunctionCall", "params": {"methodName": method, "args": args, "gas": str(gas),
-                                               "deposit": str(deposit)}}
-
-
-async def _near_plan(network: str, w: Wallet, to: str, token: str | None, amount: str) -> dict:
-    from ..chains import near
-
-    c = xc.near_client(network)
-    acct = await c.account(w.address)
-    if acct is None:
-        raise HTTPException(400, "this NEAR wallet doesn't exist on-chain yet: send it some NEAR first "
-                                 "(a first transfer creates an implicit account)")
-    try:
-        per_byte = await c.protocol_storage_cost()
-    except AdapterError:
-        per_byte = 10**19  # 1 NEAR per 100 kB (storage staking docs)
-    avail = near.available_balance(acct, per_byte)
-    price = await c.gas_price()
-    receiver = await c.account(to)
-    warnings, display = [], {}
-    if near.IMPLICIT.match(to) is None and near.ETH_IMPLICIT.match(to) is None and receiver is None:
-        warnings.append("That named account doesn't exist; a transfer to it would fail or strand the tokens. "
-                        "Check the name.")
-    if token:
-        meta = await (xc.token_metadata(None, network, token))
-        raw = _raw_amount(amount, meta["decimals"])
-        held = int(await c.view(token, "ft_balance_of", {"account_id": w.address}) or 0)
-        if raw > held:
-            warnings.append(f"The wallet holds {xc.human(held, meta['decimals'])} {meta['symbol']}, less than {amount}.")
-        registered = await c.view(token, "storage_balance_of", {"account_id": to})
-        actions, deposit, storage = [], 1, 0
-        wallet_actions: list[dict] = []
-        if registered is None:
-            bounds = await c.view(token, "storage_balance_bounds", {}) or {}
-            storage = int((bounds.get("min") if isinstance(bounds, dict) else None) or 1_250_000_000_000_000_000_000)
-            wallet_actions.append(_fc("storage_deposit", {"account_id": to, "registration_only": True},
-                                      near.STORAGE_DEPOSIT_GAS, storage))
-            actions.append(near.function_call_action("storage_deposit", {"account_id": to, "registration_only": True},
-                                                     near.STORAGE_DEPOSIT_GAS, storage))
-            deposit += storage
-            display["storage_deposit_near"] = xc.human(storage, 24)
-            display["recipient_note"] = "The recipient isn't registered with this token; the deposit registers it."
-        wallet_actions.append(_fc("ft_transfer", {"receiver_id": to, "amount": str(raw)}, near.FT_TRANSFER_GAS, 1))
-        actions.append(near.function_call_action("ft_transfer", {"receiver_id": to, "amount": str(raw)},
-                                                 near.FT_TRANSFER_GAS, 1))
-        gas = near.FT_TRANSFER_GAS + (near.STORAGE_DEPOSIT_GAS if registered is None else 0)
-        fee_max = gas * price
-        if avail < deposit + fee_max:
-            warnings.append(f"The wallet needs about {xc.human(deposit + fee_max, 24)} NEAR for the deposit and gas; "
-                            f"it has {xc.human(avail, 24)} NEAR available.")
-        symbol, decimals, receiver_id = meta["symbol"], meta["decimals"], token
-    else:
-        raw = _raw_amount(amount, 24)
-        actions = [near.transfer_action(raw)]
-        wallet_actions = [{"type": "Transfer", "params": {"deposit": str(raw)}}]
-        fee_max = near.TRANSFER_GAS * price
-        if raw + fee_max > avail:
-            warnings.append(f"The wallet has {xc.human(avail, 24)} NEAR available (after storage), less than {amount} "
-                            "NEAR plus gas.")
-        symbol, decimals, receiver_id = "NEAR", 24, to
-        if receiver is None and near.IMPLICIT.match(to):
-            display["recipient_note"] = "This implicit account doesn't exist yet; the transfer creates it."
-    display.update({"gas_fee_near_max": xc.human(fee_max, 24),
-                    "finality": "Helm waits for FINAL execution of every receipt."})
-    async def execute(ex):  # Helm-managed NEAR wallets are implicit accounts: the address is the public key
-        try:
-            h, status, err = await near.sign_and_send(c, ex.signer, w.signer_ref or "", w.address, bytes.fromhex(w.address),
-                                                      receiver_id, actions)
-        except Exception as e:
-            return SubmitResult(None, "failed", f"signing or sending failed: {_why(e)}")
-        return SubmitResult(h, status, err)
-
-    return {"symbol": symbol, "decimals": decimals, "raw": raw, "amount": xc.human(raw, decimals),
-            "warnings": warnings, "display": display, "execute": execute,
-            "wallet_tx": {"receiver_id": receiver_id, "actions": wallet_actions},
-            "hashed": {"storage_deposit_yocto": str(storage)} if token else {}}
 
 
 async def _arc_plan(ex, network: str, w: Wallet, to: str, token: str | None, amount: str) -> dict:

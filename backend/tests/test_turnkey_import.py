@@ -103,23 +103,15 @@ async def test_solana_and_evm_keys_reach_the_enclave_intact():
     assert tk.received == bytes.fromhex("44" * 32) and ref.address.startswith("0x")
 
 
-async def test_tron_arc_and_near_keys_import_in_their_own_formats(monkeypatch):
-    """TronLink's hex key becomes the TRON address, Arc's the EVM one, and a NEAR wallet's ed25519:… key its implicit
-    account. Addresses come from TronWeb, ethers and near-js vectors (see tests/data/wallet_vectors.json)."""
-    from app.chains import near
-    from app.config import get_settings
-
-    monkeypatch.setattr(get_settings(), "extra_networks", "tron,near,arc,ton")
+async def test_arc_keys_import_as_evm_and_removed_networks_are_refused():
+    """Arc takes the EVM key and address (ethers vector in tests/data/wallet_vectors.json). TRON, NEAR and TON were
+    removed, so their keys are refused before anything reaches Turnkey."""
     tk = FakeTurnkey()
-    ref = await tk.signer().import_wallet("u1", "tron", "11" * 32)
-    assert ref.address == "TCLBgkbfVkJroVBJVqBEsxtPNQEQMTQCLQ" and tk.formats == ["ADDRESS_FORMAT_TRON"]
     ref = await tk.signer().import_wallet("u1", "arc", "0x" + "11" * 32)
     assert ref.address == "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A" and tk.formats == ["ADDRESS_FORMAT_ETHEREUM"]
-    kp = Keypair.from_seed(bytes([7]) * 32)
-    ref = await tk.signer().import_wallet("u1", "near", "ed25519:" + near._b58(bytes(kp)))
-    assert tk.received == bytes([7]) * 32 and ref.address == bytes(kp.pubkey()).hex()
-    with pytest.raises(SigningError, match="TON"):
-        await tk.signer().import_wallet("u1", "ton", "11" * 32)
+    for net in ("tron", "near", "ton"):
+        with pytest.raises(SigningError, match="unknown network"):
+            await tk.signer().import_wallet("u1", net, "11" * 32)
 
 
 async def test_import_refuses_an_unverified_or_mismatched_bundle():

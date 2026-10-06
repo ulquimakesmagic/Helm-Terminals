@@ -40,7 +40,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
   const gas = num(pre.max_gas_each) ?? num(pre.max_gas) ?? num(pre.network_fees_max);
   const gasCell: [string, ReactNode][] = gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`]] : [];
 
-  if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "ton_transfer", "external_transfer"].includes(pre.kind)) return extraTransfer(pre);
+  if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "external_transfer"].includes(pre.kind)) return extraTransfer(pre);
 
   switch (pre.kind) {
     case "deploy": {
@@ -233,16 +233,10 @@ export function ReviewHero({ s }: { s: ReviewSummary }) {
   );
 }
 
-/** TRON / NEAR / Arc transfers: one wallet, one recipient, an exact decimal amount and chain-specific fee estimates. */
+/** Arc transfers: one wallet, one recipient, an exact decimal amount and the gas estimate (paid in USDC). */
 function extraTransfer(pre: any): ReviewSummary {
   const cells: [string, ReactNode][] = [["From", short(pre.from)]];
-  const est: [string, string, string][] = [
-    ["activation_fee_trx", "Account activation", "TRX"], ["bandwidth_fee_trx", "Bandwidth burn", "TRX"],
-    ["energy_fee_trx", "Energy burn", "TRX"], ["fee_limit_trx", "Fee limit (max)", "TRX"],
-    ["network_fee_trx_about", "Network fee (about)", "TRX"], ["storage_deposit_near", "Storage deposit", "NEAR"],
-    ["gas_fee_near_max", "Gas (max)", "NEAR"], ["gas_fee_usdc_max", "Gas (max)", "USDC"], ["ton_attached", "TON attached", "TON"],
-  ];
-  for (const [k, label, unit] of est) if (typeof pre[k] === "string" && (pre[k] !== "0" || k === "network_fee_trx_about")) cells.push([label, `${pre[k]} ${unit}`]);
+  if (typeof pre.gas_fee_usdc_max === "string") cells.push(["Gas (max)", `${pre.gas_fee_usdc_max} USDC`]);
   cells.push(["Platform fee", fee(pre.platform_fee)]);
   const next = pre.external_wallet
     ? ["Your wallet shows this transfer for approval and signs it; Helm never holds the key.", "Transfers can't be reversed."]

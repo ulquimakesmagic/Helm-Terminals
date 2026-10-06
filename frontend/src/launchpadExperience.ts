@@ -1,4 +1,4 @@
-export type ClaimMode = "in-app" | "external" | "automatic" | "none" | "auction";
+export type ClaimMode = "in-app" | "external" | "automatic" | "none";
 
 export interface LaunchpadExperience {
   mode: string;
@@ -123,22 +123,6 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     settingsTitle: "Pool and liquidity settings", rewardTitle: "Pool fees",
     rewardCopy: "Uniswap fees belong to the LP-token holder. They are not creator rewards, and burning LP tokens permanently gives up control of the position.",
     claimMode: "none", claimCopy: "There is no separate creator-fee claim for this pool.", accent: "#ff4db8",
-  },
-  sunpump: {
-    mode: "TRON bonding curve", title: "Launch on SunPump",
-    description: "Create directly on SunPump's TRON bonding curve with an optional TRX creator buy.",
-    features: ["TRON-native creation", "Optional creator buy", "SunSwap after graduation"],
-    settingsTitle: "SunPump curve settings", rewardTitle: "Creator rewards",
-    rewardCopy: "Helm's SunPump integration has no verified native creator-reward split.",
-    claimMode: "none", claimCopy: "No creator-fee claim is available through Helm for SunPump.", accent: "#ff2638",
-  },
-  "meme-cooking": {
-    mode: "Fair-launch auction", title: "Start a Meme.Cooking auction",
-    description: "Set the auction duration and caps. Participants deposit at one shared final price.",
-    features: ["Shared auction price", "Soft-cap refunds", "Optional hard-cap close"],
-    settingsTitle: "Auction settings", rewardTitle: "Auction settlement",
-    rewardCopy: "Auction deposits and refunds follow Meme.Cooking's settlement rules; Helm does not take a creator-reward share.",
-    claimMode: "auction", claimCopy: "After settlement, claim tokens or a refund for each participating wallet.", accent: "#00ec97",
   },
   tolly: {
     mode: "Locked Uniswap V3 pool", title: "Launch with Tolly",

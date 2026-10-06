@@ -168,7 +168,7 @@ export default function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" sub="Account security, wallets on TRON, NEAR, Arc and TON, the Telegram terminal, and where you're signed in." />
+      <PageHeader title="Settings" sub="Account security, wallets on Arc, the Telegram terminal, and where you're signed in." />
 
       <Card>
         <div className="row" style={{ gap: 16 }}>
@@ -186,7 +186,7 @@ export default function Settings() {
         <Telegram />
       </div>
 
-      <Card title="Wallets on TRON, NEAR, Arc and TON" icon="wallet" sub="Link your own wallet or add a Helm-managed one, rename, unlink, and see balances and network costs">
+      <Card title="Wallets on Arc" icon="wallet" sub="Link your own wallet or add a Helm-managed one, rename, unlink, and see balances and network costs">
         <WalletSettings />
       </Card>
 

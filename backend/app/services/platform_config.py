@@ -67,8 +67,8 @@ FEE_PATHS = [
             "claimers. The current Jupiter Studio route does not expose that split."},
     {"id": "creator_share_other", "label": "Creator-reward share: other launchpads", "setting": None,
      "networks": [], "supported": False, "lands": None,
-     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, SunPump, Tolly, "
-            "Meme.Cooking or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
+     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, Tolly "
+            "or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
             "rights and are not relabelled as creator rewards."},
     {"id": "partner_flap", "label": "Flap launchpad commission (tax tokens)", "setting": None,
      "networks": ["bsc", "robinhood", "base"], "supported": True, "lands": "configured",

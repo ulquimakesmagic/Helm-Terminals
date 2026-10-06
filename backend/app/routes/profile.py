@@ -77,8 +77,10 @@ async def profile(user: User = Depends(current_user), db: AsyncSession = Depends
     await db.commit()
     now = utcnow()
 
-    launches = (await db.execute(select(Launch).where(Launch.user_id == user.id)
-                                 .order_by(Launch.created_at.desc()))).scalars().all()
+    from ..chains.networks import offered
+
+    launches = [l for l in (await db.execute(select(Launch).where(Launch.user_id == user.id)
+                                             .order_by(Launch.created_at.desc()))).scalars().all() if offered(l.network)]
     own = [l for l in launches if not l.imported]
     count = lambda st: sum(1 for l in own if l.status == st)  # noqa: E731
 
@@ -283,6 +285,9 @@ async def public_profile(handle: str, db: AsyncSession = Depends(get_db)):
                              Launch.deployed_at.is_not(None))
         .order_by(Launch.deployed_at.desc()).limit(100)
     )).scalars().all()
+    from ..chains.networks import offered
+
+    launches = [l for l in launches if offered(l.network)]
     return {
         "display_name": p.display_name, "handle": p.handle, "bio": p.bio, "x_handle": p.x_handle,
         "telegram_handle": p.telegram_handle, "website": p.website, "avatar_hue": p.avatar_hue,

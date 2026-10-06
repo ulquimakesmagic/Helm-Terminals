@@ -21,10 +21,7 @@ segment), so their bytes differ; the artwork itself is unchanged.
 | `chains/bsc.svg` | github.com/bnb-chain/bnb-chain.github.io @ 001ecbc1 `docs/assets/bnb.svg` | BNB Chain's official docs site (docs.bnbchain.org) | b8ff1ce0… |
 | `chains/ethereum.svg` | github.com/ethereum/ethereum-org-website @ 027a25f9 `public/images/assets/svgs/eth-glyph-colored.svg` | Source of ethereum.org; the file is on ethereum.org/assets | 86ba3592… |
 | `chains/robinhood.svg` | cdn.robinhood.com/assets/generated_assets/hoodchain_docsite/feather-dark.svg | The feather symbol used by docs.robinhood.com/chain. Its brand guidelines (docs.robinhood.com/chain/brand-guidelines) reserve the standalone feather for compact spaces and approve black on Robin Neon #ccff00, which is how it's shown | 82ef124f… |
-| `chains/tron.jpg` | Supplied by the Helm owner (400×400 JPEG, unchanged) | Owner-supplied: white TRON mark on red | b75b7b57… |
-| `chains/near.jpg` | Supplied by the Helm owner (400×400 JPEG, unchanged) | Owner-supplied: green NEAR "N" on dark green | b1b67dda… |
 | `chains/arc.jpg` | Supplied by the Helm owner (400×400 JPEG, unchanged) | Owner-supplied: silver Arc arch on navy | 4f5bed3c… |
-| `chains/ton.jpg` | Supplied by the Helm owner (400×400 JPEG, unchanged) | Owner-supplied: white TON diamond on blue | 80008bf5… |
 
 ## Launchpads
 
@@ -53,10 +50,7 @@ the official sites couldn't be read from the build environment. They're shown un
 | `launchpads/stonkfun.jpg` | stonkfun | Pale-blue "S" of two linked shapes on near-black | bd1c5736… |
 | `launchpads/clanker.jpg` | clanker, clanker-robinhood | Three rising purple bars on white (as in Clanker's header) | ba0a7eb8… |
 | `launchpads/letsbonk.jpg` | letsbonk | Orange dog with a bat on an orange circle | 1dd633b8… |
-| `launchpads/sunpump.jpg` | sunpump | Owner-supplied (400×400 JPEG, unchanged): orange sun with sunglasses | 7a322e72… |
-| `launchpads/meme-cooking.jpg` | meme-cooking | Owner-supplied (400×400 JPEG, unchanged): chef dog on a teal badge | 269bdd1e… |
 | `launchpads/tolly.jpg` | tolly | Owner-supplied (400×400 JPEG, unchanged): lime castle bridge on black | db823fed… |
-| `launchpads/gaspump.jpg` | gaspump (planned) | Owner-supplied (400×400 JPEG, unchanged): red fuel pump on blue | 361b4b04… |
 
 Every supported launchpad now has a logo.
 

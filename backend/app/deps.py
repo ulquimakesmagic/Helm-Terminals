@@ -83,19 +83,6 @@ def valid_address_for(network: str, addr: str) -> bool:
     net = EXTRA_NETWORKS.get(network)
     if net is None:
         return False
-    if net.family == "tron":
-        from .chains import tron
-
-        return tron.valid_address(addr)
-    if net.family == "near":
-        from .chains import near
-
-        # Helm is on NEAR mainnet only: a .testnet account doesn't exist there, so a transfer to it would fail
-        return near.valid_account(addr) and not addr.strip().lower().endswith(".testnet")
-    if net.family == "ton":
-        from .chains import ton
-
-        return ton.valid_address(addr)
     from eth_utils import is_checksum_address  # Arc: EVM addresses, checksum enforced when mixed-case
 
     body = addr[2:] if addr[:2] == "0x" else ""

@@ -36,14 +36,13 @@ const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: bool
   "chains/solana": { fit: "pad" }, "chains/base": { fit: "fill", round: true }, "chains/bsc": { fit: "pad" },
   "chains/ethereum": { fit: "pad" }, "chains/robinhood": { fit: "pad", bg: "#ccff00" },
   // Owner-supplied square tiles with their own backgrounds: shown whole (contained), never cropped or recoloured.
-  "chains/tron": { fit: "fill" }, "chains/near": { fit: "fill" }, "chains/arc": { fit: "fill" }, "chains/ton": { fit: "fill" },
+  "chains/arc": { fit: "fill" },
   "launchpads/pumpfun": { fit: "pad" }, "launchpads/four-meme": { fit: "pad" }, "launchpads/meteora": { fit: "pad" },
   "launchpads/flap": { fit: "pad" }, "launchpads/uniswap": { fit: "fill" }, "launchpads/bankr": { fit: "fill" },
   "launchpads/printr": { fit: "fill" }, "launchpads/pons": { fit: "fill" }, "launchpads/surge": { fit: "fill" },
   "launchpads/anoncoin": { fit: "fill" }, "launchpads/bags": { fit: "fill" }, "launchpads/stonkfun": { fit: "fill" },
   "launchpads/clanker": { fit: "fill" }, "launchpads/letsbonk": { fit: "fill", round: true },
-  "launchpads/sunpump": { fit: "fill", round: true }, "launchpads/meme-cooking": { fit: "fill", round: true },
-  "launchpads/tolly": { fit: "fill" }, "launchpads/gaspump": { fit: "fill" },
+  "launchpads/tolly": { fit: "fill" },
 };
 
 const reported = new Set<string>();

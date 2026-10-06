@@ -8,9 +8,6 @@ import {
   Address, Callout, Card, Empty, Field, Icon, Loading, Modal, PageHeader, Spinner, TableWrap, useToast,
 } from "../components/ui";
 
-// TON Connect is only loaded when a TON network is opened.
-const TonConnectBox = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonConnectBox })));
-const TonSendDialog = lazy(() => import("../components/TonConnect").then((m) => ({ default: m.TonSendDialog })));
 const ExternalSendDialog = lazy(() => import("../components/WalletSettings").then((m) => ({ default: m.ExternalSendDialog })));
 
 /** Exact decimal string of a base-unit integer (no floats). */
@@ -21,9 +18,9 @@ function fmtRaw(raw: string, decimals: number): string {
   return frac ? `${whole}.${frac}` : whole;
 }
 
-/* TRON, NEAR, Arc and TON: what Helm supports on each, and the wallets, balances, transfers and history it offers there. */
+/* Arc: what Helm supports there, and the wallets, balances, transfers and history it offers. */
 
-interface Net { id: ExtraChainId; name: string; family: string; native: string; decimals: number; chain_id: number | null; network_id?: string | null;
+interface Net { id: ExtraChainId; name: string; family: string; native: string; decimals: number; chain_id: number | null;
   enabled: boolean; notes: string; capabilities: Record<string, string>; sources: string[]; explorer: Record<string, string> }
 interface Chains { core: { id: string; name: string; capabilities: Record<string, string> }[]; extra: Net[]; note: string }
 const CAP_LABEL: Record<string, string> = {
@@ -51,7 +48,7 @@ export default function Networks() {
   const current = enabled.find((n) => n.id === pick) ?? null;
   return (
     <>
-      <PageHeader title="Networks" sub="What Helm supports on TRON, NEAR, Arc and TON. Wallets, balances and transfers only: no launches, swaps or market data there yet." />
+      <PageHeader title="Networks" sub="What Helm supports on Arc: wallets, balances, transfers and Tolly launches." />
       <Card title="Capability matrix" icon="layers" flush sub={data.note}>
         <TableWrap><table className="rtable">
           <caption className="sr-only">What Helm supports on each network</caption>
@@ -60,7 +57,7 @@ export default function Networks() {
             <tr key={n.id}>
               <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={20} label /><b>{n.name}</b>
                 <span className="badge warn">mainnet · real money</span></span>
-                <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}{n.network_id ? ` · TON Connect network ${n.network_id}` : ""}</div></td>
+                <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}</div></td>
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
             </tr>))}</tbody>
@@ -75,7 +72,7 @@ export default function Networks() {
             <span className="small muted net-sources">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
           </div>))}</div>
       </details>
-      {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (
+      {enabled.length === 0 ? <Empty icon="globe" title="Arc isn't enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (
         <Card title="Use a network" icon="globe" sub="Pick one explicitly. These are mainnets: transfers move real money.">
           <div className="chips">{enabled.map((n) => (
             <button key={n.id} type="button" className={`chip ${current?.id === n.id ? "on" : ""}`} onClick={() => setSearch({ network: n.id })}>
@@ -106,15 +103,14 @@ function NetworkPanel({ net }: { net: Net }) {
     <div className="stack">
       <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
       <Card title={`${net.name} wallets`} icon="wallet" flush
-        actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
-        {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}
-        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={net.family === "ton" ? "Connect your own TON wallet to use it here." : <>Create one, or <Link to="/settings">link your own wallet in Settings</Link>.</>} /> : (
+        actions={<button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
+        {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={<>Create one, or <Link to="/settings">link your own wallet in Settings</Link>.</>} /> : (
           <TableWrap><table className="rtable">
             <caption className="sr-only">{net.name} wallets</caption>
             <thead><tr><th>Wallet</th><th>Address</th><th className="r">Balance</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{wallets.map((w) => (
               <tr key={w.id}>
-                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind === "connected" ? <span className="badge info">{net.family === "ton" ? "your wallet · TON Connect" : "your wallet"}</span> : w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
+                <td className="span"><b>{w.label || "Wallet"}</b> {w.kind === "connected" ? <span className="badge info">your wallet</span> : w.kind !== "managed" && <span className="badge">watch-only</span>}</td>
                 <td data-label="Address"><Address address={w.address} network={net.id} /></td>
                 <td className="r mono" data-label="Balance">{w.balance_native != null ? `${w.balance_native} ${net.native}` : <span className="muted">unavailable</span>}</td>
                 <td className="r act"><button className="btn sm ghost" onClick={() => setOpenId(openId === w.id ? null : w.id)}>{openId === w.id ? "Close" : "Open"}</button></td>
@@ -152,7 +148,7 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
               </div>))}
             {bal.errors.map((e: string) => <Callout key={e} tone="warn">{e}</Callout>)}
             <form className="row" onSubmit={(e) => { e.preventDefault(); if (add.trim()) { setTokens([...new Set([...tokens, add.trim()])]); setAdd(""); } }}>
-              <input className="mono grow" placeholder={net.family === "near" ? "Token contract account (e.g. usdt.tether-token.near)" : net.family === "ton" ? "Jetton master address" : "Token contract address"} value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
+              <input className="mono grow" placeholder="Token contract address" value={add} onChange={(e) => setAdd(e.target.value)} aria-label="Token contract" />
               <button className="btn sm secondary" type="submit">Add token</button>
             </form>
             <span className="muted small">Tokens are matched by contract address, never by ticker.</span>
@@ -172,13 +168,12 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
           </div>
         )}
       </Card>
-      {send && net.family === "ton" && <Suspense fallback={null}><TonSendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
-      {send && net.family !== "ton" && wallet.kind === "connected" && <Suspense fallback={null}><ExternalSendDialog
+      {send && wallet.kind === "connected" && <Suspense fallback={null}><ExternalSendDialog
         w={{ id: wallet.id, network: net.id, family: net.family, network_name: net.name, enabled: true, address: wallet.address,
           kind: wallet.kind, label: wallet.label, explorer: net.explorer.account + wallet.address, native: { asset: net.native, amount: bal?.native?.amount ?? "" },
           tokens: (bal?.tokens ?? []).map((t: any) => ({ symbol: t.symbol, address: t.address, amount: t.amount })), fees: null, error: null, can_send: true, signer: "Your wallet" }}
         onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} /></Suspense>}
-      {send && net.family !== "ton" && wallet.kind !== "connected" && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
+      {send && wallet.kind !== "connected" && <SendDialog net={net} wallet={wallet} tokens={bal?.tokens ?? []} onClose={() => setSend(false)} onDone={() => { setSend(false); load(); onChanged(); }} />}
     </div>
   );
 }
@@ -202,10 +197,10 @@ function SendDialog({ net, wallet, tokens, onClose, onDone }: { net: Net; wallet
         <Field label="Asset"><select value={token} onChange={(e) => setToken(e.target.value)}>
           <option value="">{net.native} (native)</option>
           {tokens.map((t) => <option key={t.address} value={t.address}>{t.symbol} · {short(t.address)}</option>)}</select></Field>
-        <Field label="Recipient" hint={net.family === "near" ? "A named account (alice.near) or a 64-character implicit account" : net.family === "tron" ? "A TRON address starting with T" : "An 0x address on Arc"}>
+        <Field label="Recipient" hint="An 0x address on Arc">
           <input className="mono" value={to} onChange={(e) => setTo(e.target.value)} spellCheck={false} autoFocus /></Field>
         <Field label="Amount" hint={asset ? `Holds ${asset.amount} ${asset.symbol}` : undefined}><input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-        <span className="muted small">The next step shows the network costs ({net.family === "tron" ? "bandwidth, energy and any account activation" : net.family === "near" ? "gas and any storage deposit" : "gas, paid in USDC"}) and needs your 2FA code.</span>
+        <span className="muted small">The next step shows the network cost (gas, paid in USDC) and needs your 2FA code.</span>
       </div>
     </Modal>
   );
