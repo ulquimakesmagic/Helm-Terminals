@@ -130,3 +130,16 @@ async def test_sweep_moves_stable_then_coin(client, fake_rpc):
     assert job["status"] == "confirmed", job
     kinds = [t["kind"] for t in job["transactions"]]
     assert kinds == ["sweep_stable", "sweep_stable", "sweep", "sweep"]  # stablecoins first, then the coin
+
+
+async def test_sweep_warns_when_a_wallet_has_stablecoins_but_no_gas(client, fake_rpc):
+    """Regression: the gas warning used a list that didn't exist yet, so the preview failed as "couldn't read
+    balances" instead of saying which wallet needs gas."""
+    h = await signup(client)
+    ws = (await client.post("/wallets", json={"count": 3}, headers=h)).json()
+    dest, a = ws[0], ws[1]
+    fake_rpc.tokens[a["address"]] = 3_000_000
+    fake_rpc.balances[a["address"]] = 0
+    r = await client.post("/wallets/sweep", json={"from_wallet_ids": [a["id"]], "to_wallet_id": dest["id"]}, headers=h)
+    assert r.status_code == 200, r.text
+    assert any("needs about" in w and "network fee" in w for w in r.json()["preflight"]["warnings"])

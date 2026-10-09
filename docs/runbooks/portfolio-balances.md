@@ -1,13 +1,12 @@
 # Portfolio balance troubleshooting
 
-The dashboard counts every managed wallet returned by Helm, including wallets on TRON, NEAR and Arc.
-Connected and watch-only wallets are excluded and identified separately. TON native reads are supported by
-the balance service, but Helm currently offers connected/watch-only TON wallets rather than managed TON keys.
+The dashboard counts every managed wallet returned by Helm, including wallets on Arc. Connected and
+watch-only wallets are excluded and identified separately. TRON, NEAR and TON were removed on 6 October 2026:
+wallets saved on them stay in the database but are not listed, read or counted.
 
-The portfolio covers native coins plus the stablecoins listed in the chain table. TRON, NEAR and TON token
-balances are not included in this aggregate. NEAR shows available balance after storage. Arc's native USDC is
+The portfolio covers native coins plus the stablecoins listed in the chain table. Arc's native USDC is
 counted once in the stablecoin total, not again through its ERC-20 interface or in the network-coin total.
-USDC and USDG use an explicit $1 assumption; native prices come from DefiLlama. Missing or old prices are not
+USDC and USDG use an explicit $1 assumption; native prices come from Codex. Missing or old prices are not
 silently reused as fresh values. A zero native balance needs no price to be valued at zero.
 
 ## Incomplete balances

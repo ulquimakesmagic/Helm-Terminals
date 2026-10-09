@@ -24,8 +24,6 @@ export const LAUNCHPAD_FORMS: Record<string, Profile> = {
   pons: { sections: [{ title: "Advanced · Creator tax", description: "Optional creator tax for the Pons V2 ETH route. The dev wallet is the recipient.", keys: ["creator_tax_pct"] }, execution], scope: "Pons V2 with ETH pairing. Custom recipients, holder fee sharing, other paired assets and snipe exemptions are not configured by Helm.", pair: "ETH", funding: "Developer buy" },
   "four-meme": { sections: [{ title: "Classification", description: "Choose the category displayed for this token.", keys: ["label"] }, execution], scope: "Helm uses the BNB launch route. Open Mode, alternative raised tokens and configurable tax tokens are not supported here.", pair: "BNB", funding: "Creator buy" },
   "uniswap-v2": { sections: [{ title: "Supply & liquidity ownership", description: "Decide how much supply enters the pool and who can withdraw liquidity.", keys: ["lp_share_pct", "lp_tokens"] }, execution], scope: "Helm creates a token and a V2 ETH pool. This is not the full Uniswap position builder. Keeping LP tokens leaves liquidity withdrawable; burning them is irreversible.", pair: "ETH", funding: "Starting liquidity" },
-  sunpump: { sections: [], scope: "The current integration publishes name and ticker on-chain. Artwork remains in Helm. Post-graduation SunSwap trading is not routed by Helm.", pair: "TRX", funding: "Creator buy" },
-  "meme-cooking": { sections: [{ title: "Auction duration", description: "The auction starts when its creation confirms. Scheduled starts are not supported here.", keys: ["duration_h"] }, { title: "Launch conditions", description: "The soft cap is the minimum to launch. A nonzero hard cap must be at least the soft cap; reaching it ends the auction early.", keys: ["soft_cap_near", "hard_cap_near"] }], scope: "Timed NEAR auction with an optional initial deposit. Custom start dates and team allocations are not configured here. Deposits are not immediate token purchases.", pair: "NEAR", funding: "Your auction deposit" },
   tolly: { sections: [], scope: "Helm uses Tolly's fixed USDC pool preset with locked liquidity. The protocol limits each wallet to 3% of supply for the first five minutes.", pair: "USDC", funding: "Creator buy" },
 };
 export function launchpadForm(id: string): Profile {
@@ -49,7 +47,5 @@ export function validateLaunchFields(fields: LaunchField[], values: Record<strin
       if (f.max !== undefined && Number(v) > f.max) return `${name} must be at most ${f.max}.`;
     }
   }
-  const hard = Number(values.hard_cap_near), soft = Number(values.soft_cap_near);
-  if (hard > 0 && hard < soft) return "The hard cap must be at least the soft cap, or 0 for no hard cap.";
   return null;
 }

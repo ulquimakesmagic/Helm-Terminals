@@ -151,7 +151,11 @@ async def _limits(db: AsyncSession, ids: list[str]) -> dict[str, AutomationLimit
 
 
 async def _owned_launch(db: AsyncSession, user: User, launch_id: str) -> Launch:
+    from ..chains.networks import offered
+
     launch = (await db.execute(select(Launch).where(Launch.id == launch_id, Launch.user_id == user.id))).scalar_one_or_none()
+    if launch is not None and not offered(launch.network):
+        launch = None
     if not launch:
         raise HTTPException(404, "launch not found")
     return launch

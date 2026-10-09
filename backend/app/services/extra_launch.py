@@ -1,4 +1,4 @@
-"""Deploying and trading launches on SunPump (TRON), Meme.Cooking (NEAR) and Tolly (Arc).
+"""Deploying and trading launches on Tolly (Arc).
 
 Same shape as Helm's other launches: a preview (the adapter's plan, hashed), a confirmation with the user's 2FA, then
 a job that runs the plan's steps with each wallet's own key and records every transaction. Helm takes no fee here.
@@ -18,7 +18,7 @@ from ..services import extra_chains as xc
 from ..services.executor import SubmitResult, _finish, _record
 from ..services.preflight import build_preflight
 
-UNITS = {"tron": 6, "near": 24, "evm": 18}
+UNITS = {"evm": 18}
 
 
 def native_raw(network: str, amount: float) -> int:
@@ -33,8 +33,6 @@ def unit(network: str) -> str:
 def ctx_for(ex, network: str, w: Wallet) -> PadContext:
     fam = EXTRA_NETWORKS[network].family
     return PadContext(address=w.address, signer_ref=w.signer_ref or "", signer=ex.signer,
-                      tron=xc.tron_client(network) if fam == "tron" else None,
-                      near=xc.near_client(network) if fam == "near" else None,
                       evm=ex.evm(network) if fam == "evm" else None)
 
 
@@ -133,11 +131,8 @@ async def _token_balance(ex, network: str, token: str, w: Wallet) -> int:
 
 async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -> dict:
     check_enabled(l.network)
-    params = dict(l.launchpad_params or {})
     plans: list[tuple[Wallet, PadPlan]] = []
     warnings: list[str] = []
-    if l.launchpad == "meme-cooking" and params.get("meme_id") is None:
-        raise HTTPException(409, "this launch's Meme.Cooking auction isn't known yet; refresh once it has confirmed")
     for w in wallets:
         if w.network != l.network:
             raise HTTPException(400, f"{w.address} is a {w.network} wallet; this token is on {l.network}")
@@ -145,15 +140,12 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
         try:
             if body.side == "buy":
                 amount = native_raw(l.network, body.amount)
-            elif l.launchpad == "meme-cooking":
-                amount = await adapter.my_deposit(ctx, l.network, params["meme_id"]) * int(round(body.amount * 100)) // 10_000
             else:
                 amount = await _token_balance(ex, l.network, l.mint_address, w) * int(round(body.amount * 100)) // 10_000
             if amount <= 0:
-                warnings.append(f"{w.address} has nothing to {'withdraw' if l.launchpad == 'meme-cooking' else 'sell'}.")
+                warnings.append(f"{w.address} has nothing to sell.")
                 continue
-            kw = {"meme_id": params.get("meme_id")} if l.launchpad == "meme-cooking" else {}
-            plan = await adapter.plan_trade(ctx, l.network, l.mint_address, body.side, amount, body.slippage_pct, **kw)
+            plan = await adapter.plan_trade(ctx, l.network, l.mint_address, body.side, amount, body.slippage_pct)
         except AdapterError as e:
             raise HTTPException(400, str(e))
         except HTTPException:
@@ -164,8 +156,7 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
         plans.append((w, plan))
     pf = build_preflight("trade", {
         "launch_id": l.id, "network": l.network, "token": l.mint_address, "side": body.side, "amount": body.amount,
-        "amount_unit": f"{unit(l.network)} per wallet" if body.side == "buy" else
-        ("% of each wallet's deposit" if l.launchpad == "meme-cooking" else "% of each wallet's tokens"),
+        "amount_unit": f"{unit(l.network)} per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w, _ in plans], "slippage_pct": body.slippage_pct, "platform_fee": "none",
         "per_wallet": [p.summary for _, p in plans]}, warnings)
     pf["preflight"]["estimates"] = [p.display for _, p in plans]
@@ -192,11 +183,8 @@ async def claim(l: Launch, body, user, db, ex, w: Wallet, adapter) -> dict:
     check_enabled(l.network)
     if not hasattr(adapter, "plan_claim"):
         raise HTTPException(400, f"{adapter.id} has nothing to claim")
-    if (l.launchpad_params or {}).get("meme_id") is None:
-        raise HTTPException(409, "this launch's Meme.Cooking auction isn't known yet")
     try:
-        plan = await adapter.plan_claim(ctx_for(ex, l.network, w), l.network, l.mint_address,
-                                        (l.launchpad_params or {}).get("meme_id"))
+        plan = await adapter.plan_claim(ctx_for(ex, l.network, w), l.network, l.mint_address)
     except AdapterError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -223,7 +211,7 @@ async def workspace(l: Launch, ex, links, wallets: list[Wallet]) -> dict:
     out_wallets, meta, err = [], None, None
     net = EXTRA_NETWORKS[l.network]
     try:
-        if l.mint_address and l.launchpad != "meme-cooking":
+        if l.mint_address:
             meta = await xc.token_metadata(ex, l.network, l.mint_address, l.mint_address)
         for w, lk in zip(wallets, links):
             native = await xc.native_balance(ex, l.network, w.address)

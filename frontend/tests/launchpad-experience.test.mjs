@@ -5,7 +5,7 @@ import { LAUNCHPAD_EXPERIENCES, launchpadExperience } from "../src/launchpadExpe
 
 const IMPLEMENTED = [
   "pumpfun", "letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "pons", "four-meme",
-  "uniswap-v2", "meteora-dbc", "clanker", "clanker-robinhood", "sunpump", "meme-cooking", "tolly",
+  "uniswap-v2", "meteora-dbc", "clanker", "clanker-robinhood", "tolly",
 ];
 
 test("every implemented launchpad has a specific launch experience", () => {
@@ -22,7 +22,6 @@ test("claim controls reflect the adapters Helm actually supports", () => {
     assert.equal(launchpadExperience(id).claimMode, "in-app", id);
   assert.equal(launchpadExperience("letsbonk").claimMode, "external");
   assert.equal(launchpadExperience("flap-sh").claimMode, "automatic");
-  assert.equal(launchpadExperience("meme-cooking").claimMode, "auction");
-  for (const id of ["four-meme", "uniswap-v2", "sunpump", "tolly"])
+  for (const id of ["four-meme", "uniswap-v2", "tolly"])
     assert.equal(launchpadExperience(id).claimMode, "none", id);
 });

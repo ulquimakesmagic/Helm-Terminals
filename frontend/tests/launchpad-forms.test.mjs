@@ -2,12 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { groupedFields, validateLaunchFields } from "../src/launchpadForms.ts";
 
-test("auction caps and optional zero hard cap are validated", () => {
-  const fields = [{ key: "soft_cap_near", type: "number", min: 1 }, { key: "hard_cap_near", type: "number", min: 0 }];
-  assert.equal(validateLaunchFields(fields, { soft_cap_near: 100, hard_cap_near: 0 }), null);
-  assert.equal(validateLaunchFields(fields, { soft_cap_near: 100, hard_cap_near: 100 }), null);
-  assert.match(validateLaunchFields(fields, { soft_cap_near: 100, hard_cap_near: 50 }), /hard cap/);
-});
 test("invalid numeric input and unsupported selections cannot produce a valid draft", () => {
   const number = [{ key: "dev_buy_sol", type: "number", min: 0, max: 0 }];
   for (const value of ["", null, undefined, NaN, Infinity, -1, 1]) assert.ok(validateLaunchFields(number, { dev_buy_sol: value }));

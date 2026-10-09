@@ -40,21 +40,14 @@ export const CHAINS: Record<ChainId, Chain> = {
 
 export const CHAIN_ORDER: ChainId[] = ["solana", "base", "bsc", "robinhood", "ethereum"];
 
-/** TRON, NEAR and Arc: wallets, balances and transfers only, when the server enables them (GET /chains).
- * Explorer paths for NEAR (nearblocks) and Arc are the explorers' standard ones. */
-export type ExtraChainId = "tron" | "near" | "arc" | "ton";
+/** Arc: wallets, balances, transfers and Tolly launches, when the server enables it (GET /chains). */
+export type ExtraChainId = "arc";
 export const EXTRA_CHAINS: Record<ExtraChainId, Chain> = {
-  tron: { id: "tron", name: "TRON", short: "TRX", native: "TRX", color: "#ff060a",
-    explorer: { account: "https://tronscan.org/address/", token: "https://tronscan.org/token20/", tx: "https://tronscan.org/transaction/" } },
-  near: { id: "near", name: "NEAR", short: "NEAR", native: "NEAR", color: "#00ec97",
-    explorer: { account: "https://nearblocks.io/address/", token: "https://nearblocks.io/token/", tx: "https://nearblocks.io/txns/" } },
   arc: { id: "arc", name: "Arc", short: "ARC", native: "USDC", color: "#7b61ff",
     explorer: { account: "https://explorer.arc.io/address/", token: "https://explorer.arc.io/token/", tx: "https://explorer.arc.io/tx/" } },
-  ton: { id: "ton", name: "TON", short: "TON", native: "TON", color: "#0098ea",
-    explorer: { account: "https://tonviewer.com/", token: "https://tonviewer.com/", tx: "https://tonviewer.com/transaction/" } },
 };
 /** Every chain Helm can show, core first, in display order. Lists driven by launchpads or wallets filter this. */
-export const ALL_CHAIN_ORDER: string[] = [...CHAIN_ORDER, "tron", "near", "arc", "ton"];
+export const ALL_CHAIN_ORDER: string[] = [...CHAIN_ORDER, "arc"];
 
 export const isExtraChain = (id: string | null | undefined): id is ExtraChainId => !!id && id in EXTRA_CHAINS;
 
@@ -70,18 +63,18 @@ export const PAD_NAMES: Record<string, string> = {
   pumpfun: "Pump.fun", letsbonk: "LetsBonk", "meteora-dbc": "Meteora DBC", bags: "Bags", printr: "Printr",
   surge: "Surge", anoncoin: "Anoncoin", stonkfun: "Stonk.fun", clanker: "Clanker", bankr: "Bankr",
   "four-meme": "Four.meme", "flap-sh": "Flap.sh", "flap-sh-base": "Flap.sh", "flap-sh-robinhood": "Flap.sh", "clanker-robinhood": "Clanker", pons: "Pons", "uniswap-v2": "Uniswap V2",
-  sunpump: "SunPump", "meme-cooking": "Meme.Cooking", tolly: "Tolly", gaspump: "GasPump",
+  tolly: "Tolly",
 };
 export const padName = (id: string) => PAD_NAMES[id] ?? id;
 
 export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string }
 
 /** Launchpads that need a token image to launch. */
-export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "four-meme", "meteora-dbc", "meme-cooking", "tolly"]);
+export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "four-meme", "meteora-dbc", "tolly"]);
 
 /** Launchpads grouped by chain, in display order. */
 export function padsByChain(pads: Pad[]) {
-  const order: string[] = [...CHAIN_ORDER, "tron", "near", "arc", "ton"];
+  const order: string[] = [...CHAIN_ORDER, "arc"];
   return order.map((c) => ({ chain: chainOf(c), pads: pads.filter((p) => p.network === c) })).filter((g) => g.pads.length);
 }
 

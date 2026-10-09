@@ -1,9 +1,7 @@
-"""Wallet settings for TRON, NEAR, Arc and TON: link your own wallet, rename, disconnect, see balances and what fees
+"""Wallet settings for Arc: link your own wallet, rename, disconnect, see balances and what fees
 or network resources a transfer needs, and send from a linked wallet with your wallet's own approval.
 
-Linking proves ownership with a signature over a Helm challenge (TRON: TronLink signMessageV2; Arc: EIP-191
-personal_sign; NEAR: NEP-413 signMessage with a full-access key; TON: TON Connect ton_proof, in routes/ton.py). The
-challenge is bound to the Helm user, the network, the address and the site, and expires in 15 minutes. Linking a
+Linking proves ownership with an EIP-191 personal_sign signature over a Helm challenge. The challenge is bound to the Helm user, the network, the address and the site, and expires in 15 minutes. Linking a
 wallet authorises nothing: every transfer is previewed in Helm, recorded, then approved and signed in the wallet.
 
 POST   /chains/{network}/wallet-proof/challenge     the message to sign
@@ -18,8 +16,13 @@ POST   /chains/{network}/external/jobs/{id}/declined declined in the wallet: not
 POST   /chains/{network}/external/jobs/{id}/unknown  the wallet errored after approval: it may have been sent
 """
 
+import hashlib
+import hmac
+import os
+import struct
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -28,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError
 from ..chains.networks import EXTRA_NETWORKS, KNOWN_TOKENS, extra_enabled, require_enabled
+from ..config import get_settings
 from ..db import get_db
 from ..deps import SpendConfirm, begin_spend, current_user, find_replay, get_executor, log_activity, owned_wallet, run_job, \
     valid_address_for
@@ -35,19 +39,48 @@ from ..models import Funder, Job, LaunchWallet, Transaction, User, Wallet
 from ..services import extra_chains as xc
 from ..services.executor import Executor, SubmitResult, _finish, _record
 from ..services.preflight import build_preflight
-from .ton import PROOF_TTL_S, check_payload, make_payload, proof_domains
 
 router = APIRouter()
 
-SIGNED_FAMILIES = ("tron", "near", "evm")  # TON links through TON Connect (routes/ton.py)
+PROOF_TTL_S = 900
 _used_nonces: dict[str, float] = {}  # payload -> expiry: each challenge links once
 
 
+def _mac(user_id: str, network: str, head: bytes) -> bytes:
+    # The "ton-proof|" tag predates TON's removal; kept so challenges issued before the change still verify.
+    key = get_settings().secret_key.encode()
+    return hmac.new(key, b"ton-proof|" + user_id.encode() + b"|" + network.encode() + b"|" + head, hashlib.sha256).digest()[:16]
+
+
+def make_payload(user_id: str, network: str, now: float | None = None) -> str:
+    head = struct.pack(">Q", int(now or time.time())) + os.urandom(8)
+    return (head + _mac(user_id, network, head)).hex()
+
+
+def check_payload(payload: str, user_id: str, network: str, now: float | None = None) -> None:
+    try:
+        raw = bytes.fromhex(payload)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "unknown sign-in request")
+    if len(raw) != 32 or not hmac.compare_digest(raw[16:], _mac(user_id, network, raw[:16])):
+        raise HTTPException(400, "this sign-in request wasn't issued to you")
+    if (now or time.time()) - struct.unpack(">Q", raw[:8])[0] > PROOF_TTL_S:
+        raise HTTPException(400, "the sign-in request expired; connect again")
+
+
+def proof_domains() -> set[str]:
+    s = get_settings()
+    if s.ton_proof_domains.strip():
+        return {d.strip() for d in s.ton_proof_domains.split(",") if d.strip()}
+    hosts = {"helmterminals.xyz", "www.helmterminals.xyz"}
+    for o in (s.cors_origins or "").split(","):
+        if o.strip():
+            hosts.add(urlparse(o.strip()).netloc)
+    return hosts
+
+
 def _net(network: str):
-    net = require_enabled(network)
-    if net.family not in SIGNED_FAMILIES:
-        raise HTTPException(400, f"{net.name} wallets link through TON Connect")
-    return net
+    return require_enabled(network)
 
 
 def canonical(network: str, address: str) -> str:
@@ -57,7 +90,7 @@ def canonical(network: str, address: str) -> str:
         from eth_utils import to_checksum_address
 
         return to_checksum_address(a)
-    return a.lower() if fam == "near" else a
+    return a
 
 
 def _checked(network: str, address: str) -> str:
@@ -104,7 +137,6 @@ class VerifyBody(BaseModel):
     domain: str = Field(max_length=120)
     nonce: str = Field(max_length=64)
     signature: str = Field(max_length=200)
-    public_key: str | None = Field(default=None, max_length=100)  # NEAR: "ed25519:<base58>"
     chain_id: int | None = None  # Arc: the chain the wallet was on when it signed
     label: str = Field(default="", max_length=80)
 
@@ -126,16 +158,7 @@ async def verify(network: str, body: VerifyBody, user: User = Depends(current_us
     address = _checked(network, body.address)
     check_payload(body.nonce, user.id, network)
     message = proof_message(body.domain, network, address, body.nonce)
-    if net.family == "tron":
-        from ..chains import tron
-
-        try:
-            signer = tron.recover_address(tron.message_hash_v2(message), body.signature)
-        except AdapterError as e:
-            raise HTTPException(400, str(e))
-        if signer != address:
-            raise HTTPException(400, "the signature was made by a different TRON account")
-    elif net.family == "evm":
+    if net.family == "evm":
         if body.chain_id != net.chain_id:
             raise HTTPException(400, f"the wallet is on chain {body.chain_id}, not {net.name} ({net.chain_id}); "
                                      "switch networks in the wallet and try again")
@@ -148,21 +171,6 @@ async def verify(network: str, body: VerifyBody, user: User = Depends(current_us
             raise HTTPException(400, "the signature couldn't be read")
         if signer.lower() != address.lower():
             raise HTTPException(400, "the signature was made by a different account")
-    else:  # NEAR, NEP-413
-        from ..chains import near
-
-        if not body.public_key:
-            raise HTTPException(400, "the wallet didn't return the key it signed with")
-        try:
-            pk = near.verify_nep413(message, bytes.fromhex(body.nonce), body.domain, body.public_key, body.signature)
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-        try:
-            key = await xc.near_client(network).access_key(address, pk)
-        except AdapterError:
-            raise HTTPException(400, "that key isn't an access key of this NEAR account")
-        if key.get("permission") != "FullAccess":
-            raise HTTPException(400, "NEAR ownership needs a full-access key (NEP-413)")
     _spend_nonce(body.nonce)
     w = (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.network == network,
                                                func.lower(Wallet.address) == address.lower()))).scalar_one_or_none()
@@ -207,7 +215,7 @@ async def disconnect(wallet_id: str, user: User = Depends(current_user), db: Asy
 async def remove(wallet_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     w = await owned_wallet(db, user, wallet_id, managed=False)
     if w.kind != "watch" or w.network not in EXTRA_NETWORKS:
-        raise HTTPException(400, "only watch-only TRON, NEAR, Arc or TON wallets can be removed here")
+        raise HTTPException(400, "only watch-only Arc wallets can be removed here")
     for model, col in ((Transaction, Transaction.wallet_id), (LaunchWallet, LaunchWallet.wallet_id),
                        (Funder, Funder.wallet_id)):
         if (await db.execute(select(func.count()).select_from(model).where(col == w.id))).scalar():
@@ -223,31 +231,11 @@ async def remove(wallet_id: str, user: User = Depends(current_user), db: AsyncSe
 async def _fees(ex, network: str, address: str) -> dict:
     """What a transfer from this wallet costs, in the network's own terms."""
     net = EXTRA_NETWORKS[network]
-    if net.family == "tron":
-        c = xc.tron_client(network)
-        r = await c.resources(address)
-        p = await c.chain_parameters()
-        return {"kind": "resources", "bandwidth_available": r["free_bandwidth"] + r["staked_bandwidth"],
-                "energy_available": r["energy"],
-                "trx_transfer": "about 270 bandwidth (free up to 600 a day), else about "
-                                f"{xc.human(270 * p.get('getTransactionFee', 1000), 6)} TRX burned",
-                "token_transfer": "about 65,000 energy; without staked energy about "
-                                  f"{xc.human(65_000 * p.get('getEnergyFee', 100), 6)} TRX is burned",
-                "activation": "sending TRX to a new address costs 1 TRX to activate it"}
-    if net.family == "near":
-        from ..chains import near
-
-        acct = await xc.near_client(network).account(address)
-        locked = int((acct or {}).get("storage_usage", 0)) * 10**19
-        return {"kind": "gas_and_storage", "storage_locked": xc.human(locked, 24),
-                "transfer": "gas is about 0.0003 NEAR; storage keeps part of the balance locked",
-                "token_transfer": "about 0.003 NEAR of gas, plus 0.00125 NEAR if the recipient isn't registered"}
     if net.family == "evm":
         fee = await ex.evm(network).max_gas_cost(21_000)
         return {"kind": "gas", "transfer": f"up to {xc.human(fee, 18)} USDC of gas (Arc charges gas in USDC)",
                 "token_transfer": f"up to {xc.human(fee * 90_000 // 21_000, 18)} USDC of gas"}
-    return {"kind": "ton", "transfer": "about 0.005 TON of network fees",
-            "token_transfer": "0.05 TON attached to a Jetton transfer; the unused part comes back"}
+    raise AdapterError(f"no fee model for {net.name}")
 
 
 @router.get("/chains/wallets/overview")
@@ -264,7 +252,7 @@ async def overview(user: User = Depends(current_user), db: AsyncSession = Depend
                "label": w.label, "explorer": net.explorer["account"] + w.address, "native": None, "tokens": [],
                "fees": None, "error": None,
                "can_send": w.kind == "managed" or (w.kind == "connected"), "signer": {
-                   "managed": "Helm signer", "connected": "Your wallet" if net.family != "ton" else "TON Connect",
+                   "managed": "Helm signer", "connected": "Your wallet",
                    "watch": "Watch-only"}.get(w.kind, w.kind)}
         if w.network in enabled:
             try:
@@ -279,10 +267,7 @@ async def overview(user: User = Depends(current_user), db: AsyncSession = Depend
                 out["error"] = (str(e) if isinstance(e, AdapterError) else type(e).__name__)[:160]
         wallets.append(out)
     networks = [{"id": n.id, "name": n.name, "family": n.family, "enabled": n.id in enabled,
-                 "chain_id": n.chain_id, "network_id": n.network_id, "native": n.native,
-                 "managed": n.family != "ton", "external": {"tron": "TronLink", "evm": "Browser EVM wallet",
-                                                            "near": "NEAR wallet (NEAR Connect)",
-                                                            "ton": "TON Connect"}[n.family]}
+                 "chain_id": n.chain_id, "native": n.native, "managed": True, "external": "Browser EVM wallet"}
                 for n in EXTRA_NETWORKS.values()]
     return {"networks": networks, "wallets": wallets}
 
@@ -298,15 +283,10 @@ class ExternalTransferBody(SpendConfirm):
 
 
 async def _plan(ex, network: str, w: Wallet, to: str, token: str | None, amount: str) -> dict:
-    from .chains import _arc_plan, _near_plan, _token_ok, _tron_plan
+    from .chains import _arc_plan, _token_ok
 
-    net = EXTRA_NETWORKS[network]
     token = _token_ok(network, token) if token else None
     try:
-        if net.family == "tron":
-            return await _tron_plan(network, w, to, token, amount), token
-        if net.family == "near":
-            return await _near_plan(network, w, to, token, amount), token
         return await _arc_plan(ex, network, w, to, token, amount), token
     except AdapterError as e:
         raise HTTPException(502, str(e))
@@ -341,14 +321,7 @@ async def external_transfer(network: str, body: ExternalTransferBody, user: User
         return pf
     if plan["warnings"]:
         raise HTTPException(400, plan["warnings"][0])
-    if net.family == "tron":
-        try:
-            tx = await plan["unsigned"]()
-        except AdapterError as e:
-            raise HTTPException(502, str(e))
-        request = {"tx": tx}
-    else:
-        request = plan["wallet_tx"]
+    request = plan["wallet_tx"]
     job, _ = await begin_spend(db, user, body, pf, kind, None,
                                {**pf["preflight"], "kind": kind, "wallet_request": request})
     return {"job_id": job.id, "status": job.status, "wallet_request": request if job.status == "pending" else None}
@@ -363,40 +336,7 @@ async def _external_job(db: AsyncSession, user: User, network: str, job_id: str)
 
 
 class SignedBody(BaseModel):
-    signed_tx: dict | None = None  # TRON: the transaction TronLink signed
-    tx_hash: str | None = Field(default=None, max_length=100)  # Arc / NEAR: what the wallet sent
-
-
-def _near_actions(tx: dict) -> list:
-    """NEAR actions from an indexed transaction, in comparable form."""
-    import base64
-    import json
-
-    out = []
-    for a in tx.get("actions") or []:
-        if isinstance(a, dict) and "Transfer" in a:
-            out.append(("Transfer", str(a["Transfer"]["deposit"])))
-        elif isinstance(a, dict) and "FunctionCall" in a:
-            f = a["FunctionCall"]
-            try:
-                args = json.loads(base64.b64decode(f.get("args") or ""))
-            except ValueError:
-                args = None
-            out.append(("FunctionCall", f.get("method_name"), args, str(f.get("deposit"))))
-        else:
-            out.append(("Other",))
-    return out
-
-
-def _expected_near(req: dict) -> list:
-    out = []
-    for a in req["actions"]:
-        if a["type"] == "Transfer":
-            out.append(("Transfer", a["params"]["deposit"]))
-        else:
-            p = a["params"]
-            out.append(("FunctionCall", p["methodName"], p["args"], p["deposit"]))
-    return out
+    tx_hash: str | None = Field(default=None, max_length=100)  # what the wallet sent
 
 
 @router.post("/chains/{network}/external/jobs/{job_id}/signed")
@@ -410,75 +350,43 @@ async def signed(network: str, job_id: str, body: SignedBody, user: User = Depen
     sender = j.params["from"]
     w = (await db.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.network == network,
                                                Wallet.address == sender))).scalar_one_or_none()
-    if net.family == "tron":
-        from ..chains import tron
+    h = (body.tx_hash or "").strip()
+    if not h:
+        raise HTTPException(400, "the wallet didn't return a transaction")
+    if (await db.execute(select(Transaction.id).where(func.lower(Transaction.signature) == h.lower()))).first():
+        raise HTTPException(400, "that transaction is already recorded for another transfer")
+    created = j.created_at.replace(tzinfo=timezone.utc).timestamp() if j.created_at else 0
+    if net.family != "evm":
+        raise HTTPException(400, f"{net.name} transfers can't be followed")
+    if not (h.startswith("0x") and len(h) == 66):
+        raise HTTPException(400, "that isn't a transaction hash")
 
-        s = body.signed_tx or {}
-        if s.get("txID") != req["tx"]["txID"] or s.get("raw_data_hex") != req["tx"]["raw_data_hex"]:
-            raise HTTPException(400, "the wallet signed a different transaction than the one reviewed")
+    async def follow() -> SubmitResult:
+        rpc = ex.evm(network).rpc
         try:
-            who = tron.signer_of(s)
-        except (AdapterError, KeyError, ValueError) as e:
-            raise HTTPException(400, f"the signature couldn't be checked: {e}")
-        if who != sender:
-            raise HTTPException(400, "the transaction was signed by a different account")
-        signed_tx = {**req["tx"], "signature": list(s.get("signature") or [])}  # our transaction, their signature
-
-        async def follow() -> SubmitResult:
-            txid, status, err, _ = await tron.submit_signed(xc.tron_client(network), signed_tx)
-            return SubmitResult(txid, status, err)
-    else:
-        h = (body.tx_hash or "").strip()
-        if not h:
-            raise HTTPException(400, "the wallet didn't return a transaction")
-        if (await db.execute(select(Transaction.id).where(func.lower(Transaction.signature) == h.lower()))).first():
-            raise HTTPException(400, "that transaction is already recorded for another transfer")
-        created = j.created_at.replace(tzinfo=timezone.utc).timestamp() if j.created_at else 0
-        if net.family == "evm":
-            if not (h.startswith("0x") and len(h) == 66):
-                raise HTTPException(400, "that isn't a transaction hash")
-
-            async def follow() -> SubmitResult:
-                rpc = ex.evm(network).rpc
-                try:
-                    tx = await rpc.call("eth_getTransactionByHash", [h])
-                except Exception:
-                    tx = None
-                if tx is None:
-                    r = await ex.evm(network).wait(h)
-                    return SubmitResult(h, r.status if r.status != "confirmed" else "timeout",
-                                        r.error or "the transaction couldn't be checked; see the explorer")
-                same = ((tx.get("from") or "").lower() == sender.lower() and (tx.get("to") or "").lower() == req["to"].lower()
-                        and (tx.get("input") or "0x").lower() == req["data"].lower()
-                        and int(tx.get("value") or "0x0", 16) == int(req["value"], 16)
-                        and int(tx.get("chainId") or hex(net.chain_id), 16) == net.chain_id)
-                r = await ex.evm(network).wait(h)
-                if same and r.status == "confirmed" and tx.get("blockNumber"):
-                    try:  # an older transfer with the same details isn't this one
-                        block = await rpc.call("eth_getBlockByNumber", [tx["blockNumber"], False])
-                        if int((block or {}).get("timestamp") or "0x0", 16) < created - 120:
-                            same = False
-                    except Exception:
-                        pass
-                if not same:  # money may have moved, so never "failed": it needs a look on the explorer
-                    return SubmitResult(h, "timeout", "the wallet reported a different transaction than the one "
-                                                      "reviewed; check the explorer before sending again")
-                return SubmitResult(h, r.status, r.error)
-        else:
-            async def follow() -> SubmitResult:
-                from ..chains import near
-
-                try:
-                    res = await xc.near_client(network).status(h, sender)
-                except AdapterError as e:
-                    return SubmitResult(h, "timeout", f"couldn't read the transaction yet ({e}); check the explorer")
-                tx = res.get("transaction") or {}
-                status, err = near.outcome_status(res)
-                if tx.get("signer_id") != sender or tx.get("receiver_id") != req["receiver_id"] \
-                        or _near_actions(tx) != _expected_near(req):
-                    return SubmitResult(h, "timeout", "the wallet reported a different transaction than the one "
-                                                      "reviewed; check the explorer before sending again")
-                return SubmitResult(h, status, err)
+            tx = await rpc.call("eth_getTransactionByHash", [h])
+        except Exception:
+            tx = None
+        if tx is None:
+            r = await ex.evm(network).wait(h)
+            return SubmitResult(h, r.status if r.status != "confirmed" else "timeout",
+                                r.error or "the transaction couldn't be checked; see the explorer")
+        same = ((tx.get("from") or "").lower() == sender.lower() and (tx.get("to") or "").lower() == req["to"].lower()
+                and (tx.get("input") or "0x").lower() == req["data"].lower()
+                and int(tx.get("value") or "0x0", 16) == int(req["value"], 16)
+                and int(tx.get("chainId") or hex(net.chain_id), 16) == net.chain_id)
+        r = await ex.evm(network).wait(h)
+        if same and r.status == "confirmed" and tx.get("blockNumber"):
+            try:  # an older transfer with the same details isn't this one
+                block = await rpc.call("eth_getBlockByNumber", [tx["blockNumber"], False])
+                if int((block or {}).get("timestamp") or "0x0", 16) < created - 120:
+                    same = False
+            except Exception:
+                pass
+        if not same:  # money may have moved, so never "failed": it needs a look on the explorer
+            return SubmitResult(h, "timeout", "the wallet reported a different transaction than the one "
+                                              "reviewed; check the explorer before sending again")
+        return SubmitResult(h, r.status, r.error)
     from sqlalchemy import update
 
     claimed = await db.execute(update(Job).where(Job.id == j.id, Job.status == "pending").values(status="submitted"))

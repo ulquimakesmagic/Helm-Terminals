@@ -7,14 +7,13 @@ import { ReviewHero, summarize } from "./review";
 import { Address, Callout, Empty, Field, Icon, LoadError, Loading, Modal, Spinner, StatusBadge, useToast } from "./ui";
 
 /*
- * Settings > Wallets for TRON, NEAR, Arc and TON: every wallet on these networks with its network (mainnet or
- * Helm offers mainnets only), signer (Helm-managed, your own wallet, or watch-only), balances and what a transfer costs there. Link
+ * Settings > Wallets for Arc: every wallet there with its network (Helm offers mainnet only), signer (Helm-managed, your own wallet, or watch-only), balances and what a transfer costs there. Link
  * your own wallet by signing a Helm challenge in it; linking authorises nothing. Sending from a linked wallet is
  * reviewed here first, then approved and signed in the wallet.
  */
 
 export interface OvNet { id: string; name: string; family: string; enabled: boolean; chain_id: number | null;
-  network_id: string | null; native: string; managed: boolean; external: string }
+  native: string; managed: boolean; external: string }
 export interface OvWallet { id: string; network: string; family: string; network_name: string; enabled: boolean;
   address: string; kind: string; label: string; explorer: string; native: { asset: string; amount: string } | null;
   tokens: { symbol: string; address: string; amount: string }[]; fees: Record<string, string | number> | null; error: string | null;
@@ -76,17 +75,13 @@ export default function WalletSettings() {
       {net && (
         <div className="stack tight" style={{ padding: 12, borderRadius: 8, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
           <div className="row" style={{ gap: 8 }}><ChainMark network={net.id} size={18} /><b>{net.name}</b><NetBadge />
-            {net.chain_id && <span className="muted small">chain ID {net.chain_id}</span>}{net.network_id && <span className="muted small">TON network {net.network_id}</span>}</div>
+            {net.chain_id && <span className="muted small">chain ID {net.chain_id}</span>}</div>
           {!net.enabled ? <Callout tone="warn">{net.name} isn't enabled on this server (EXTRA_NETWORKS, ALLOW_MAINNET_EXTRA_NETWORKS), so nothing can be added here yet.</Callout> : (
             <>
               <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
               <div className="row wrap" style={{ gap: 8 }}>
-                {net.family === "ton"
-                  ? <Link className="btn sm" to={`/networks?network=${net.id}`}><Icon name="plus" size={13} />Connect with TON Connect</Link>
-                  : <button className="btn sm" onClick={link} disabled={!!busy}>{busy === "link" ? <Spinner /> : <Icon name="plus" size={13} />}Link my own wallet ({net.external})</button>}
-                {net.managed
-                  ? <button className="btn sm secondary" onClick={create} disabled={!!busy}>{busy === "create" ? <Spinner /> : <Icon name="wallet" size={13} />}New Helm-managed wallet</button>
-                  : <span className="muted small">Helm-managed wallets aren't available on {net.name}: Helm doesn't hold TON keys.</span>}
+                <button className="btn sm" onClick={link} disabled={!!busy}>{busy === "link" ? <Spinner /> : <Icon name="plus" size={13} />}Link my own wallet ({net.external})</button>
+                {net.managed && <button className="btn sm secondary" onClick={create} disabled={!!busy}>{busy === "create" ? <Spinner /> : <Icon name="wallet" size={13} />}New Helm-managed wallet</button>}
               </div>
               <span className="muted small">Linking asks your wallet to sign a message naming this site, the network and a one-time code. It doesn't authorise any transaction.</span>
               {linkErr && <Callout tone="err">{linkErr}</Callout>}
@@ -126,7 +121,7 @@ function WalletRow({ w, onSend, act }: { w: OvWallet; onSend: () => void; act: (
           {!w.enabled && <span className="badge">network off on this server</span>}
         </div>
         <div className="row wrap" style={{ gap: 6 }}>
-          {w.can_send && w.enabled && (w.kind === "connected" && w.family !== "ton"
+          {w.can_send && w.enabled && (w.kind === "connected"
             ? <button className="btn sm" onClick={onSend}><Icon name="send" size={13} />Send</button>
             : <Link className="btn sm" to={`/networks?network=${w.network}`}><Icon name="send" size={13} />Send</Link>)}
           {w.kind === "connected" && <button className="btn sm ghost" onClick={disconnect}>Unlink</button>}
@@ -147,9 +142,7 @@ function WalletRow({ w, onSend, act }: { w: OvWallet; onSend: () => void; act: (
         <details style={{ marginTop: 6 }}>
           <summary className="small" style={{ cursor: "pointer" }}>What a transfer costs on {w.network_name}</summary>
           <ul className="small muted" style={{ margin: "6px 0 0 16px" }}>
-            {w.fees.kind === "resources" && <li>Available now: {w.fees.bandwidth_available} bandwidth, {w.fees.energy_available} energy.</li>}
-            {w.fees.storage_locked !== undefined && <li>{String(w.fees.storage_locked)} NEAR is locked for this account's storage.</li>}
-            {["transfer", "trx_transfer", "token_transfer", "activation"].filter((k) => w.fees![k]).map((k) => <li key={k}>{String(w.fees![k])}</li>)}
+            {["transfer", "token_transfer"].filter((k) => w.fees![k]).map((k) => <li key={k}>{String(w.fees![k])}</li>)}
           </ul>
         </details>
       )}

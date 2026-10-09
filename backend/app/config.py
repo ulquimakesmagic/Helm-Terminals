@@ -80,17 +80,12 @@ class Settings(BaseSettings):
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
     pons_rewards_factory: str = ""
-    # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
-    extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
+    # Arc (see app/chains/networks.py). Off unless listed; mainnet also needs the opt-in below.
+    extra_networks: str = "arc"  # mainnet only; "" = off. TRON, NEAR and TON were removed and are ignored if listed
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
-    tron_rpc_url: str = ""  # TronGrid full-node HTTP API (default https://api.trongrid.io)
-    trongrid_api_key: str = ""  # sent as TRON-PRO-API-KEY; TronGrid expects one for production
-    near_rpc_url: str = ""  # comma-separated JSON-RPC endpoints; default FastNEAR's free endpoint
     arc_rpc_url: str = ""  # default https://rpc.mainnet.arc.io
-    ton_rpc_url: str = ""  # toncenter-compatible index API base (default https://toncenter.com)
-    toncenter_api_key: str = ""  # X-API-Key; without it toncenter allows 1 request a second
-    ton_proof_domains: str = ""  # hosts a TON Connect proof may name; default: helmterminals.xyz + CORS_ORIGINS hosts
-    pinata_jwt: str = ""  # Pinata API JWT: pins Meme.Cooking token images and metadata to IPFS
+    # Sites a wallet-ownership proof may name (EVM sign-in messages). Name kept for existing deployments.
+    ton_proof_domains: str = ""  # default: helmterminals.xyz + CORS_ORIGINS hosts
     extra_rpc_timeout_s: float = Field(default=15.0, gt=0, le=60)
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"
