@@ -25,7 +25,8 @@ from ..chains.base import AdapterError
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.jupiter import Jupiter
 from ..chains.relay import DONE
-from ..services.routing import ROUTE_GAS, execute_route, currency as route_currency, provider_label, send_item
+from ..services.routing import (ROUTE_GAS, execute_route, currency as route_currency, provider_label, provider_terms,
+                                send_item)
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 from ..services.guard import check_password, check_totp_once
@@ -507,6 +508,18 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
                                      amount=int(usd) * 10 ** STABLE_DECIMALS[src.network],
                                      slippage_pct=auto_fund.SLIPPAGE_PCT, **pinned)
             summary["provider"] = provider_label(ex, q)
+            flat_fee, fee_note = provider_terms(q, src.network)
+            if fee_note is not None:
+                summary["route_fee"] = fee_note
+            if flat_fee:
+                coin_src = native_coin(src.network)
+                summary["provider_fee"] = f"{flat_fee:.6g} {coin_src}"
+                have = await (ex.rpc.get_balance(src.address) if src.network == "solana"
+                              else ex.evm(src.network).rpc.get_balance(src.address))
+                need = flat_fee + await fee_reserve(ex, src.network, 2, ROUTE_GAS)
+                if have / 10 ** (9 if src.network == "solana" else 18) < need:
+                    warnings.append(f"{src.label or src.address[:8]} needs about {need:.6f} {coin_src} for network fees "
+                                    f"and the route provider's {flat_fee:.6g} {coin_src} fee.")
             bounds = relay_bounds(q, destination_asset=route_currency(dst.network, "native")[1], destination_network=dst.network)
             if int(bounds["minimum_raw"]) < amount_raw:
                 raise AdapterError("The quote cannot deliver the requested amount. Request a new preview.")
@@ -600,6 +613,8 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
         return prior
     if not body.all and (body.amount if body.asset == "stable" else body.amount_sol) is None:
         raise HTTPException(400, "set all=true or an amount")
+    if len(set(body.wallet_ids)) != len(body.wallet_ids):
+        raise HTTPException(400, "each wallet can only be listed once")
     wallets = [await owned_wallet(db, user, wid) for wid in body.wallet_ids]
     network = wallets[0].network
     _core_only(network)
@@ -667,8 +682,16 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     fees_paid_by = []
     try:
         if network == "solana":
+            # The destination must be a wallet that can sign for its USDC later: an on-curve address that is
+            # either new or a plain system account. A token account, mint or program address would lock the USDC.
+            dest_key = Pubkey.from_string(body.destination)
+            owner = await ex.rpc.account_owner(body.destination)
+            if not dest_key.is_on_curve() or (owner is not None and owner != "11111111111111111111111111111111"):
+                warnings.append(f"{body.destination[:8]}… isn't a wallet address (it looks like a token account, mint "
+                                f"or program). {sym} sent there could never be moved. Use the recipient's wallet address.")
             needs_account = bool(await missing_token_accounts(ex.rpc, [body.destination], a["token"], a["program"]))
             committed: dict[str, int] = {}
+            balance_cache: dict[str, int] = {}
             gas_total = 0
             for w in wallets:
                 bal = int(await ex.rpc.get_token_balance(w.address, a["token"]))
@@ -680,7 +703,7 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
                     continue
                 need = SOL_FEE + (ATA_RENT if needs_account and gas_total == 0 else 0)
                 gas_total += need
-                choice = await choose_fee_payer(db, ex.rpc, user.id, w, need, committed=committed)
+                choice = await choose_fee_payer(db, ex.rpc, user.id, w, need, committed=committed, cache=balance_cache)
                 if choice.wallet is None:
                     warnings.append(f"{w.label or w.address[:8]} needs about {need / LAMPORTS_PER_SOL:.6f} SOL for the "
                                     "network fee, and none of your other Solana wallets has enough to pay it. "

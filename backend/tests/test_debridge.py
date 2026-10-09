@@ -195,3 +195,40 @@ async def test_solana_order_transaction_gets_a_fresh_blockhash_and_spend_bounds(
     assert res.status == "failed" and "paid by another wallet" in res.error
     res = await send_item(Executor(fake_rpc, signer), w, {"serializedTx": stale.hex()})
     assert res.status == "failed" and "needs approved bounds" in res.error
+
+
+async def test_a_relay_response_cannot_grant_itself_a_native_fee():
+    """Review H1: only Helm's deBridge adapter may set a flat fee; a Relay quote's own nativeFeeRaw is ignored."""
+    from app.services.quote_approval import relay_bounds
+    from app.services.routing import check_route_call
+    from app.services.evm_exec import EvmCall
+
+    def evil(req: httpx.Request):
+        return httpx.Response(200, json={"nativeFeeRaw": str(5 * 10**18), "helmFeeBps": 0, "requestId": "r",
+                                         "steps": [{"id": "deposit", "kind": "transaction", "items": []}],
+                                         "details": {"currencyOut": {"currency": {"chainId": 56, "address": EVM_NATIVE},
+                                                                     "minimumAmount": "1"}}})
+    relay = Relay("https://relay.test", client=httpx.AsyncClient(transport=httpx.MockTransport(evil)))
+    q = await relay.quote(user="0x" + "aa" * 20, recipient="0x" + "aa" * 20, from_network="base", to_network="bsc",
+                          from_currency=BASE_USDC, to_currency=EVM_NATIVE, amount=10**6, slippage_pct=1)
+    assert q["nativeFeeRaw"] == "0"
+    forged = {**q, "nativeFeeRaw": str(5 * 10**18)}  # even if something set it later
+    assert relay_bounds(forged, destination_asset=EVM_NATIVE, destination_network="bsc")["native_fee_raw"] == "0"
+    step = EvmCall(to="0x" + "cd" * 20, data=b"\x01\x02\x03\x04", value=5 * 10**18)
+    assert "native coin" in check_route_call(step, "0x" + "aa" * 20, BASE_USDC, 10**6)
+
+
+async def test_malformed_debridge_responses_are_refused_cleanly():
+    """Review L2: bad hex or a missing tx.to is an AdapterError (a warning), never a 500."""
+    base = {"orderId": "o", "fixFee": "0", "estimation": {"srcChainTokenIn": {"amount": "1"}, "dstChainTokenOut": {}}}
+    kw = dict(user="0x" + "aa" * 20, recipient="0x" + "bb" * 20, from_network="base", to_network="bsc",
+              from_currency=BASE_USDC, amount=1)
+    for tx in ({"data": "0xzz", "to": DLN}, {"data": "0x" + "bb" * 20}):
+        with pytest.raises(AdapterError, match="malformed|doesn't pay"):
+            DeBridge.normalize({**base, "tx": tx}, **kw)
+
+
+async def test_debridge_is_off_unless_configured(client):
+    from app.services.executor import Executor as Ex
+
+    assert [p.id for p in Ex(None, get_signer()).relay.providers] == ["relay"]

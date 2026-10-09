@@ -201,6 +201,16 @@ async def quote(ex: Executor, src: Wallet, dst: Wallet, from_asset: str, to_asse
         amount=amount_raw, slippage_pct=slippage_pct, **({"provider": provider} if provider else {}))
 
 
+def provider_terms(q: dict | None, network: str) -> tuple[float, str | None]:
+    """(flat provider fee in the source chain's coin, Helm fee note when it differs from the default provider's).
+    Only deBridge quotes carry either; the fee note is what that order actually charges."""
+    if not q or q.get("provider") != "debridge":
+        return 0.0, None
+    fee = int(q.get("nativeFeeRaw") or 0) / 10 ** (9 if network == "solana" else 18)
+    bps = int(q.get("helmFeeBps") or 0)
+    return fee, (f"{bps / 100:g}% of the amount sent" if bps else "none")
+
+
 def provider_label(ex: Executor, q: dict | None) -> str:
     p = (q or {}).get("provider")
     return ex.relay.label_for(p) if hasattr(ex.relay, "label_for") else "Relay (relay.link)"
@@ -272,7 +282,7 @@ async def execute_route(session, ex: Executor, job: Job, src: Wallet, dst: Walle
             tx_kind = kind if step.get("id") == "deposit" else f"{kind}_{step.get('id')}"[:24]
             res = await send_item(ex, src, item.get("data") or {}, job, tx_kind, max_allowance=amount_raw,
                                   from_asset=from_asset, amount_raw=amount_raw,
-                                  native_fee_raw=int(q.get("nativeFeeRaw") or 0))
+                                  native_fee_raw=int(q.get("nativeFeeRaw") or 0) if q.get("provider") == "debridge" else 0)
             await _record(session, job, src, tx_kind, res, None)
             await session.commit()
             last = res

@@ -141,7 +141,7 @@ export default function BridgeDialog({ wallets, initialFromId, onClose, onReview
             Network coin{to && ` · ${chainOf(to.network).native}`}</button>
         </div>
       </Field>
-      {from && to && !sameChain && <Callout icon="info">{assetSym(from, fromAsset)} leaves <b>{chainOf(from.network).name}</b> from {label(from)} and arrives on <b>{chainOf(to.network).name}</b> as {assetSym(to, toAsset)} in {label(to)}. If Relay's fill fails, the amount is refunded to the source wallet.</Callout>}
+      {from && to && !sameChain && <Callout icon="info">{assetSym(from, fromAsset)} leaves <b>{chainOf(from.network).name}</b> from {label(from)} and arrives on <b>{chainOf(to.network).name}</b> as {assetSym(to, toAsset)} in {label(to)}. The review shows which provider carries the route and what happens if it isn't filled.</Callout>}
       {sameChain && !sameAsset && <Callout icon="info">Same-chain conversion on {chainOf(from!.network).name}: {assetSym(from, fromAsset)} → {assetSym(to, toAsset)} through Relay's routing. For Solana coins, the Swap dialog runs on Jupiter instead.</Callout>}
       {sameChain && sameAsset && <Callout tone="warn">Both sides are the same asset on {chainOf(from!.network).name} — that's a plain transfer; use Send instead.</Callout>}
       <Field label="Amount" extra={pctOfMax != null ? `${fmt(pctOfMax, 1)}% of what this wallet can send` : undefined}>

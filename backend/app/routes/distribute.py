@@ -365,6 +365,7 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
     warnings: list[str] = []
     payers: dict[str, Wallet] = {}  # source id -> who pays its fee (Solana tokens)
     committed: dict[str, int] = {}
+    balance_cache: dict[str, int] = {}
     total_gas = 0
     try:
         dest_needs_account = False
@@ -393,7 +394,8 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
                 if raw > 0 and net == "solana":
                     # The first token leg opens the destination's token account if it has none.
                     need = gas_each + (ATA_RENT if dest_needs_account and not payers else 0)
-                    choice = await choose_fee_payer(db, ex.rpc, user.id, s, need, prefer=[dest], committed=committed)
+                    choice = await choose_fee_payer(db, ex.rpc, user.id, s, need, prefer=[dest], committed=committed,
+                                                  cache=balance_cache)
                     if choice.wallet is None:
                         warnings.append(f"{_label(s)} needs about {_human(need, nd):.6f} {coin} for the network fee, "
                                         "and none of your other Solana wallets has enough to pay it.")
@@ -496,6 +498,7 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
             ex.rpc, [dest.address], a_stable["token"], a_stable["program"]))
         payers: dict[str, Wallet] = {}
         committed: dict[str, int] = {}
+        balance_cache: dict[str, int] = {}
         source_ids = {s.id for s in sources}
         stable_gas = 0
         plan_stable: list[tuple[Wallet, int]] = []
@@ -517,7 +520,8 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
                     # Another source's SOL is being swept too, so only this wallet, the destination or a wallet
                     # outside the sweep may pay.
                     choice = await choose_fee_payer(db, ex.rpc, user.id, s, need, prefer=[dest],
-                                                    exclude_ids=source_ids - {s.id}, committed=committed)
+                                                    exclude_ids=source_ids - {s.id}, committed=committed,
+                                                    cache=balance_cache)
                     if choice.wallet is None:
                         warnings.append(f"{_label(s)} holds {a_stable['symbol']} but needs about "
                                         f"{_human(need, nd):.6f} SOL for the network fee to send it, and none of "

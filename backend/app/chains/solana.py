@@ -98,6 +98,13 @@ class SolanaRPC:
                                                              "dataSlice": {"offset": 0, "length": 0}}])
         return bool(res and res.get("value"))  # type: ignore[union-attr]
 
+    async def account_owner(self, address: str) -> str | None:
+        """The program that owns an account, or None if the account doesn't exist."""
+        res = await self._call("getAccountInfo", [address, {"encoding": "base64", "commitment": "confirmed",
+                                                             "dataSlice": {"offset": 0, "length": 0}}])
+        value = (res or {}).get("value")  # type: ignore[union-attr]
+        return value.get("owner") if value else None
+
     async def get_latest_blockhash(self) -> str:
         res = await self._call("getLatestBlockhash", [{"commitment": "confirmed"}])
         return res["value"]["blockhash"]  # type: ignore[index]

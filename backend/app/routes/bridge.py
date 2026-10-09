@@ -21,7 +21,7 @@ from ..services.chain_balances import chain_name, fee_reserve, native_coin
 from ..services.executor import Executor, _finish
 from ..services.preflight import build_preflight
 from ..services.routing import (ROUTE_GAS, asset_balance, asset_decimals, currency, execute_route, provider_label,
-                                send_item)
+                                provider_terms, send_item)
 from ..services.routing import quote as route_quote
 
 router = APIRouter()
@@ -100,6 +100,19 @@ async def route(body: RouteBody, user: User = Depends(current_user), db: AsyncSe
         quote = await route_quote(ex, src, dst, body.from_asset, body.to_asset, amount_raw, body.slippage_pct,
                                   provider=approved.get("provider") if approved else None)
         summary["provider"] = provider_label(ex, quote)
+        flat_fee, fee_note = provider_terms(quote, src.network)
+        if fee_note is not None:
+            summary["platform_fee"] = fee_note
+        if flat_fee:
+            # deBridge's flat fee is paid in the source chain's coin on top of gas (and the amount, for coin routes).
+            coin = native_coin(src.network)
+            summary["provider_fee"] = f"{flat_fee:.6g} {coin}"
+            summary["max_send"] = round(max(summary["max_send"] - flat_fee, 0.0), 12) \
+                if body.from_asset == "native" else summary["max_send"]
+            if native_bal < need_native + flat_fee:
+                warnings.append(f"{src.label or src.address[:8]} needs about {need_native + flat_fee:.6f} {coin} on "
+                                f"{chain_name(src.network)}: network fees, the provider's {flat_fee:.6g} {coin} fee"
+                                + (" and the amount" if body.from_asset == "native" else "") + ".")
         quote_bounds = relay_bounds(quote, destination_asset=currency(dst.network, body.to_asset)[1],
                                     destination_network=dst.network)
         if approved:

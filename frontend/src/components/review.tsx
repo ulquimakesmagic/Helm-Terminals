@@ -39,6 +39,14 @@ function providerName(pre: any, q: any): string {
   return label.replace(/\s*\(.*\)$/, "");
 }
 
+/** What happens if a route isn't filled. Relay refunds on its own; an unfilled deBridge order stays open until it is
+ *  cancelled from the destination wallet, which Helm can't do yet. */
+function refundNote(q: any): string {
+  return q?.provider === "debridge"
+    ? "If no solver fills the order, it stays open until it is cancelled from the destination wallet, which Helm can't do yet; the funds stay in the order until then."
+    : "If the fill fails, the amount is refunded to the source wallet.";
+}
+
 function summarizeKind(pre: any, network: string): ReviewSummary | null {
   if (!pre) return null;
   const chain = chainOf(pre.network ?? network);
@@ -162,7 +170,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
           : [["Reason", "No wallet holds enough USDC plus gas"]],
         tone: "danger",
         next: [`${providerName(pre, q)} converts your USDC into the destination's coin.`,
-          "Confirming fetches a fresh quote; if the fill fails, the amount is refunded to the source wallet."],
+          `Confirming fetches a fresh quote from ${providerName(pre, q)}. ${refundNote(q)}`],
       };
     }
     case "withdraw": {
@@ -231,7 +239,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         ],
         next: [
           `Confirming fetches a fresh quote and sends from your ${pre.from_chain} wallet.`,
-          `${providerName(pre, q)} fills on ${pre.to_chain}; if the fill fails, the amount is refunded to the source wallet.`,
+          `${providerName(pre, q)} fills on ${pre.to_chain}. ${refundNote(q)}`,
         ],
       };
     }

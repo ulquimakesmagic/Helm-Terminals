@@ -52,6 +52,9 @@ class FakeRPC:
     async def get_balance(self, a):
         return self.balances.get(a, 5 * SOL)
 
+    async def account_owner(self, address):
+        return getattr(self, "owners", {}).get(address)
+
     async def account_exists(self, address):
         return address in self.existing_accounts
 

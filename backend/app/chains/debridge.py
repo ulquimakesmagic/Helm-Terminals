@@ -116,9 +116,18 @@ class DeBridge:
         q["helmFeeBps"] = fee_bps if fee_to else 0
         return q
 
+    @classmethod
+    def normalize(cls, r: dict, **kw) -> dict:
+        try:
+            return cls._normalize(r, **kw)
+        except AdapterError:
+            raise
+        except (KeyError, TypeError, ValueError, AttributeError) as e:
+            raise AdapterError(f"deBridge returned a malformed route ({type(e).__name__}); nothing was signed")
+
     @staticmethod
-    def normalize(r: dict, *, user: str, recipient: str, from_network: str, to_network: str, from_currency: str,
-                  amount: int) -> dict:
+    def _normalize(r: dict, *, user: str, recipient: str, from_network: str, to_network: str, from_currency: str,
+                   amount: int) -> dict:
         est = r.get("estimation") or {}
         inn, out = est.get("srcChainTokenIn") or {}, est.get("dstChainTokenOut") or {}
         tx = r.get("tx") or {}

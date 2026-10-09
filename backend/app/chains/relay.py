@@ -83,6 +83,8 @@ class Relay:
             if step.get("kind") != "transaction":
                 raise AdapterError(f"Relay asked for a '{step.get('kind')}' step Helm can't sign; try another amount")
         q["provider"] = self.id
+        q["nativeFeeRaw"] = "0"  # Relay has no separate flat fee; never let a response grant itself one
+        q.pop("helmFeeBps", None)
         return q
 
     async def status(self, request_id: str) -> dict:

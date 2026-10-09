@@ -103,3 +103,26 @@ async def test_usdc_withdraw_on_an_evm_chain_sends_erc20_and_flags_missing_gas(c
         assert node.sent[-1]["to"].lower() == usdc.lower()
     finally:
         app.dependency_overrides.pop(get_executor, None)
+
+
+async def test_usdc_withdraw_refuses_addresses_that_cannot_hold_it(client, fake_rpc):
+    """Review M2: a token account, mint or program address (or an off-curve address) would lock the USDC."""
+    from app.chains.solana import find_ata as _ata
+
+    h = await signup(client)
+    a = (await client.post("/wallets", json={"count": 1}, headers=h)).json()[0]
+    fake_rpc.tokens[a["address"]] = 1_000_000
+    token_account = str(_ata(Pubkey.from_string(a["address"]), Pubkey.from_string(USDC)))  # off-curve PDA
+    owned_by_program = str(Keypair().pubkey())
+    fake_rpc.owners = {owned_by_program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                       USDC: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}  # the mint is a token-program account
+    for dest in (token_account, owned_by_program, USDC):
+        pf = (await client.post("/wallets/withdraw", json={"wallet_ids": [a["id"]], "destination": dest,
+                                                           "asset": "stable"}, headers=h)).json()
+        assert any("isn't a wallet address" in w for w in pf["preflight"]["warnings"]), dest
+    ok = (await client.post("/wallets/withdraw", json={"wallet_ids": [a["id"]], "destination": OUTSIDE,
+                                                       "asset": "stable"}, headers=h)).json()
+    assert not any("isn't a wallet address" in w for w in ok["preflight"]["warnings"])
+    dup = await client.post("/wallets/withdraw", json={"wallet_ids": [a["id"], a["id"]], "destination": OUTSIDE,
+                                                       "asset": "stable"}, headers=h)
+    assert dup.status_code == 400 and "only be listed once" in dup.json()["detail"]

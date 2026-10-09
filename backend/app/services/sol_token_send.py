@@ -30,7 +30,7 @@ from ..models import Wallet
 SOL_FEE = 10_000  # lamports per transaction, generous for priority fees
 ATA_RENT = 2_039_280  # lamports to open a token account for a recipient that has none
 SOL_RENT_MIN = 890_880  # a paying wallet must keep at least this much so it stays rent-exempt
-MAX_PAYER_CANDIDATES = 60
+MAX_PAYER_CANDIDATES = 20
 
 
 async def missing_token_accounts(rpc, owners: list[str], mint: str, program: Pubkey = TOKEN_PROGRAM) -> set[str]:
@@ -57,20 +57,25 @@ class PayerChoice:
 
 async def choose_fee_payer(db: AsyncSession, rpc, user_id: str, sender: Wallet, need_lamports: int,
                            prefer: list[Wallet] = (), exclude_ids: set[str] = frozenset(),
-                           committed: dict[str, int] | None = None) -> PayerChoice:
+                           committed: dict[str, int] | None = None,
+                           cache: dict[str, int] | None = None) -> PayerChoice:
     """Who pays `need_lamports` of fees/rent for a transaction `sender` signs.
 
     The sender pays if it can (keeping its account rent-exempt). Otherwise the first wallet that can, in this
     order: `prefer` (e.g. the destination of a consolidation), then the user's main wallets, then any other
     managed Solana wallet of the user's, richest first. `committed` tracks lamports already promised to earlier
-    legs in the same request, so one payer isn't counted twice.
+    legs in the same request, so one payer isn't counted twice; `cache` keeps balances read during one request so
+    many legs don't re-read the same wallets.
     """
     from .main_wallet import main_wallet_ids
 
     committed = committed if committed is not None else {}
+    cache = cache if cache is not None else {}
 
     async def spare(w: Wallet) -> int:
-        bal = int(await rpc.get_balance(w.address))
+        if w.address not in cache:
+            cache[w.address] = int(await rpc.get_balance(w.address))
+        bal = cache[w.address]
         return bal - committed.get(w.id, 0) - SOL_RENT_MIN
 
     own_spare = await spare(sender)
@@ -83,20 +88,23 @@ async def choose_fee_payer(db: AsyncSession, rpc, user_id: str, sender: Wallet, 
         Wallet.user_id == user_id, Wallet.kind == "managed", Wallet.network == "solana"))).scalars())
     seen = {sender.id} | set(exclude_ids)
     ordered: list[Wallet] = []
+    preferred: set[str] = set()
     for w in [*prefer, *sorted(others, key=lambda w: w.id not in mains)]:
         if w.id in seen or w.user_id != user_id or w.kind != "managed" or w.network != "solana":
             continue
         seen.add(w.id)
         ordered.append(w)
+        if any(w.id == p.id for p in prefer):
+            preferred.add(w.id)
     best: tuple[int, Wallet] | None = None
-    for i, w in enumerate(ordered[:MAX_PAYER_CANDIDATES]):
+    for w in ordered[:MAX_PAYER_CANDIDATES]:
         try:
             s = await spare(w)
         except Exception:
             continue
         if s < need_lamports:
             continue
-        if i < len(prefer) or w.id in mains:  # a preferred or main wallet that can pay wins outright
+        if w.id in preferred or w.id in mains:  # a preferred or main wallet that can pay wins outright
             committed[w.id] = committed.get(w.id, 0) + need_lamports
             return PayerChoice(w, False, s)
         if best is None or s > best[0]:
