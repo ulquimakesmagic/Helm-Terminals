@@ -92,6 +92,12 @@ class SolanaRPC:
         res = await self._call("getBalance", [address, {"commitment": "confirmed"}])
         return int(res["value"])  # type: ignore[index]
 
+    async def account_exists(self, address: str) -> bool:
+        """Whether an account exists on-chain (e.g. a recipient's token account)."""
+        res = await self._call("getAccountInfo", [address, {"encoding": "base64", "commitment": "confirmed",
+                                                             "dataSlice": {"offset": 0, "length": 0}}])
+        return bool(res and res.get("value"))  # type: ignore[union-attr]
+
     async def get_latest_blockhash(self) -> str:
         res = await self._call("getLatestBlockhash", [{"commitment": "confirmed"}])
         return res["value"]["blockhash"]  # type: ignore[index]

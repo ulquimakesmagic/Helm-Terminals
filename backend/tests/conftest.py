@@ -47,9 +47,13 @@ class FakeRPC:
         self.sent: list[bytes] = []
         self.supply = 1_000_000_000 * 10**6
         self.holders: list[tuple[str, int]] = []
+        self.existing_accounts: set[str] = set()  # token accounts that already exist (others need rent)
 
     async def get_balance(self, a):
         return self.balances.get(a, 5 * SOL)
+
+    async def account_exists(self, address):
+        return address in self.existing_accounts
 
     async def get_latest_blockhash(self):
         return str(Hash.default())

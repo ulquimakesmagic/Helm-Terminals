@@ -38,7 +38,15 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
   const chain = chainOf(pre.network ?? network);
   const coin = typeof pre.coin === "string" ? pre.coin : chain.native;
   const gas = num(pre.max_gas_each) ?? num(pre.max_gas) ?? num(pre.network_fees_max);
-  const gasCell: [string, ReactNode][] = gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`]] : [];
+  // Solana token sends: another of the user's wallets may pay the fee when the sending wallet has no SOL.
+  const payers = [pre.fee_paid_by, ...(Array.isArray(pre.fees_paid_by) ? pre.fees_paid_by.map((x: any) => x?.payer) : [])]
+    .filter((p: any) => p && typeof p.address === "string");
+  const uniquePayers = payers.filter((p: any, i: number) => payers.findIndex((q: any) => q.address === p.address) === i);
+  const payerCell: [string, ReactNode][] = uniquePayers.length
+    ? [["Fee paid by", uniquePayers.map((p: any) => `${p.label ?? "Wallet"} · ${short(p.address)}`).join(", ")]] : [];
+  const gasCell: [string, ReactNode][] = [
+    ...(gas !== null ? [[pre.max_gas_each != null ? "Max gas per tx" : "Max network fees", `${fmt(gas, 6)} ${pre.network_fee_coin ?? coin}`] as [string, ReactNode]] : []),
+    ...payerCell];
 
   if (isExtraChain(pre.network) && ["withdraw", "send_tokens", "external_transfer"].includes(pre.kind)) return extraTransfer(pre);
 
@@ -124,7 +132,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         sub: <>Everything from {from.length} wallet{from.length === 1 ? "" : "s"} into {pre.to ? short(pre.to.address) : "the destination"} on {pre.chain}</>,
         cells: [["Wallets swept", String(pre.wallets_swept ?? from.length)],
           ["Stablecoins moved", fmt(num(pre.total_stable) ?? 0, 2)], ["Coin moved", fmt(num(pre.total_native) ?? 0, 6)],
-          ["Max network fees", `${fmt(num(pre.network_fees_max) ?? 0, 6)} ${pre.network_fee_coin ?? ""}`],
+          ["Max network fees", `${fmt(num(pre.network_fees_max) ?? 0, 6)} ${pre.network_fee_coin ?? ""}`], ...payerCell,
           ["Skipped (nothing to move)", String(list(pre.skipped_empty).length)], ["Platform fee", fee(pre.platform_fee)]],
         tone: "danger",
         next: ["Stablecoins move first, then the coin empties — every wallet keeps only its fee reserve.",
@@ -153,7 +161,9 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
       return {
         label: "Withdraw", value: fmt(total, 6), unit: coin, sub: <>From {from.length} wallet{from.length === 1 ? "" : "s"} to {pre.destination ? short(pre.destination) : "the destination"}</>,
         cells: [["Source wallets", String(from.length)], ...gasCell, ["Platform fee", fee(pre.platform_fee)]], tone: "danger",
-        next: ["Funds leave your Helm wallets for the destination address.", "Transfers can't be reversed. Check the destination carefully."],
+        next: ["Funds leave your Helm wallets for the destination address.",
+          ...(uniquePayers.length ? ["The sending wallet has too little SOL for the network fee, so the wallet shown above pays it (and opens the recipient's token account if needed). Only the fee leaves that wallet."] : []),
+          "Transfers can't be reversed. Check the destination carefully."],
       };
     }
     case "claim_fees":

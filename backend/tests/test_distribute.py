@@ -126,20 +126,62 @@ async def test_sweep_moves_stable_then_coin(client, fake_rpc):
     pf, job = await confirm(client, h, "/wallets/sweep", body, "sweep-1")
     p = pf["preflight"]
     assert p["wallets_swept"] == 2 and p["skipped_empty"] == []
-    assert p["total_stable"] == 3.5 and abs(p["total_native"] - 2 * (5 - 0.00001)) < 1e-9
+    # Each source pays its own USDC send (0.00001 SOL), and the first also opens the destination's USDC account
+    # (0.00203928 SOL), so that much less SOL is left to sweep.
+    assert p["total_stable"] == 3.5 and abs(p["total_native"] - (2 * (5 - 0.00001) - 2 * 0.00001 - 0.00203928)) < 1e-9
     assert job["status"] == "confirmed", job
     kinds = [t["kind"] for t in job["transactions"]]
     assert kinds == ["sweep_stable", "sweep_stable", "sweep", "sweep"]  # stablecoins first, then the coin
 
 
-async def test_sweep_warns_when_a_wallet_has_stablecoins_but_no_gas(client, fake_rpc):
-    """Regression: the gas warning used a list that didn't exist yet, so the preview failed as "couldn't read
-    balances" instead of saying which wallet needs gas."""
+async def test_sweep_warns_when_no_wallet_can_pay_the_fee(client, fake_rpc):
+    """Regression (the gas warning used a list that didn't exist yet) plus the new rule: a wallet with USDC and no
+    SOL is only refused when none of the user's other Solana wallets can pay its fee either."""
     h = await signup(client)
     ws = (await client.post("/wallets", json={"count": 3}, headers=h)).json()
-    dest, a = ws[0], ws[1]
+    dest, a, other = ws
     fake_rpc.tokens[a["address"]] = 3_000_000
-    fake_rpc.balances[a["address"]] = 0
+    for w in (await client.get("/wallets", headers=h)).json():  # including the account's main wallet
+        fake_rpc.balances[w["address"]] = 0
     r = await client.post("/wallets/sweep", json={"from_wallet_ids": [a["id"]], "to_wallet_id": dest["id"]}, headers=h)
     assert r.status_code == 200, r.text
-    assert any("needs about" in w and "network fee" in w for w in r.json()["preflight"]["warnings"])
+    assert any("needs about" in w and "none of your other Solana wallets" in w for w in r.json()["preflight"]["warnings"])
+
+
+async def test_usdc_only_wallet_sweeps_with_the_destination_paying_the_fee(client, fake_rpc):
+    h = await signup(client)
+    ws = (await client.post("/wallets", json={"count": 2}, headers=h)).json()
+    dest, a = ws
+    fake_rpc.tokens[a["address"]] = 3_000_000
+    fake_rpc.balances[a["address"]] = 0  # no SOL at all
+    pf, job = await confirm(client, h, "/wallets/sweep", {"from_wallet_ids": [a["id"]], "to_wallet_id": dest["id"]},
+                            "sweep-feepayer-1")
+    p = pf["preflight"]
+    assert p["warnings"] == [] and p["fees_paid_by"] == [{"from": a["address"], "payer": {"label": dest["label"] or "Wallet", "address": dest["address"]}}]
+    assert job["status"] == "confirmed", job
+    tx = VersionedTransaction.from_bytes(fake_rpc.sent[-1])
+    keys = [str(k) for k in tx.message.account_keys]
+    assert keys[0] == dest["address"]  # the destination is the fee payer
+    assert tx.message.header.num_required_signatures == 2 and a["address"] in keys[:2]
+
+
+async def test_token_rent_is_only_counted_for_missing_token_accounts(client, fake_rpc):
+    from solders.pubkey import Pubkey
+
+    from app.chains.solana import find_ata
+
+    h = await signup(client)
+    ws = (await client.post("/wallets", json={"count": 3}, headers=h)).json()
+    src, t1, t2 = ws
+    fake_rpc.tokens[src["address"]] = 10_000_000
+    body = {"from_wallet_id": src["id"], "to_wallet_ids": [t1["id"], t2["id"]], "asset": "stable", "total": 2}
+    both_missing = (await client.post("/wallets/disperse", json=body, headers=h)).json()["preflight"]
+    assert abs(both_missing["network_fees_max"] - (0.00001 + 2 * 0.00203928)) < 1e-12
+    fake_rpc.existing_accounts.add(str(find_ata(Pubkey.from_string(t1["address"]), Pubkey.from_string(USDC_SOL))))
+    one_missing = (await client.post("/wallets/disperse", json=body, headers=h)).json()["preflight"]
+    assert abs(one_missing["network_fees_max"] - (0.00001 + 0.00203928)) < 1e-12
+    fake_rpc.existing_accounts.add(str(find_ata(Pubkey.from_string(t2["address"]), Pubkey.from_string(USDC_SOL))))
+    fake_rpc.balances[src["address"]] = 1_000_000  # 0.001 SOL: too little for rent, plenty for one fee
+    none_missing = (await client.post("/wallets/disperse", json=body, headers=h)).json()["preflight"]
+    assert abs(none_missing["network_fees_max"] - 0.00001) < 1e-12
+    assert none_missing["warnings"] == [] and none_missing["fee_paid_by"] is None  # pays its own fee

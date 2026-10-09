@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
@@ -544,7 +545,9 @@ class WithdrawBody(SpendConfirm):
     wallet_ids: list[str] = Field(min_length=1, max_length=50)
     destination: str
     all: bool = True
-    amount_sol: float | None = Field(default=None, gt=0)
+    amount_sol: float | None = Field(default=None, gt=0)  # native coin per wallet (asset="native")
+    asset: Literal["native", "stable"] = "native"  # "stable": the chain's dollar stablecoin (USDC, USDG)
+    amount: float | None = Field(default=None, gt=0)  # stablecoin per wallet (asset="stable")
 
 
 @router.post("/wallets/fund")
@@ -593,8 +596,8 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
                    rpc: SolanaRPC = Depends(get_rpc), ex: Executor = Depends(get_executor)):
     if (prior := await find_replay(db, user, body)):
         return prior
-    if not body.all and body.amount_sol is None:
-        raise HTTPException(400, "set all=true or amount_sol")
+    if not body.all and (body.amount if body.asset == "stable" else body.amount_sol) is None:
+        raise HTTPException(400, "set all=true or an amount")
     wallets = [await owned_wallet(db, user, wid) for wid in body.wallet_ids]
     network = wallets[0].network
     _core_only(network)
@@ -602,6 +605,8 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
         raise HTTPException(400, "withdraw from one network at a time")
     if not valid_address_for(network, body.destination):
         raise HTTPException(400, f"invalid {network} destination address")
+    if body.asset == "stable":
+        return await _withdraw_stable(body, user, db, ex, wallets)
     if network in EVM_CHAINS:
         return await _withdraw_evm(body, user, db, ex, wallets)
     plan = []
@@ -639,6 +644,104 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
             await session.commit()
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex: Executor, wallets: list[Wallet]):
+    """Withdraw the chain's stablecoin (USDC; USDG on Robinhood Chain) to an outside address.
+
+    Solana: the recipient's token account rent is only counted if it doesn't exist yet, and a wallet without enough
+    SOL for the fee has another of your Helm wallets pay it (shown in the preview). EVM: each wallet pays its own
+    gas in the chain's coin; the preview says how much is missing."""
+    from ..services.sol_token_send import (ATA_RENT, SOL_FEE, build_token_send, choose_fee_payer,
+                                           missing_token_accounts, refs_for)
+    from .distribute import _asset, _erc20_transfer
+
+    network = wallets[0].network
+    a = await _asset(db, user, ex, network, "stable")
+    d, sym = a["decimals"], a["symbol"]
+    per_wallet = None if body.all else int(round((body.amount or 0) * 10**d))
+    plan: list[tuple[Wallet, int, Wallet | None]] = []  # (source, raw amount, fee payer on Solana)
+    warnings: list[str] = []
+    fees_paid_by = []
+    try:
+        if network == "solana":
+            needs_account = bool(await missing_token_accounts(ex.rpc, [body.destination], a["token"], a["program"]))
+            committed: dict[str, int] = {}
+            gas_total = 0
+            for w in wallets:
+                bal = int(await ex.rpc.get_token_balance(w.address, a["token"]))
+                raw = bal if per_wallet is None else per_wallet
+                if raw <= 0 or raw > bal:
+                    warnings.append(f"{w.label or w.address[:8]} has {bal / 10**d:,.6g} {sym}, "
+                                    + ("nothing to withdraw." if raw <= 0 else f"less than {raw / 10**d:,.6g}."))
+                    plan.append((w, raw, None))
+                    continue
+                need = SOL_FEE + (ATA_RENT if needs_account and gas_total == 0 else 0)
+                gas_total += need
+                choice = await choose_fee_payer(db, ex.rpc, user.id, w, need, committed=committed)
+                if choice.wallet is None:
+                    warnings.append(f"{w.label or w.address[:8]} needs about {need / LAMPORTS_PER_SOL:.6f} SOL for the "
+                                    "network fee, and none of your other Solana wallets has enough to pay it. "
+                                    "Add a little SOL to any of your Solana wallets.")
+                elif not choice.own:
+                    fees_paid_by.append({"from": w.address, "payer": {"label": choice.wallet.label or "Wallet",
+                                                                      "address": choice.wallet.address}})
+                plan.append((w, raw, choice.wallet))
+            fees, fee_coin = gas_total / LAMPORTS_PER_SOL, "SOL"
+        else:
+            sender = ex.evm(network)
+            gas = await sender.max_gas_cost(ERC20_TRANSFER_GAS)
+            coin = EVM_CHAINS[network]["native"]
+            for w in wallets:
+                bal = int(await sender.rpc.erc20_balance(a["token"], w.address))
+                raw = bal if per_wallet is None else per_wallet
+                if raw <= 0 or raw > bal:
+                    warnings.append(f"{w.label or w.address[:8]} has {bal / 10**d:,.6g} {sym}, "
+                                    + ("nothing to withdraw." if raw <= 0 else f"less than {raw / 10**d:,.6g}."))
+                elif (native := int(await sender.rpc.get_balance(w.address))) < gas:
+                    warnings.append(f"{w.label or w.address[:8]} needs about {(gas - native) / WEI:.6f} more {coin} "
+                                    f"for gas to send {sym}. Fund it with {coin} first (Fund from cash works too).")
+                plan.append((w, raw, None))
+            fees, fee_coin = gas * len(wallets) / WEI, coin
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Couldn't read balances on {chain_name(network)}: {type(e).__name__}")
+    warnings += two_fa_warnings(user, "withdraw")
+    pf = build_preflight("withdraw", {
+        "network": network, "destination": body.destination, "coin": sym, "asset": sym, "token": a["token"],
+        "from": [{"address": w.address, "amount": raw / 10**d} for w, raw, _ in plan],
+        "network_fees_max": fees, "network_fee_coin": fee_coin, "fees_paid_by": fees_paid_by,
+        "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, "withdraw", None, pf["preflight"])
+    if created:
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            results = []
+            for w, raw, payer in plan:
+                if network == "solana":
+                    tx = build_token_send(w.address, payer.address, [(body.destination, raw)], a["token"], d,
+                                          a["program"], await ex.rpc.get_latest_blockhash())
+                    res = await submit_tracked(ex, j, w, "withdraw", tx, refs_for(w, payer))
+                else:
+                    res = await send_evm_tracked(ex.evm(network), j, w, "withdraw",
+                                                 EvmCall(to=a["token"], data=_erc20_transfer(body.destination, raw)))
+                await _record(session, j, w, "withdraw", res, None)
+                await session.commit()
+                results.append(res)
+            _finish(j, results)
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
+ERC20_TRANSFER_GAS = 90_000
 
 
 # --- EVM chains (Base, BNB Chain, Ethereum, Robinhood Chain) ---------------------------------------
