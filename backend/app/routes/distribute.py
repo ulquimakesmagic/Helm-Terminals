@@ -19,16 +19,37 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.flap import selector
-from ..chains.solana import (TOKEN_PROGRAM, build_unsigned, create_ata_idempotent_ix,
-                             sol_transfer_ix, token_transfer_checked_ix)
+from ..chains.solana import TOKEN_PROGRAM, build_unsigned, sol_transfer_ix
 from ..db import get_db
-from ..deps import (SpendConfirm, begin_spend, current_user, find_replay, get_executor, owned_wallet, run_job,
-                    valid_address_for)
+from ..deps import (
+    SpendConfirm,
+    begin_spend,
+    current_user,
+    find_replay,
+    get_executor,
+    owned_wallet,
+    run_job,
+    valid_address_for,
+)
 from ..models import Launch, LaunchWallet, User, Wallet
 from ..services.chain_balances import chain_name, native_coin, stable_for
 from ..services.evm_exec import NATIVE_RESERVE_WEI, EvmCall
-from ..services.executor import Executor, SubmitResult, _finish, _record, send_evm_tracked, submit_tracked
+from ..services.executor import (
+    Executor,
+    SubmitResult,
+    _finish,
+    _record,
+    send_evm_tracked,
+    submit_tracked,
+)
 from ..services.preflight import build_preflight
+from ..services.sol_token_send import (
+    build_token_send,
+    choose_fee_payer,
+    missing_token_accounts,
+    payer_note,
+    refs_for,
+)
 
 router = APIRouter()
 
@@ -145,19 +166,18 @@ def _erc20_transfer(to: str, amount: int) -> bytes:
 
 
 async def _send_solana(ex: Executor, job, src: Wallet, kind: str, a: dict,
-                       legs: list[tuple[Wallet, int]]) -> SubmitResult:
+                       legs: list[tuple[Wallet, int]], payer: Wallet | None = None) -> SubmitResult:
+    """Send from `src`. For tokens, `payer` (another of the user's wallets) may pay the fee and any rent."""
     owner = Pubkey.from_string(src.address)
-    ixs = []
-    for dst, raw in legs:
-        dest = Pubkey.from_string(dst.address)
-        if a["kind"] == "native":
-            ixs.append(sol_transfer_ix(owner, dest, raw))
-        else:
-            mint, program = Pubkey.from_string(a["token"]), a["program"]
-            ixs += [create_ata_idempotent_ix(owner, dest, mint, program),
-                    token_transfer_checked_ix(owner, dest, mint, raw, a["decimals"], program)]
-    tx = build_unsigned(owner, ixs, await ex.rpc.get_latest_blockhash())
-    return await submit_tracked(ex, job, src, kind, tx, {src.address: src.signer_ref or ""})
+    blockhash = await ex.rpc.get_latest_blockhash()
+    if a["kind"] == "native":
+        tx = build_unsigned(owner, [sol_transfer_ix(owner, Pubkey.from_string(d.address), raw) for d, raw in legs],
+                            blockhash)
+        return await submit_tracked(ex, job, src, kind, tx, {src.address: src.signer_ref or ""})
+    payer = payer or src
+    tx = build_token_send(src.address, payer.address, [(d.address, raw) for d, raw in legs], a["token"],
+                          a["decimals"], a["program"], blockhash)
+    return await submit_tracked(ex, job, src, kind, tx, refs_for(src, payer))
 
 
 async def _send_evm(ex: Executor, job, src: Wallet, kind: str, a: dict, dst: Wallet, raw: int) -> SubmitResult:
@@ -193,10 +213,15 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
     try:
         bal = await _balance(ex, net, a, src.address)
         native_bal = await _native_raw(ex, net, src.address)
+        fee_payer = None
         if net == "solana":
             per_tx = SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX
             txs = -(-n // per_tx)
-            gas = txs * SOL_FEE + (0 if a["kind"] == "native" else n * ATA_RENT)
+            rent = 0 if a["kind"] == "native" else \
+                len(await missing_token_accounts(ex.rpc, [t.address for t in targets], a["token"], a["program"])) * ATA_RENT
+            gas = txs * SOL_FEE + rent
+            if a["kind"] == "token":
+                fee_payer = await choose_fee_payer(db, ex.rpc, user.id, src, gas)
         else:
             sender = ex.evm(net)
             gas = n * await sender.max_gas_cost(21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
@@ -230,9 +255,11 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 warnings.append(f"{_label(t)} would hold less than 0.00089 SOL, the minimum a Solana wallet "
                                 "needs, so that transfer would fail. Send more to each wallet.")
                 break
-    if a["kind"] == "token" and native_bal < gas:
+    if a["kind"] == "token" and (fee_payer.wallet is None if fee_payer else native_bal < gas):
         warnings.append(f"{_label(src)} needs about {_human(gas, 9 if net == 'solana' else 18):.6f} {coin} for "
-                        f"network fees{' and new token accounts' if net == 'solana' else ''}.")
+                        f"network fees{' and new token accounts' if net == 'solana' and gas > txs * SOL_FEE else ''}"
+                        + (", and none of your other Solana wallets has enough to pay it" if net == "solana" else "")
+                        + ".")
     launch = a.get("launch")
     if launch is not None:
         from ..models import LaunchAllocation
@@ -252,6 +279,7 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
         "to": [{"label": t.label or "Wallet", "address": t.address, "amount": _human(r, d)} for t, r in zip(targets, raws)],
         "total": _human(total, d), "split": body.split if body.split == "custom" else "even",
         "network_fees_max": _human(gas, 9 if net == "solana" else 18), "network_fee_coin": coin,
+        "fee_paid_by": payer_note(fee_payer) if fee_payer else None,
         "transactions": (-(-n // (SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX)))
         if net == "solana" else n,
         "own_wallets_only": True,
@@ -280,7 +308,8 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 chunks = [[leg] for leg in legs]
             for chunk in chunks:
                 if net == "solana":
-                    res = await _send_solana(ex, j, src, "disperse", a, chunk)
+                    res = await _send_solana(ex, j, src, "disperse", a, chunk,
+                                             fee_payer.wallet if fee_payer else None)
                 else:
                     res = await _send_evm(ex, j, src, "disperse", a, chunk[0][0], chunk[0][1])
                 await _record(session, j, src, "disperse", res, None)
@@ -334,9 +363,16 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
     plan: list[tuple[Wallet, int]] = []
     skipped: list[str] = []
     warnings: list[str] = []
+    payers: dict[str, Wallet] = {}  # source id -> who pays its fee (Solana tokens)
+    committed: dict[str, int] = {}
+    balance_cache: dict[str, int] = {}
+    total_gas = 0
     try:
+        dest_needs_account = False
         if net == "solana":
-            gas_each = SOL_FEE + (ATA_RENT if a["kind"] == "token" else 0)
+            gas_each = SOL_FEE
+            if a["kind"] == "token":
+                dest_needs_account = bool(await missing_token_accounts(ex.rpc, [dest.address], a["token"], a["program"]))
         else:
             sender = ex.evm(net)
             gas_each = await sender.max_gas_cost(21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
@@ -355,12 +391,25 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
 
                     if (msg := await lock_warning(db, a["launch"], s, bal, raw, d)):
                         warnings.append(msg)
-                if raw > 0 and await _native_raw(ex, net, s.address) < gas_each:
+                if raw > 0 and net == "solana":
+                    # The first token leg opens the destination's token account if it has none.
+                    need = gas_each + (ATA_RENT if dest_needs_account and not payers else 0)
+                    choice = await choose_fee_payer(db, ex.rpc, user.id, s, need, prefer=[dest], committed=committed,
+                                                  cache=balance_cache)
+                    if choice.wallet is None:
+                        warnings.append(f"{_label(s)} needs about {_human(need, nd):.6f} {coin} for the network fee, "
+                                        "and none of your other Solana wallets has enough to pay it.")
+                    else:
+                        payers[s.id] = choice.wallet
+                    total_gas += need
+                elif raw > 0 and await _native_raw(ex, net, s.address) < gas_each:
                     warnings.append(f"{_label(s)} needs about {_human(gas_each, nd):.6f} {coin} for the network fee.")
             if raw <= 0:
                 skipped.append(s.address)
             else:
                 plan.append((s, raw))
+                if not (net == "solana" and a["kind"] == "token"):
+                    total_gas += gas_each
     except HTTPException:
         raise
     except Exception as e:
@@ -373,7 +422,9 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
         "to": {"label": dest.label or "Wallet", "address": dest.address},
         "from": [{"label": s.label or "Wallet", "address": s.address, "amount": _human(r, d)} for s, r in plan],
         "skipped_empty": skipped, "percent": body.percent, "total": _human(sum(r for _, r in plan), d),
-        "network_fees_max": _human(gas_each * len(plan), nd), "network_fee_coin": coin,
+        "network_fees_max": _human(total_gas, nd), "network_fee_coin": coin,
+        "fees_paid_by": [{"from": s.address, "payer": {"label": p.label or "Wallet", "address": p.address}}
+                         for s, _ in plan if (p := payers.get(s.id)) and p.id != s.id],
         "own_wallets_only": True,
         "transparency": (f"The destination wallet is attached to {launch.name} (${launch.symbol}) so its "
                          "transparency panel counts this supply as yours") if launch else None,
@@ -394,7 +445,7 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
             results = []
             for s, raw in plan:  # each source signs its own transfer; one failing doesn't stop the others
                 if net == "solana":
-                    res = await _send_solana(ex, j, s, "consolidate", a, [(dest, raw)])
+                    res = await _send_solana(ex, j, s, "consolidate", a, [(dest, raw)], payers.get(s.id))
                 else:
                     res = await _send_evm(ex, j, s, "consolidate", a, dest, raw)
                 await _record(session, j, s, "consolidate", res, None)
@@ -442,7 +493,14 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
     nd = 9 if net == "solana" else 18
     try:
         sender = ex.evm(net) if net != "solana" else None
-        gas_each = (SOL_FEE + ATA_RENT) if net == "solana" else await sender.max_gas_cost(ERC20_TRANSFER_GAS)
+        gas_each = SOL_FEE if net == "solana" else await sender.max_gas_cost(ERC20_TRANSFER_GAS)
+        dest_needs_account = net == "solana" and bool(await missing_token_accounts(
+            ex.rpc, [dest.address], a_stable["token"], a_stable["program"]))
+        payers: dict[str, Wallet] = {}
+        committed: dict[str, int] = {}
+        balance_cache: dict[str, int] = {}
+        source_ids = {s.id for s in sources}
+        stable_gas = 0
         plan_stable: list[tuple[Wallet, int]] = []
         plan_native: list[tuple[Wallet, int]] = []
         skipped: list[str] = []
@@ -456,7 +514,23 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
                 native_spendable = await sender.spendable(s.address)
             if stable_bal > 0:
                 plan_stable.append((s, stable_bal))
-                if native_bal < gas_each:  # stablecoins go first, so every wallet pays its own gas
+                if net == "solana":
+                    need = gas_each + (ATA_RENT if dest_needs_account and len(plan_stable) == 1 else 0)
+                    stable_gas += need
+                    # Another source's SOL is being swept too, so only this wallet, the destination or a wallet
+                    # outside the sweep may pay.
+                    choice = await choose_fee_payer(db, ex.rpc, user.id, s, need, prefer=[dest],
+                                                    exclude_ids=source_ids - {s.id}, committed=committed,
+                                                    cache=balance_cache)
+                    if choice.wallet is None:
+                        warnings.append(f"{_label(s)} holds {a_stable['symbol']} but needs about "
+                                        f"{_human(need, nd):.6f} SOL for the network fee to send it, and none of "
+                                        "your other Solana wallets has enough to pay it.")
+                    else:
+                        payers[s.id] = choice.wallet
+                        if choice.own:  # its own SOL pays the stablecoin leg, so less of it is left to sweep
+                            native_spendable = max(native_spendable - need, 0)
+                elif native_bal < gas_each:  # stablecoins go first, so every wallet pays its own gas
                     warnings.append(f"{_label(s)} holds {a_stable['symbol']} but needs about "
                                     f"{_human(gas_each, nd):.6f} {native_coin(net)} for the network fee to send it.")
             if native_spendable > 0:
@@ -470,9 +544,8 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
 
     if not plan_stable and not plan_native:
         warnings.append("None of the selected wallets has anything to sweep.")
-    legs = len(plan_stable) + len(plan_native)
     if net == "solana":
-        gas = legs * SOL_FEE + len(plan_stable) * ATA_RENT
+        gas = len(plan_native) * SOL_FEE + stable_gas
     else:
         gas = len(plan_stable) * await sender.max_gas_cost(ERC20_TRANSFER_GAS) + len(plan_native) * await sender.max_gas_cost()
     pf = build_preflight("sweep", {
@@ -487,6 +560,8 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
         "total_stable": _human(sum(r for _, r in plan_stable), a_stable["decimals"]),
         "total_native": _human(sum(r for _, r in plan_native), nd),
         "network_fees_max": _human(gas, nd), "network_fee_coin": native_coin(net),
+        "fees_paid_by": [{"from": s.address, "payer": {"label": p.label or "Wallet", "address": p.address}}
+                         for s, _ in plan_stable if (p := payers.get(s.id)) and p.id != s.id],
         "own_wallets_only": True, "platform_fee": "none",
     }, warnings)
     if not body.confirm:
@@ -504,7 +579,8 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
 
             async def leg(s: Wallet, raw: int, asset: dict, kind: str):
                 if net == "solana":
-                    return await _send_solana(ex, j, s, kind, asset, [(dest, raw)])
+                    return await _send_solana(ex, j, s, kind, asset, [(dest, raw)],
+                                              payers.get(s.id) if asset["kind"] == "token" else None)
                 return await _send_evm(ex, j, s, kind, asset, dest, raw)
 
             for (s, raw), asset in stable_legs:  # stablecoins first: every wallet still has its gas

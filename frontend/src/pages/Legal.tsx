@@ -51,7 +51,7 @@ const TERMS: Doc = {
       <p>You must not use Helm to break the law, evade sanctions, launder money, manipulate markets, create artificial trading volume, misrepresent token ownership or distribution, defraud buyers, infringe others' rights in token names or images, or interfere with Helm or third-party services. Helm deliberately excludes wash-trading and holder-disguising features. We may suspend accounts that breach these terms.</p>
     </>],
     ["Third-party services and data", <>
-      <p>Helm depends on third parties including Turnkey (signing), launchpads such as Pump.fun, Bags, Meteora (via Jupiter), Flap, Four.meme, Clanker, Pons and Tolly, routers and bridges such as Jupiter, KyberSwap and Relay, chain RPC providers, Codex for market data, and GMGN for embedded charts. Their outages, changes or errors can affect what Helm can do. Market data is indicative and is never used to price your transactions.</p>
+      <p>Helm depends on third parties including Turnkey (signing), launchpads such as Pump.fun, Bags, Meteora (via Jupiter), Flap, Four.meme, Clanker, Pons and Tolly, routers and bridges such as Jupiter, KyberSwap, Relay and deBridge, chain RPC providers, Codex for market data, and GMGN for embedded charts. Their outages, changes or errors can affect what Helm can do. Market data is indicative and is never used to price your transactions.</p>
     </>],
     ["Suspension and termination", <>
       <p>You may stop using Helm at any time. We may suspend or end access for breach, legal requirement or security risk. Suspension does not move your assets. <Pending>Process for users to move assets out of managed wallets after closure</Pending></p>
@@ -86,7 +86,7 @@ const PRIVACY: Doc = {
     ["Who processes data for us", <><p>We share only what each service needs:</p><ul>
       <li>Turnkey (key management and signing): wallet key references and the transactions to sign.</li>
       <li>Blockchain RPC providers and indexers for each chain: addresses and transactions to read or broadcast.</li>
-      <li>Launchpads, routers and bridges (for example PumpPortal/Pump.fun, Bags, Jupiter, KyberSwap, Relay, Flap, Four.meme): wallet addresses, amounts and token metadata needed to build your transactions.</li>
+      <li>Launchpads, routers and bridges (for example PumpPortal/Pump.fun, Bags, Jupiter, KyberSwap, Relay, deBridge, Flap, Four.meme): wallet addresses, amounts and token metadata needed to build your transactions.</li>
       <li>Codex: token and pool addresses for market data. No account data is sent.</li>
       <li>GMGN: on Solana, Ethereum and BNB Chain, token charts are GMGN's own page embedded in Helm. Your browser loads it directly from GMGN, which receives the token address and, like any website you visit, your IP address and browser details, and applies its own privacy policy. Helm sends GMGN no account data.</li>
       <li>Our hosting and database provider (Railway) and our email provider, if account recovery email is enabled.</li>

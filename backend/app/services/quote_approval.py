@@ -53,7 +53,19 @@ def relay_bounds(quote: dict, *, destination_asset: str, destination_network: st
     raw = out.get("minimumAmount")
     if not isinstance(raw, (str, int)) or not str(raw).isdigit() or int(raw) <= 0:
         raise AdapterError("The provider did not supply a usable minimum output; request a new quote")
-    return {"minimum_raw": str(raw), "asset": destination_asset, "network": destination_network}
+    provider = quote.get("provider") or "relay"
+    # Only deBridge has a flat native fee (its fixFee), and only Helm's adapter sets it; a Relay response can't.
+    fee = (quote.get("nativeFeeRaw") or "0") if provider == "debridge" else "0"
+    helm_fee = int(quote.get("helmFeeBps") or 0) if provider == "debridge" else None
+    if not str(fee).isdigit():
+        raise AdapterError("The provider's fee is malformed; request a new quote")
+    # Which provider quoted it, and its flat native-coin fee (deBridge's fixFee; 0 for Relay), are part of what the
+    # user approves: confirmation re-quotes from the same provider and refuses a higher fee.
+    out = {"minimum_raw": str(raw), "asset": destination_asset, "network": destination_network,
+           "provider": provider, "native_fee_raw": str(fee)}
+    if helm_fee is not None:
+        out["helm_fee_bps"] = helm_fee  # deBridge: Helm's affiliate fee actually on this order
+    return out
 
 
 def check_relay_bounds(quote: dict, bounds: dict, destination_asset: str, destination_network: str) -> None:
@@ -63,6 +75,13 @@ def check_relay_bounds(quote: dict, bounds: dict, destination_asset: str, destin
     if (bounds.get("asset") != destination_asset or bounds.get("network") != destination_network
             or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
         raise AdapterError("The new quote is below the approved minimum; review a new preview")
+    if bounds.get("provider") and current["provider"] != bounds["provider"]:
+        raise AdapterError("The route provider changed since the preview; review a new preview")
+    # Bounds issued without a fee (older previews, launch funding plans) approve none.
+    if int(current["native_fee_raw"]) > int(bounds.get("native_fee_raw") or 0):
+        raise AdapterError("The provider's fee went up since the preview; review a new preview")
+    if current.get("helm_fee_bps") is not None and current["helm_fee_bps"] > int(bounds.get("helm_fee_bps") or 0):
+        raise AdapterError("Helm's route fee changed since the preview; review a new preview")
 
 
 def check_relay_recipient(quote: dict, recipient: str, network: str) -> None:

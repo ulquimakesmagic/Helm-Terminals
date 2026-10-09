@@ -29,6 +29,9 @@ def native_currency(network: str) -> str:
 
 
 class Relay:
+    id = "relay"
+    label = "Relay (relay.link)"
+
     def __init__(self, api_url: str = "https://api.relay.link", api_key: str = "", fee_bps: int = 0,
                  fee_recipient: str = "", client: httpx.AsyncClient | None = None) -> None:
         self.api = api_url.rstrip("/")
@@ -60,7 +63,9 @@ class Relay:
         return data
 
     async def quote(self, *, user: str, recipient: str, from_network: str, to_network: str, from_currency: str,
-                    to_currency: str, amount: int, slippage_pct: float) -> dict:
+                    to_currency: str, amount: int, slippage_pct: float, provider: str | None = None) -> dict:
+        if provider not in (None, self.id):
+            raise AdapterError(f"Relay can't serve a {provider} quote")
         body = {
             "user": user, "recipient": recipient,
             "originChainId": relay_chain_id(from_network), "destinationChainId": relay_chain_id(to_network),
@@ -77,6 +82,9 @@ class Relay:
         for step in q["steps"]:
             if step.get("kind") != "transaction":
                 raise AdapterError(f"Relay asked for a '{step.get('kind')}' step Helm can't sign; try another amount")
+        q["provider"] = self.id
+        q["nativeFeeRaw"] = "0"  # Relay has no separate flat fee; never let a response grant itself one
+        q.pop("helmFeeBps", None)
         return q
 
     async def status(self, request_id: str) -> dict:
@@ -120,4 +128,5 @@ class Relay:
             "fees_usd": {"network_gas": usd("gas"), "relayer": usd("relayer"), "helm_route_fee": usd("app")},
             "time_estimate_s": d.get("timeEstimate"),
             "request_id": q.get("requestId") or next((s.get("requestId") for s in q["steps"] if s.get("requestId")), None),
+            "provider": q.get("provider") or "relay",
         }
