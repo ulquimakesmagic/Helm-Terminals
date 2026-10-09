@@ -64,18 +64,58 @@ async def test_launch_fee_is_shown_in_dollars_and_paid_after_the_token_is_create
     assert ev.launch_id == lid and ev.asset == "SOL"
 
 
-async def test_the_fee_moves_with_the_price_without_a_new_review(client, fake_rpc, monkeypatch):
-    """The user agrees to "$10"; a price tick between preview and confirm doesn't invalidate the preview."""
+async def test_a_small_price_move_is_charged_but_never_more_than_the_signed_ceiling(client, fake_rpc, monkeypatch):
+    """Review finding: the coin amount must be bounded by what the preview showed. The preview signs a ceiling (the
+    estimate +10%, two significant figures); a small move is charged at the live price, a big one needs a new review,
+    and an implausible price is refused outright."""
     treasury = fee_on(monkeypatch, sol_price=200.0)
     h = await signup(client)
     lid, _ = await new_launch(client, h)
     pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-    fee_on(monkeypatch, sol_price=250.0)
+    assert pf["preflight"]["launch_fee_max"] == "at most 0.055 SOL" and pf.get("quote_approval")
+
+    def confirm_body(key):
+        return {"confirm": True, "preflight_hash": pf["preflight_hash"], "quote_approval": pf["quote_approval"],
+                "idempotency_key": key}
+
+    fee_on(monkeypatch, sol_price=100.0)  # halved: 0.1 SOL, far above the approved 0.055
     monkeypatch.setattr(get_settings(), "platform_fee_wallet", treasury)
-    r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                           "idempotency_key": "fee-moves"}, headers=h)
+    r = await client.post(f"/launches/{lid}/deploy", json=confirm_body("fee-jump"), headers=h)
+    assert r.status_code == 400 and "moved more than 10%" in r.json()["detail"] and fake_rpc.sent == []
+    no_approval = await client.post(f"/launches/{lid}/deploy", json={**confirm_body("fee-none"), "quote_approval": None},
+                                    headers=h)
+    assert no_approval.status_code == 409
+
+    fee_on(monkeypatch, sol_price=190.0)  # a 5% dip: 0.0526 SOL, within the ceiling
+    monkeypatch.setattr(get_settings(), "platform_fee_wallet", treasury)
+    r = await client.post(f"/launches/{lid}/deploy", json=confirm_body("fee-small"), headers=h)
     assert r.status_code == 200, r.text
-    assert sol_transfers(fake_rpc.sent[-1]) == [(treasury, 40_000_000)]  # $10 / $250
+    assert sol_transfers(fake_rpc.sent[-1]) == [(treasury, 52_631_579)]  # $10 / $190, rounded up
+
+    lid2, _ = await new_launch(client, h)
+    fee_on(monkeypatch, sol_price=0.2)  # a broken feed, not a market move
+    pf = (await client.post(f"/launches/{lid2}/deploy", json={}, headers=h)).json()
+    assert any("looks wrong" in w for w in pf["preflight"]["warnings"]) and not pf.get("quote_approval")
+
+
+async def test_a_fee_error_never_strands_the_launch(client, fake_rpc, monkeypatch):
+    """Review finding: an exception while sending the fee left the launch 'deploying'. It must stay live, with the
+    fee recorded as failed."""
+    fee_on(monkeypatch)
+    h = await signup(client)
+    lid, _ = await new_launch(client, h)
+
+    async def boom(*a, **k):
+        raise RuntimeError("rpc down")
+    monkeypatch.setattr("app.services.launch_fee._charge", boom)
+    pf, r = await confirm(client, h, f"/launches/{lid}/deploy", {})
+    assert r.status_code == 200, r.text
+    assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "live"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
+    async with get_sessionmaker()() as db:
+        ev = (await db.execute(select(RevenueEvent).where(RevenueEvent.source == "launch_fee"))).scalar_one()
+    assert ev.status == "failed" and "RuntimeError" in ev.note
 
 
 async def test_no_price_no_launch_and_the_fee_counts_in_the_balance_check(client, fake_rpc, monkeypatch):
@@ -141,6 +181,7 @@ async def test_evm_launch_fee_goes_to_the_evm_treasury_after_the_token_exists(cl
         assert pf["preflight"]["platform_fee"] == "$10, paid in BNB at the live price after the token is created"
         assert not pf["preflight"]["warnings"], pf["preflight"]["warnings"]
         r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
+                                                              "quote_approval": pf["quote_approval"],
                                                               "idempotency_key": "evm-fee"}, headers=h)
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
         assert job["status"] == "confirmed", job

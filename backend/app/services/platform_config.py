@@ -1,7 +1,8 @@
 """Effective fee settings and treasury addresses.
 
 Each value comes from an admin setting in the database when one has been saved, otherwise from the environment
-(where Helm's fees were configured before the admin dashboard existed), so deploying this changes no live rate.
+(where Helm's fees were configured before the admin dashboard existed), so admin-saved rates keep
+winning over the code defaults.
 Values are cached in the process for a short time; admin changes refresh the cache immediately on this process and
 within CACHE_S on any other.
 
@@ -9,6 +10,7 @@ Unsupported or unconfigured fee paths are off: a path is active only when its ra
 is set for its network, and the provider supports taking the fee (see FEE_PATHS).
 """
 
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -112,7 +114,9 @@ def _env_defaults() -> dict:
         "trade_fee_bps_evm_dex": s.platform_fee_bps,
         "route_fee_bps": s.route_fee_bps,
         "creator_share_bps": s.creator_share_bps,
-        "launch_fee_cents": int(round(max(s.launch_fee_usd, 0) * 100)),
+        # Bounded like the admin setting; a non-numeric or NaN env value means no fee rather than a crash.
+        "launch_fee_cents": (min(int(round(max(s.launch_fee_usd, 0) * 100)), BOUNDS["launch_fee_cents"][1])
+                             if math.isfinite(s.launch_fee_usd) else 0),
     }
 
 
