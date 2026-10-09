@@ -25,7 +25,7 @@ from ..chains.base import AdapterError
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.jupiter import Jupiter
 from ..chains.relay import DONE
-from ..services.routing import ROUTE_GAS, execute_route, currency as route_currency, send_item
+from ..services.routing import ROUTE_GAS, execute_route, currency as route_currency, provider_label, send_item
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 from ..services.guard import check_password, check_totp_once
@@ -480,7 +480,7 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
         "to": {"label": dst.label or "Wallet", "address": dst.address}, "to_chain": chain_name(dst.network),
         "send": (f"{usd} {stable_for(src.network)[0]}" if src else None),
         "receive": f"{body.amount:g} {coin}",
-        "provider": "Relay (relay.link)",
+        "provider": getattr(ex.relay, "label", "Relay (relay.link)"),
         "route_fee": ex.relay.fee_note,
         "funding_detail": {"covers": f"{body.amount:g} {coin} in the destination wallet"},
         "own_wallets_only": True,
@@ -500,11 +500,13 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
     quote_info = None
     if src is not None:
         try:
+            pinned = {"provider": approved["provider"]} if approved and approved.get("provider") else {}
             q = await ex.relay.quote(user=src.address, recipient=dst.address, from_network=src.network,
                                      to_network=dst.network, from_currency=route_currency(src.network, "stable")[1],
                                      to_currency=route_currency(dst.network, "native")[1],
                                      amount=int(usd) * 10 ** STABLE_DECIMALS[src.network],
-                                     slippage_pct=auto_fund.SLIPPAGE_PCT)
+                                     slippage_pct=auto_fund.SLIPPAGE_PCT, **pinned)
+            summary["provider"] = provider_label(ex, q)
             bounds = relay_bounds(q, destination_asset=route_currency(dst.network, "native")[1], destination_network=dst.network)
             if int(bounds["minimum_raw"]) < amount_raw:
                 raise AdapterError("The quote cannot deliver the requested amount. Request a new preview.")
@@ -534,7 +536,7 @@ async def fund_cash(body: FundCashBody, user: User = Depends(current_user), db: 
             res, status = await execute_route(session, ex, j, src, dst, "stable", "native", amount_usd_raw,
                                               auto_fund.SLIPPAGE_PCT, kind="fund_route", key="funding", approved_bounds=approved)
             if res.status == "confirmed" and status not in DONE:
-                j.error = f"Relay reported the route as {status}; check the destination wallet's balance."
+                j.error = f"The route provider reported it as {status}; check the destination wallet's balance."
             _finish(j, [res])
             await session.commit()
         await run_job(job.id, work)

@@ -50,13 +50,22 @@ class Executor:
 
         if self._relay is not None and getattr(self, "_relay_key", None) is None:
             return self._relay
-        key = (pc.bps("route_fee_bps"), pc.treasury_for("evm"))
-        if self._relay is None or self._relay_key != key:
-            from ..chains.relay import Relay
-            from ..config import get_settings
+        from ..config import get_settings
 
-            s = get_settings()
-            self._relay = Relay(s.relay_api_url, s.relay_api_key, fee_bps=key[0], fee_recipient=key[1])
+        s = get_settings()
+        key = (pc.bps("route_fee_bps"), pc.treasury_for("evm"), pc.treasury_for("solana"), s.route_providers)
+        if self._relay is None or self._relay_key != key:
+            from ..chains.debridge import DeBridge
+            from ..chains.relay import Relay
+            from ..chains.route_providers import RouteProviders
+
+            built = {
+                "relay": lambda: Relay(s.relay_api_url, s.relay_api_key, fee_bps=key[0], fee_recipient=key[1]),
+                "debridge": lambda: DeBridge(s.debridge_api_url, s.debridge_access_token, fee_bps=key[0],
+                                             fee_recipients={"evm": key[1], "solana": key[2]}),
+            }
+            wanted = [n.strip() for n in (s.route_providers or "").split(",") if n.strip() in built]
+            self._relay = RouteProviders([built[n]() for n in dict.fromkeys(wanted or ["relay"])])
             self._relay_key = key
         return self._relay
 

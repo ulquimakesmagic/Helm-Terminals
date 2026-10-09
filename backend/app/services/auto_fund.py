@@ -96,7 +96,7 @@ async def plan_funding(db: AsyncSession, ex: Executor, user_id: str, dst: Wallet
         "from_wallet_id": src.id, "from": src.label or "Wallet", "from_address": src.address,
         "from_chain": chain_name(src.network), "from_network": src.network, "send": f"{usd} {symbol}", "amount_usd": usd,
         "receive": f"{coin} in the dev wallet on {chain_name(dst.network)}",
-        "provider": "Relay (relay.link)", "route_fee": ex.relay.fee_note,
+        "provider": getattr(ex.relay, "label", "Relay (relay.link)"), "route_fee": ex.relay.fee_note,
         "minimum_receive_raw": str(shortfall_raw), "minimum_receive_network": dst.network,
         "fee_bps": ex.relay.fee_bps, "fee_recipient": ex.relay.fee_recipient,
         "leftover": "Anything not used by the launch stays in the dev wallet",

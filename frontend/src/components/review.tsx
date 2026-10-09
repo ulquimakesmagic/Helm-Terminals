@@ -33,6 +33,12 @@ export function summarize(pre: any, network: string): ReviewSummary | null {
   return { ...s, cells: [...lead, ...s.cells] };
 }
 
+/** Which bridge carries a route: the quote's provider, else the preview's label (Relay unless the server says otherwise). */
+function providerName(pre: any, q: any): string {
+  const label = String(q?.provider_label ?? pre?.provider ?? "Relay");
+  return label.replace(/\s*\(.*\)$/, "");
+}
+
 function summarizeKind(pre: any, network: string): ReviewSummary | null {
   if (!pre) return null;
   const chain = chainOf(pre.network ?? network);
@@ -147,11 +153,15 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
           ? <>About {pre.send} of your USDC routes from {pre.from_chain} to {pre.to_chain}</>
           : <>Your cash balance funds {pre.to_chain}</>,
         cells: pre.from ? [["From", `${pre.from.label ?? "Wallet"} · ${short(pre.from.address)}`],
-          ["Relay + gas", q?.fees_usd ? `$${fmt((q.fees_usd.network_gas ?? 0) + (q.fees_usd.relayer ?? 0), 2)}` : "In quote"],
-          ["Helm route fee", fee(pre.route_fee)], ["Arrives in", q?.time_estimate_s ? `about ${Math.max(1, Math.round(q.time_estimate_s))}s` : "Varies"]]
+          ["Route provider", providerName(pre, q)],
+          ["Provider + gas", q?.fees_usd ? `$${fmt((q.fees_usd.network_gas ?? 0) + (q.fees_usd.relayer ?? 0), 2)}` : "In quote"],
+          ...(q?.native_fee ? [["Provider flat fee", String(q.native_fee)] as [string, ReactNode]] : []),
+          ["Helm route fee", q?.provider === "debridge"
+            ? (q.helm_route_fee_bps ? `${fmt(q.helm_route_fee_bps / 100, 2)}% of the amount sent` : "none")
+            : fee(pre.route_fee)], ["Arrives in", q?.time_estimate_s ? `about ${Math.max(1, Math.round(q.time_estimate_s))}s` : "Varies"]]
           : [["Reason", "No wallet holds enough USDC plus gas"]],
         tone: "danger",
-        next: ["Relay converts your USDC into the destination's coin — same chain, or across chains.",
+        next: [`${providerName(pre, q)} converts your USDC into the destination's coin.`,
           "Confirming fetches a fresh quote; if the fill fails, the amount is refunded to the source wallet."],
       };
     }
@@ -211,13 +221,17 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         sub: q.receive_estimate != null ? <>Receive about {fmt(q.receive_estimate, 6)} {q.receive_symbol ?? pre.receive_asset}, at least {fmt(q.receive_minimum ?? 0, 6)}</> : <>Receive {pre.receive_asset} on {pre.to_chain}</>,
         cells: [
           ["Max slippage", `${fmt(num(pre.slippage_pct) ?? 0, 2)}%`],
-          ["Relay + gas", q.fees_usd ? `$${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)}` : "In quote"],
-          ["Helm route fee", fee(pre.platform_fee)],
+          ["Route provider", providerName(pre, q)],
+          ["Provider + gas", q.fees_usd ? `$${fmt((f.network_gas ?? 0) + (f.relayer ?? 0), 2)}` : "In quote"],
+          ...(q.native_fee ? [["Provider flat fee", String(q.native_fee)] as [string, ReactNode]] : []),
+          ["Helm route fee", q.provider === "debridge"
+            ? (q.helm_route_fee_bps ? `${fmt(q.helm_route_fee_bps / 100, 2)}% of the amount sent` : "none")
+            : fee(pre.platform_fee)],
           ["Arrives in", q.time_estimate_s ? `about ${Math.max(1, Math.round(q.time_estimate_s))}s` : "Varies"],
         ],
         next: [
           `Confirming fetches a fresh quote and sends from your ${pre.from_chain} wallet.`,
-          `Relay fills on ${pre.to_chain}; if the fill fails, the amount is refunded to the source wallet.`,
+          `${providerName(pre, q)} fills on ${pre.to_chain}; if the fill fails, the amount is refunded to the source wallet.`,
         ],
       };
     }
