@@ -10,7 +10,10 @@ EXPLORERS = {
     "bsc": ("https://bscscan.com/tx/", "https://bscscan.com/token/"),
     "ethereum": ("https://etherscan.io/tx/", "https://etherscan.io/token/"),
     "robinhood": ("https://robinhoodchain.blockscout.com/tx/", "https://robinhoodchain.blockscout.com/token/"),
+    "tron": ("https://tronscan.org/transaction/", "https://tronscan.org/token20/"),
+    "near": ("https://nearblocks.io/txns/", "https://nearblocks.io/token/"),
     "arc": ("https://explorer.arc.io/tx/", "https://explorer.arc.io/token/"),
+    "ton": ("https://tonviewer.com/transaction/", "https://tonviewer.com/"),
 }
 
 

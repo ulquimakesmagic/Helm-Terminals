@@ -34,7 +34,7 @@ EVM_NETWORKS = frozenset({"base", "bsc", "ethereum", "robinhood"})
 
 
 def family(network: str) -> str:
-    """solana | evm. Arc is EVM. Any other network (including the removed TRON, NEAR and TON) is refused."""
+    """solana | evm | tron | near. Arc networks are EVM; TRON and NEAR have their own key and address formats."""
     if network == "solana":
         return "solana"
     if network in EVM_NETWORKS:
@@ -52,22 +52,48 @@ def parse_private_key(network: str, secret: str) -> tuple[bytes, str]:
 
     Solana: the base58 key wallet apps export (64-byte keypair), a 32-byte base58 seed, or a solana-keygen JSON array.
     EVM (Base, BNB Chain, Ethereum, Robinhood Chain, Arc): 64 hex characters, with or without 0x.
+    TRON: the same 64 hex characters (what TronLink exports); the address is the key's TRON address.
+    NEAR: "ed25519:<base58>" as NEAR wallets export it; the address is the key's own implicit account (64 hex).
+    TON: never; Helm doesn't hold TON keys.
     """
     import json
 
     secret = secret.strip()
     fam = family(network)
-    if fam == "evm":
+    if fam == "ton":
+        raise SigningError("Helm doesn't hold TON keys; connect the wallet with TON Connect instead")
+    if fam in ("evm", "tron"):
         from eth_keys import keys as eth_keys
 
         try:
             pk = eth_keys.PrivateKey(bytes.fromhex(secret.removeprefix("0x").removeprefix("0X")))
         except Exception:
-            raise SigningError("that isn't an EVM private key (expected 64 hex characters, optionally with 0x)") from None
-        return pk.to_bytes(), pk.public_key.to_checksum_address()
+            what = "a TRON" if fam == "tron" else "an EVM"
+            raise SigningError(f"that isn't {what} private key (expected 64 hex characters"
+                               f"{'' if fam == 'tron' else ', optionally with 0x'})") from None
+        address = pk.public_key.to_checksum_address()
+        if fam == "tron":
+            from ..chains.tron import address_from_evm
+
+            address = address_from_evm(address)
+        return pk.to_bytes(), address
     from solders.keypair import Keypair
     from solders.pubkey import Pubkey
 
+    if fam == "near":
+        from ..chains.near import _b58d
+
+        try:
+            body = secret.split(":", 1)[1] if secret.lower().startswith("ed25519:") else secret
+            raw = _b58d(body)
+            if len(raw) not in (32, 64):
+                raise ValueError
+            kp = Keypair.from_seed(raw[:32])
+            if len(raw) == 64 and bytes(kp.pubkey()) != raw[32:]:
+                raise ValueError
+        except Exception:
+            raise SigningError("that isn't a NEAR private key (expected ed25519:… as your NEAR wallet exports it)") from None
+        return raw[:32], bytes(kp.pubkey()).hex()
     try:
         if secret.startswith("["):
             kp = Keypair.from_bytes(bytes(json.loads(secret)))

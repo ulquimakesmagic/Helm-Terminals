@@ -131,52 +131,56 @@ def wallet(network, ident=None, kind="managed"):
                            kind=kind, label=network)
 
 
-async def test_arc_is_counted_and_its_usdc_is_not_double_counted(monkeypatch):
+async def test_new_chains_are_counted_and_arc_usdc_is_not_double_counted(monkeypatch):
     async def raw(ex, network, address):
-        return {"arc": 4 * 10**18}[network]
+        return {"near": 2 * 10**24, "tron": 3 * 10**6, "arc": 4 * 10**18, "ton": 5 * 10**9}[network]
 
     async def prices():
-        return {}
+        return {"NEAR": 5, "TRX": 0.25, "TON": 2}
 
     monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
     monkeypatch.setattr(pf_mod, "coin_prices", prices)
-    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["arc"])
-    p = await pf_mod.build_portfolio(None, "new-chains", [wallet("arc"), wallet("arc", "watched", "watch")], True)
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near", "tron", "arc", "ton"])
+    p = await pf_mod.build_portfolio(None, "new-chains", [wallet(n) for n in ("near", "tron", "arc", "ton")]
+                                   + [wallet("ton", "connected", "external"), wallet("near", "watch", "watch")], True)
     chains = {c["network"]: c for c in p["chains"]}
-    assert p["wallets"] == 1 and p["complete"]
+    assert p["wallets"] == 4 and p["complete"]
+    assert chains["near"]["native"] == 2 and chains["tron"]["native"] == 3 and chains["ton"]["native"] == 5
     assert chains["arc"]["usd"] == 4 and chains["arc"]["native_is_stable"]
     assert chains["arc"]["stable_tracked"] is False
-    assert p["totals"]["usd"] == 4 and p["totals"]["stable_usd"] == 4
-    assert not {"tron", "near", "ton"} & set(chains)
+    assert p["totals"] == {"usd": 24.75, "stable_usd": 4, "native_usd": 20.75}
 
 
-async def test_disabled_removed_and_unknown_chains_remain_counted_without_being_read(monkeypatch):
+async def test_disabled_and_unknown_chains_remain_counted_without_being_read(monkeypatch):
     async def forbidden(*args):
         raise AssertionError("disabled chains must not be queried")
 
     monkeypatch.setattr(pf_mod, "extra_enabled", lambda: [])
     monkeypatch.setattr(pf_mod.extra_chains, "native_balance", forbidden)
-    p = await pf_mod.build_portfolio(None, "disabled-chains", [wallet("arc"), wallet("tron"), wallet("future-chain")],
-                                     True)
+    p = await pf_mod.build_portfolio(None, "disabled-chains", [wallet("near"), wallet("future-chain")], True)
     rows = {c["network"]: c for c in p["chains"]}
-    assert p["wallets"] == 3 and not p["complete"]
-    assert set(p["incomplete_chains"]) == {"arc", "tron", "future-chain"}
+    assert p["wallets"] == 2 and not p["complete"]
+    assert set(p["incomplete_chains"]) == {"near", "future-chain"}
     assert p["totals"]["usd"] is None and p["totals"]["native_usd"] is None
-    assert rows["arc"]["native"] is None and "disabled" in rows["arc"]["message"]
-    assert "not supported" in rows["future-chain"]["message"] and "not supported" in rows["tron"]["message"]
+    assert rows["near"]["native"] is None and "disabled" in rows["near"]["message"]
+    assert "not supported" in rows["future-chain"]["message"]
 
 
-async def test_failed_reads_do_not_become_zero(monkeypatch):
+async def test_missing_prices_and_failed_reads_do_not_become_zero(monkeypatch):
     async def raw(ex, network, address):
-        raise RuntimeError("HTTP 429")
+        if network == "tron":
+            raise RuntimeError("HTTP 429")
+        return 2 * 10**24
 
     monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
-    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["arc"])
-    p = await pf_mod.build_portfolio(None, "missing-prices", [wallet("arc")], True)
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near", "tron"])
+    p = await pf_mod.build_portfolio(None, "missing-prices", [wallet("near"), wallet("tron")], True)
     rows = {c["network"]: c for c in p["chains"]}
-    assert not p["complete"]  # Arc's native coin is USDC, so it counts against the stablecoin total
-    assert rows["arc"]["native"] is None and "provider is busy" in rows["arc"]["message"]
-    assert "429" not in rows["arc"]["message"]
+    assert not p["complete"] and not p["native_complete"] and not p["priced"]
+    assert rows["near"]["native"] == 2 and rows["near"]["usd"] is None
+    assert rows["near"]["top"][0]["stable"] is None
+    assert rows["tron"]["native"] is None and "provider is busy" in rows["tron"]["message"]
+    assert "429" not in rows["tron"]["message"]
     assert p["totals"]["usd"] is None
 
 
@@ -212,8 +216,8 @@ async def test_refreshes_share_work_and_new_wallets_invalidate_the_cache(monkeyp
         return 0
 
     monkeypatch.setattr(pf_mod.extra_chains, "native_balance", raw)
-    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["arc"])
-    ws = [wallet("arc")]
+    monkeypatch.setattr(pf_mod, "extra_enabled", lambda: ["near"])
+    ws = [wallet("near")]
     first = asyncio.create_task(pf_mod.build_portfolio(None, "shared-refresh", ws, True))
     await started.wait()
     second = asyncio.create_task(pf_mod.build_portfolio(None, "shared-refresh", ws, True))
@@ -222,7 +226,7 @@ async def test_refreshes_share_work_and_new_wallets_invalidate_the_cache(monkeyp
     assert a == b and len(calls) == 1
     await pf_mod.build_portfolio(None, "shared-refresh", ws, True)
     assert len(calls) == 1  # rapid manual refresh is cached too
-    p = await pf_mod.build_portfolio(None, "shared-refresh", ws + [wallet("arc", "second")], True)
+    p = await pf_mod.build_portfolio(None, "shared-refresh", ws + [wallet("near", "second")], True)
     assert p["wallets"] == 2 and len(calls) == 3
 
 
@@ -262,7 +266,7 @@ async def test_price_provider_failure_leaves_coins_unpriced(monkeypatch):
     assert await load_coin_prices(Down()) == {}
 
 
-async def test_only_positive_codex_prices_are_used(monkeypatch):
+async def test_only_positive_codex_prices_are_used_and_near_ton_stay_unpriced(monkeypatch):
     from app.services.portfolio import PRICE_TOKENS
 
     class Codex:
@@ -273,4 +277,4 @@ async def test_only_positive_codex_prices_are_used(monkeypatch):
 
     monkeypatch.undo()
     assert await load_coin_prices(Codex()) == {"SOL": 150.0}
-    assert set(PRICE_TOKENS) == {"SOL", "ETH", "BNB"}
+    assert "NEAR" not in PRICE_TOKENS and "TON" not in PRICE_TOKENS  # not Codex networks: shown without USD

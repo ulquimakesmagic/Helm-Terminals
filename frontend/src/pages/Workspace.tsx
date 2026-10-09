@@ -24,8 +24,9 @@ function launchSetting(key: string, value: unknown): string {
     tax_rate_pct: "Trading tax", creator_tax_pct: "Creator tax", lp_share_pct: "Supply in pool",
     lp_tokens: "LP tokens", sniper_start_pct: "Opening sniper fee", sniper_decay_s: "Sniper decay",
     dbc_quote: "Curve currency", anti_sniping: "Anti-sniping", label: "Category",
+    duration_h: "Auction length", soft_cap_near: "Soft cap", hard_cap_near: "Hard cap",
   };
-  const unit = key.endsWith("_pct") ? "%" : key.endsWith("_s") ? "s" : key.endsWith("_h") ? "h" : "";
+  const unit = key.endsWith("_pct") ? "%" : key.endsWith("_s") ? "s" : key.endsWith("_h") ? "h" : key.endsWith("_near") ? " NEAR" : "";
   return `${labels[key] ?? key.replace(/_/g, " ")}: ${String(value)}${unit}`;
 }
 
@@ -239,8 +240,9 @@ export default function Workspace() {
   const chosenSettings = Object.entries(l.settings ?? {});
   const cur = chain.native;
   const live = l.status === "live";
-  // Arc (Tolly) launches trade through their own plan; they have no token-operations panel.
+  // Extra-chain launch plans remain unavailable; Meme.Cooking trades are auction deposits.
   const extra = isExtraChain(l.network);
+  const auction = l.launchpad === "meme-cooking";
   const sel = [...selected].filter((wid) => ws.wallets.some((w: any) => w.id === wid));
   const toggle = (wid: string) => setSelected((s) => { const n = new Set(s); n.has(wid) ? n.delete(wid) : n.add(wid); return n; });
   const attached = new Set(ws.wallets.map((w: any) => w.id));
@@ -302,7 +304,7 @@ export default function Workspace() {
   const ticketCard = live ? (
             <Card id="order-ticket" className="terminal-ticket" title={`Trade $${l.symbol}`} icon="zap" sub="Helm execution · review before sending">
               <div className="stack">
-                <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={[["buy", "Buy"], ["sell", "Sell"]]} />
+                <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={auction ? [["buy", "Deposit"], ["sell", "Withdraw"]] : [["buy", "Buy"], ["sell", "Sell"]]} />
                 <details className="ticket-wallets">
                   <summary><span className="row"><Icon name="wallet" size={14} />Wallets</span><span className="mono">{sel.length} / {ws.wallets.length} selected</span></summary>
                   <div className="ticket-wallet-actions"><button type="button" className="btn sm ghost" disabled={!ws.wallets.length} onClick={() => setSelected(new Set(ws.wallets.map((w: any) => w.id)))}>Select all</button>
@@ -316,7 +318,8 @@ export default function Workspace() {
                     {!ws.wallets.length && <p className="muted small">Attach a wallet in the Wallets section below to start.</p>}
                   </div>
                 </details>
-                <Field label={side === "buy" ? "Spend per wallet" : "Sell from each wallet"} extra={side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
+                {auction && <p className="muted small">Meme.Cooking is an auction: deposits count until the countdown ends; withdrawing before then costs 2%.</p>}
+                <Field label={side === "buy" ? (auction ? "Deposit per wallet" : `Spend per wallet`) : (auction ? "Withdraw from each wallet's deposit" : "Sell from each wallet")} extra={side === "sell" && auction ? "percent of each wallet's deposit" : side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
                   <UnitInput unit={side === "buy" ? cur : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </Field>
                 <div className="chips" role="group" aria-label="Preset amounts">
@@ -344,7 +347,7 @@ export default function Workspace() {
                   </div>
                 )}
                 <button className={`btn lg block ${side}`} disabled={!sel.length || !(amt > 0) || (side === "sell" && amt > 100)} onClick={() => setDialog({
-                  title: `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
+                  title: auction ? `${side === "buy" ? "Deposit into" : "Withdraw from"} the $${l.symbol} auction` : `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
                   body: { side, wallet_ids: sel, amount: amt, mode, stagger_ms: +stagger, slippage_pct: +slippage },
                 })}>
                   {sel.length ? `Review ${side} · ${sel.length} wallet${sel.length === 1 ? "" : "s"}` : "Select wallets to trade"}
@@ -365,7 +368,20 @@ export default function Workspace() {
           )}
     </>
   );
-  const opsCard = live && extra ? null : live ? (
+  const opsCard = live && extra ? (auction ? (
+            <Card title="Claim" icon="coins" sub="After the auction ends">
+              <div className="stack">
+                <p className="muted small">Once the countdown ends, claim your share of the tokens, or your NEAR back if the soft cap wasn't reached.</p>
+                <Field label="Wallet">
+                  <select value={claimWallet} onChange={(e) => setClaimWallet(e.target.value)}>
+                    <option value="">Choose a wallet…</option>
+                    {ws.wallets.map((w: any) => <option key={w.id} value={w.id}>{w.label || short(w.address)}</option>)}
+                  </select>
+                </Field>
+                <button className="btn block" disabled={!claimWallet} onClick={() => setDialog({ title: "Claim tokens or refund", path: `/launches/${id}/claim-fees`, body: { wallet_id: claimWallet } })}>
+                  <Icon name="coins" size={15} />Review claim</button>
+              </div>
+            </Card>) : null) : live ? (
             <Card title="Token operations" icon="layers" sub={claimInApp ? "Claim, burn or send from your wallets" : "Burn or send from your wallets"}>
               <div className="stack">
                 {claimMode === "external" && <Callout><b>{experience.rewardTitle}.</b> {experience.claimCopy} {claimUrl && <a href={claimUrl} target="_blank" rel="noreferrer">Open {claimUrl.includes("bags") ? "Bags" : "launchpad"}</a>}</Callout>}

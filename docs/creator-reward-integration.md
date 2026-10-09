@@ -27,6 +27,8 @@ rights and must stay distinct in the UI and revenue ledger.
 | LetsBonk | Bonding curve | Launchpad creator fees | Not integrated or verified | Claims stay on bonk.fun | Confirm an official multi-recipient API or contract instruction before adding a share |
 | Four.meme | Bonding curve | No creator reward on Helm's standard-token path | No | No creator-reward share | A tax-token mode would alter token economics and must not be used as a substitute for a platform reward split |
 | Uniswap V2 | Direct pool | Fees belong to the LP-token holder | No creator-reward concept | No creator-reward share | Keep LP ownership explicit; never take an LP position merely to imitate a creator fee |
+| SunPump | TRON bonding curve | No verified split in the current integration | No | No creator-reward share | Confirm an official partner or multi-recipient mechanism before enabling revenue |
+| Meme.Cooking | NEAR fair-launch auction | Auction settlement, not creator fees | No | No creator-reward share | Keep auction proceeds and refunds out of creator-reward accounting |
 | Tolly | Arc locked V3 pool | No verified split in the current integration | No | No creator-reward share | Confirm the deployed contracts and official partner economics before enabling revenue |
 
 ## Delivery order
@@ -39,7 +41,7 @@ rights and must stay distinct in the UI and revenue ledger.
    which automatically distributes to all shareholders when a sharing config exists.
 3. Build a Helm-owned Meteora DBC configuration using the direct Meteora SDK. Treat this as a new adapter version because it changes curve and
    migration economics from the current Jupiter Studio route.
-4. Ask LetsBonk, Flap, Pons, Four.meme and Tolly for documented partner or referral programs. Add each only
+4. Ask LetsBonk, Flap, Pons, Four.meme, SunPump and Tolly for documented partner or referral programs. Add each only
    when Helm can record an independently claimable revenue entitlement.
 5. Keep the existing trade and route fees for launchpads without a creator split. Display them separately and never
    describe them as creator rewards.

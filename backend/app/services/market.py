@@ -10,7 +10,8 @@ Contract (docs.codex.io GraphQL reference, checked 6 Oct 2026):
 - `listPairsWithMetadataForToken` — the token's pools with liquidity, exchange and quote token.
 - `getBars(symbol, from, to, resolution, countback, symbolType)` — OHLCV candles. Token-level bars aggregate
   the token's pools; pool-level bars chart one pool. At most 1,500 bars per request.
-- Network IDs: Solana 1399811149, Ethereum 1, BNB Chain 56, Base 8453, Robinhood 4663, Arc 5042.
+- Network IDs: Solana 1399811149, Ethereum 1, BNB Chain 56, Base 8453, Robinhood 4663, Arc 5042, TRON 728126428.
+  NEAR and TON are not Codex networks, so Helm shows market data as unsupported there.
 
 The API key stays on the server. Requests are cached, de-duplicated while in flight, budgeted per minute, retried
 at most twice on transport errors and 5xx, and paused after a 429. Nothing is substituted: a value Codex does not
@@ -33,7 +34,7 @@ from ..config import get_settings
 
 CODEX_API = "https://graph.codex.io/graphql"
 CODEX_NETWORK = {"solana": 1399811149, "ethereum": 1, "bsc": 56, "base": 8453,
-                 "robinhood": 4663, "arc": 5042}
+                 "robinhood": 4663, "arc": 5042, "tron": 728126428}
 # Helm window key -> Codex field suffix. Codex publishes these five windows; nothing else is shown.
 WINDOWS = {"m5": "5m", "h1": "1", "h4": "4", "h12": "12", "h24": "24"}
 # Candle resolution -> seconds per bar (Codex resolution strings).
@@ -96,13 +97,15 @@ def valid_address(network: str, token: str) -> bool:
         return False
     if network == "solana":
         pattern = r"[1-9A-HJ-NP-Za-km-z]{32,44}"
+    elif network == "tron":
+        pattern = r"T[1-9A-HJ-NP-Za-km-z]{33}"
     else:
         pattern = r"0x[0-9a-fA-F]{40}"
     return re.fullmatch(pattern, token) is not None
 
 
 def _key(network: str, address: str) -> str:
-    return address if network == "solana" else address.lower()
+    return address if network in ("solana", "tron") else address.lower()
 
 
 def _same(a, b: str, network: str) -> bool:

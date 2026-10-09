@@ -28,11 +28,7 @@ def _naive(d: datetime | None) -> datetime | None:
 
 
 async def _launch(db: AsyncSession, user: User, launch_id: str) -> Launch:
-    from ..chains.networks import offered
-
     l = (await db.execute(select(Launch).where(Launch.id == launch_id, Launch.user_id == user.id))).scalar_one_or_none()
-    if l is not None and not offered(l.network):
-        l = None
     if not l:
         raise HTTPException(404, "launch not found")
     return l

@@ -13,7 +13,7 @@ from .base import LaunchpadAdapter
 from .letsbonk import LetsBonkAdapter
 from .pumpfun import PumpFunAdapter
 from .solana import shared_rpc
-from .extra_pads import Tolly
+from .extra_pads import MemeCooking, Pinata, SunPump, Tolly
 
 
 def _pumpfun() -> LaunchpadAdapter:
@@ -58,8 +58,10 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                                                         shared_rpc(get_settings().solana_rpc_url),
                                                         get_settings().jupiter_api_url or "https://api.jup.ag"),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood"),
-               # Arc (see chains/extra_pads.py and services/extra_launch.py)
-               "tolly": Tolly}
+               # TRON, NEAR and Arc (see chains/extra_pads.py and services/extra_launch.py)
+               "sunpump": SunPump, "tolly": Tolly,
+               "meme-cooking": lambda: MemeCooking(Pinata(get_settings().pinata_jwt) if get_settings().pinata_jwt
+                                                   else None)}
 
 
 def is_extra(adapter) -> bool:
@@ -83,13 +85,15 @@ def needs_setup(launchpad_id: str) -> str | None:
     """Why an implemented launchpad can't be used on this server yet, or None if it can."""
     if launchpad_id == "bags" and not get_settings().bags_api_key:
         return "Bags needs an API key (BAGS_API_KEY) on the server"
-    if launchpad_id == "tolly":
+    if launchpad_id in ("sunpump", "meme-cooking", "tolly"):
         from .networks import EXTRA_NETWORKS, extra_enabled
 
         net = get_adapter(launchpad_id).network
         if net not in extra_enabled():
             return f"{EXTRA_NETWORKS[net].name} isn't enabled on this server (EXTRA_NETWORKS)"
-        if not get_settings().public_api_url:
+        if launchpad_id == "meme-cooking" and not get_settings().pinata_jwt:
+            return "Meme.Cooking launches pin the image to IPFS, which needs a Pinata key (PINATA_JWT)"
+        if launchpad_id == "tolly" and not get_settings().public_api_url:
             return "Tolly stores the token image as a link, which needs PUBLIC_API_URL on the server"
     if launchpad_id == "pons":
         s = get_settings()
@@ -106,6 +110,7 @@ PLANNED = [
     ("printr", "solana"),
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("bankr", "base"),
+    ("gaspump", "ton"),  # buy/sell are documented (SDK); token creation isn't public yet
 ]
 
 _cache: dict[str, LaunchpadAdapter] = {}
