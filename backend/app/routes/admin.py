@@ -466,7 +466,10 @@ async def set_setting(key: str, body: SettingChange, request: Request, user: Use
     if body.bps > 0:
         if not any(p["supported"] for p in paths):
             raise HTTPException(400, "no supported fee path uses this setting")
-        if key == "creator_share_bps":
+        if key == "launch_fee_cents":
+            if not (pc.treasury_for("solana") or pc.treasury_for("evm")):
+                raise HTTPException(400, "set a treasury address for Solana or EVM chains before enabling this")
+        elif key == "creator_share_bps":
             if not any(pc.treasury_for(n) for n in set(pc.CREATOR_SHARE_LAUNCHPADS.values())):
                 raise HTTPException(400, "set a treasury address for Solana or an EVM chain before enabling this")
         elif not pc.treasury_for(net):

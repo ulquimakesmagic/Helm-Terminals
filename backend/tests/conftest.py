@@ -6,6 +6,10 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TMP}/test.db"
 os.environ["RUN_JOBS_INLINE"] = "true"
 os.environ["ENV"] = "development"
 os.environ["SECRET_KEY"] = "test-secret"
+# Fee defaults are on in production (1% trades, 3% creator share, $10 launch fee); tests opt in explicitly.
+os.environ.setdefault("PLATFORM_FEE_BPS", "0")
+os.environ.setdefault("CREATOR_SHARE_BPS", "0")
+os.environ.setdefault("LAUNCH_FEE_USD", "0")
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402

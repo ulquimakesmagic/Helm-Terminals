@@ -235,7 +235,6 @@ function CreateWallets({ onClose, onDone, folders, defaultFolder, extras }: {
         <div className="chips">{CHAIN_ORDER.map(chip)}</div>
         {extras.length > 0 && <div className="chips" style={{ marginTop: 6 }}>{extras.map((n) => chip(n.id))}</div>}
       </div>
-      {extra && tab !== "watch" && <Callout tone="warn" icon="alert">{extra.name} is a mainnet: transfers from this wallet move real money.</Callout>}
       {error && <Callout tone="err">{error}</Callout>}
       {tab === "managed" ? (
         <>

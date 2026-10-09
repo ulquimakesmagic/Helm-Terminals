@@ -228,22 +228,33 @@ async def test_fee_settings_are_bounded_and_need_their_treasury_first(client):
     assert "trade_fee_evm_curve" in unsupported and "creator_share_other" in unsupported
 
 
-async def test_deploying_this_changes_no_rate(client, monkeypatch):
-    """With no admin settings saved, every rate is what the environment already said."""
+async def test_environment_rates_apply_until_an_admin_saves_one(client, monkeypatch):
+    """With no admin settings saved, rates come from the environment: the trading fee, the route fee, one
+    creator-reward share for every launchpad that supports a native split, and the flat launch fee."""
     s = get_settings()
-    monkeypatch.setattr(s, "platform_fee_bps", 75)
+    monkeypatch.setattr(s, "platform_fee_bps", 100)
     monkeypatch.setattr(s, "route_fee_bps", 30)
-    monkeypatch.setattr(s, "clanker_platform_reward_bps", 1000)
+    monkeypatch.setattr(s, "creator_share_bps", 300)
+    monkeypatch.setattr(s, "launch_fee_usd", 10.0)
     monkeypatch.setattr(s, "platform_fee_wallet_evm", EVM_TREASURY)
     monkeypatch.setattr(s, "platform_fee_wallet", str(Keypair().pubkey()))
     async with get_sessionmaker()() as db:
         await pc.refresh(db, force=True)
-    assert pc.bps("trade_fee_bps_solana") == 75 and pc.bps("trade_fee_bps_evm_dex") == 75
-    assert pc.bps("route_fee_bps") == 30
-    assert pc.creator_share("clanker")["bps"] == 1000  # the existing Clanker share
-    assert pc.creator_share("bags")["bps"] == 0  # Bags had none, and still has none until an admin sets it
-    assert pc.creator_share("pumpfun")["bps"] == 0  # also opt-in until the admin saves a creator-share rate
-    assert pc.creator_share("pumpfun")["supported"] is True
+    assert pc.bps("trade_fee_bps_solana") == 100 and pc.bps("trade_fee_bps_evm_dex") == 100
+    assert pc.bps("route_fee_bps") == 30 and pc.bps("launch_fee_cents") == 1000
+    for lp in ("clanker", "bags", "pumpfun"):
+        assert pc.creator_share(lp)["bps"] == 300 and pc.creator_share(lp)["supported"] is True
+    assert pc.creator_share("letsbonk")["bps"] == 0  # no native split there
+
+
+def test_production_defaults_are_the_new_rates():
+    from app.config import Settings
+
+    fields = Settings.model_fields
+    assert fields["platform_fee_bps"].default == 100  # 1% trading fee
+    assert fields["creator_share_bps"].default == 300  # 3% of creator rewards
+    assert fields["launch_fee_usd"].default == 10.0  # $10 per launch
+    assert pc.PONS_SHARE_BPS == 600  # Pons is fixed by its deployed contract; changing it needs a new version
 
 
 # --- revenue routing and the ledger -----------------------------------------------------------------------

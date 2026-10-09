@@ -27,11 +27,16 @@ BOUNDS = {
     "trade_fee_bps_evm_dex": (0, 200),  # Helm fee on EVM trades routed through KyberSwap: at most 2%
     "route_fee_bps": (0, 100),  # Helm fee on USDC routes and bridges (Relay app fee): at most 1%
     "creator_share_bps": (0, 1000),  # Helm's share of a new launch's creator rewards: at most 10%
+    "launch_fee_cents": (0, 10_000),  # flat launch fee in US cents (not bps): at most $100
 }
 
 # Every way Helm can earn, where it lands, and whether it's available. Used for the admin support matrix and to
 # refuse enabling paths that don't exist.
 FEE_PATHS = [
+    {"id": "launch_fee", "label": "Launch fee (flat, in US dollars)", "setting": "launch_fee_cents",
+     "networks": ["solana", *EVM_CHAINS], "supported": True, "lands": "received",
+     "how": "After the token is created, the dev wallet sends the fee in the chain's coin, priced at the live USD "
+            "price, to that chain's treasury. A failed launch pays nothing."},
     {"id": "trade_fee_solana", "label": "Trading fee: Solana launchpads", "setting": "trade_fee_bps_solana",
      "networks": ["solana"], "supported": True, "lands": "received",
      "how": "Added as a transfer inside each confirmed buy or sell; a failed trade pays nothing."},
@@ -80,6 +85,10 @@ FEE_PATHS = [
      "how": "Configured with BAGS_PARTNER_WALLET / BAGS_PARTNER_CONFIG; paid by Bags, not directly verifiable here."},
 ]
 
+# Fixed in HelmPonsRewards / HelmRewardsSplitter (HELM_BPS = 600). Existing splitters' addresses derive from that
+# bytecode, so a different rate needs a new contract version and factory, not a settings change.
+PONS_SHARE_BPS = 600
+
 CREATOR_SHARE_LAUNCHPADS = {
     "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood",
     "pons": "robinhood",
@@ -102,8 +111,8 @@ def _env_defaults() -> dict:
         "trade_fee_bps_solana": s.platform_fee_bps,
         "trade_fee_bps_evm_dex": s.platform_fee_bps,
         "route_fee_bps": s.route_fee_bps,
-        # Before the dashboard, only Clanker had a platform share; keep that as the default.
-        "creator_share_bps": s.clanker_platform_reward_bps,
+        "creator_share_bps": s.creator_share_bps,
+        "launch_fee_cents": int(round(max(s.launch_fee_usd, 0) * 100)),
     }
 
 
@@ -168,16 +177,10 @@ def creator_share(launchpad: str) -> dict:
         # An explicit enable must fail closed at preflight if its factory/treasury is missing, not silently
         # create a launch with no revenue split. Actual addresses and bytecode are checked before confirmation.
         active = s.pons_rewards_enabled
-        return {"bps": 600 if active else 0, "recipient": recipient if active else "", "supported": True,
+        return {"bps": PONS_SHARE_BPS if active else 0, "recipient": recipient if active else "", "supported": True,
                 "note": ("Fixed split: 94% of native creator rewards to you; 6% to Helm, including creator tax. "
                          "Recipients cannot be changed through Helm. Pons retains its timelocked override."
                          if active else "Pons reward splitting is not enabled; rewards go to your dev wallet")}
-    setting = current().settings.get("creator_share_bps", {})
-    if setting.get("source") != "admin" and not launchpad.startswith("clanker"):
-        # Before the dashboard only Clanker had a share (CLANKER_PLATFORM_REWARD_BPS); other launchpads stay at 0
-        # until an admin sets the share, so deploying this doesn't change anyone's rates.
-        return {"bps": 0, "recipient": "", "supported": True,
-                "note": "Helm takes no share of your creator rewards"}
     share = min(max(bps("creator_share_bps"), 0), 1000) if recipient else 0
     return {"bps": share, "recipient": recipient, "supported": True,
             "note": (f"{share / 100:g}% of your creator rewards go to Helm's treasury; you keep {100 - share / 100:g}%"

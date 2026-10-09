@@ -56,7 +56,7 @@ export default function Networks() {
           <tbody>{data.extra.map((n) => (
             <tr key={n.id}>
               <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={20} label /><b>{n.name}</b>
-                <span className="badge warn">mainnet · real money</span></span>
+</span>
                 <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}</div></td>
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
@@ -73,7 +73,7 @@ export default function Networks() {
           </div>))}</div>
       </details>
       {enabled.length === 0 ? <Empty icon="globe" title="Arc isn't enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (
-        <Card title="Use a network" icon="globe" sub="Pick one explicitly. These are mainnets: transfers move real money.">
+        <Card title="Use a network" icon="globe" sub="Pick one explicitly.">
           <div className="chips">{enabled.map((n) => (
             <button key={n.id} type="button" className={`chip ${current?.id === n.id ? "on" : ""}`} onClick={() => setSearch({ network: n.id })}>
               <ChainMark network={n.id} size={16} />{n.name}
@@ -101,7 +101,6 @@ function NetworkPanel({ net }: { net: Net }) {
   };
   return (
     <div className="stack">
-      <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
       <Card title={`${net.name} wallets`} icon="wallet" flush
         actions={<button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
         {!wallets ? <Loading /> : wallets.length === 0 ? <Empty icon="wallet" title={`No ${net.name} wallets yet`} text={<>Create one, or <Link to="/settings">link your own wallet in Settings</Link>.</>} /> : (
