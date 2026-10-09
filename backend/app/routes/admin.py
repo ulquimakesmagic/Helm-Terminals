@@ -459,14 +459,20 @@ async def set_setting(key: str, body: SettingChange, request: Request, user: Use
         raise HTTPException(404, "unknown setting")
     lo, hi = pc.BOUNDS[key]
     if not lo <= body.bps <= hi:
-        raise HTTPException(400, f"{key} must be between {lo} and {hi} bps")
+        unit = "cents" if key == "launch_fee_cents" else "bps"
+        raise HTTPException(400, f"{key} must be between {lo} and {hi} {unit}")
     await step_up(db, user, body.confirm)
     await pc.refresh(db, force=True)
     paths, net = _setting_requirements(key)
     if body.bps > 0:
         if not any(p["supported"] for p in paths):
             raise HTTPException(400, "no supported fee path uses this setting")
-        if key == "creator_share_bps":
+        if key == "launch_fee_cents":
+            from ..chains.evm import EVM_CHAINS
+
+            if not any(pc.treasury_for(n) for n in ("solana", *EVM_CHAINS)):
+                raise HTTPException(400, "set a treasury address for Solana or an EVM chain before enabling this")
+        elif key == "creator_share_bps":
             if not any(pc.treasury_for(n) for n in set(pc.CREATOR_SHARE_LAUNCHPADS.values())):
                 raise HTTPException(400, "set a treasury address for Solana or an EVM chain before enabling this")
         elif not pc.treasury_for(net):

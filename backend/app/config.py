@@ -121,17 +121,22 @@ class Settings(BaseSettings):
     bags_partner_wallet: str = ""
     bags_partner_config: str = ""
 
-    # Optional platform fee on sells. 0 disables it. Always shown in the preflight.
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
-    # transaction and shown in every preview. 0 turns fees off.
-    platform_fee_bps: int = 0
+    # transaction and shown in every preview. 0 turns fees off. An admin setting in the dashboard overrides this.
+    platform_fee_bps: int = 100
     platform_fee_wallet: str = ""
     # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
     # commission to it). Optional.
     platform_fee_wallet_evm: str = ""
     # Share of a Clanker token's LP rewards paid to PLATFORM_FEE_WALLET_EVM, in bps (1000 = 10%, max 2000).
     # 0 = all rewards to the creator. Always shown in the deploy preview.
-    clanker_platform_reward_bps: int = 0
+    clanker_platform_reward_bps: int = 0  # legacy; superseded by CREATOR_SHARE_BPS
+    # Helm's share of a new launch's creator rewards where the launchpad supports a native split (Pump.fun, Bags,
+    # Clanker), in bps (300 = 3%). An admin setting in the dashboard overrides this.
+    creator_share_bps: int = 300
+    # Flat fee per launch in US dollars, charged in the launch chain's coin at the live price after the token is
+    # created (a failed launch pays nothing). 0 turns it off. An admin setting in the dashboard overrides this.
+    launch_fee_usd: float = 10.0
     # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
     # The owner account's email. Superadmin binds only when BOTH this email and the user ID above match

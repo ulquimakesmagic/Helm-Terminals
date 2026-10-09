@@ -409,10 +409,11 @@ def _creator_share_terms(launchpad: str, params: dict, dev_address: str = "") ->
             "creator": dev_address if sh["bps"] else "", "creator_bps": 10_000 - sh["bps"] if sh["bps"] else 10_000}
 
 
-def _helm_fees(share: dict, funding: dict | None) -> str:
-    """Every Helm fee this deploy involves, in one line, so overlapping fees are never hidden: the deploy itself is
-    free, a USDC funding route pays only the route fee, and a creator-reward share applies to future rewards only."""
-    parts = ["no Helm fee on the deploy itself"]
+def _helm_fees(share: dict, funding: dict | None, fee=None) -> str:
+    """Every Helm fee this deploy involves, in one line, so overlapping fees are never hidden: the flat launch fee
+    (if any), the route fee on a USDC funding route, and a creator-reward share that applies to future rewards only."""
+    parts = [f"${fee.usd:g} launch fee, paid in {fee.coin} after the token is created" if fee
+             else "no Helm fee on the deploy itself"]
     if funding:
         parts.append(f"route fee on the USDC funding: {funding.get('route_fee', 'none')}")
     if share.get("bps"):
@@ -528,13 +529,17 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         return await extra_launch.deploy(l, body, user, db, ex, dev, adapter)
     if is_evm(adapter):
         return await _deploy_evm(l, body, user, db, ex, dev, adapter)
+    from ..services import launch_fee
+
+    helm_fee, fee_problem = await launch_fee.quote(db, dev.network)
     bal = await rpc.get_balance(dev.address)
-    need = l.dev_buy_sol + MIN_DEPLOY_BUFFER_SOL
-    need_raw = int(need * LAMPORTS_PER_SOL)
-    warnings = []
+    need_raw = int((l.dev_buy_sol + MIN_DEPLOY_BUFFER_SOL) * LAMPORTS_PER_SOL) + launch_fee.headroom(helm_fee)
+    need = need_raw / LAMPORTS_PER_SOL
+    warnings = [fee_problem] if fee_problem else []
     funding = None
     if bal < need_raw:
-        short = f"Dev wallet has {bal / LAMPORTS_PER_SOL:.4f} SOL; needs about {need:.4f} SOL (dev buy + rent and fees)."
+        short = (f"Dev wallet has {bal / LAMPORTS_PER_SOL:.4f} SOL; needs about {need:.4f} SOL (dev buy, rent and "
+                 f"fees{', and the launch fee' if helm_fee else ''}).")
         funding, why = await plan_funding(db, ex, user.id, dev, need_raw - bal) if body.auto_fund else (None, None)
         if not funding:
             warnings.append(short + (f" {why}" if why else ""))
@@ -547,7 +552,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     share = _creator_share_terms(l.launchpad, dict(l.launchpad_params or {}), dev.address)
     summary = {
         "launch_id": l.id, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
-        "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "platform_fee": "none on deploy",
+        "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol,
+        "platform_fee": helm_fee.summary() if helm_fee else ("launch fee can't be priced right now" if fee_problem
+                                                             else "none on deploy"),
         "helm_creator_share": share,
     }
     if hasattr(adapter, "deploy_notes"):
@@ -571,7 +578,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         summary["steps"] = "2 transactions: fee-share setup, then the launch"
     if funding:
         summary["funding"] = funding
-    summary["helm_fees"] = _helm_fees(share, funding)
+    summary["helm_fees"] = _helm_fees(share, funding, helm_fee)
     from ..services.protections import protections_for
 
     summary["launch_protections"] = protections_for(l.launchpad)["summary"]
@@ -579,10 +586,19 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
+    if helm_fee:
+        pf["preflight"]["launch_fee_estimate"] = helm_fee.estimate()  # display only: moves with the price
+        pf["preflight"]["launch_fee_max"] = f"at most {helm_fee.max_raw / 10**helm_fee.decimals:.6g} {helm_fee.coin}"
     if not body.confirm:
+        if helm_fee and not warnings:
+            pf["quote_approval"] = launch_fee.issue_approval(user.id, l.id, helm_fee)
+            pf["preflight"]["quote_expires_in_s"] = 120
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
+    if (await find_replay(db, user, body)) is None and (reason := launch_fee.check_approval(
+            body.quote_approval, user.id, l.id, helm_fee)):
+        raise HTTPException(400, reason)
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
         prior_status = l.status
@@ -629,14 +645,19 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                                   setup_limits=SpendLimits(dev.address, CREATE_OVERHEAD_LAMPORTS, label="deploy setup"))
             if res.status == "confirmed":
                 launch.mint_address, launch.deployed_at = built.mint, utcnow()
+                await session.commit()  # the token exists: save that before anything else can fail
                 share_ready = await _activate_pumpfun_share(session, ex, j, launch, dev, adapter, share)
                 if share_ready:
                     launch.status = "live"
                     await _note_creator_share(session, launch, j, share)
+                    await session.commit()
+                    # Only once the launch is live and its creator-share setup is done; never raises.
+                    await launch_fee.charge(session, ex, j, launch, dev, helm_fee)
                 else:
                     # The token exists, so a second deploy would be dangerous. Keep it in the non-retryable
                     # deploying state until /recheck confirms or safely retries the one-time sharing config.
                     launch.status = "deploying"
+                    launch_fee.not_charged(j, helm_fee, "the launch isn't live yet (creator-share setup pending)")
             elif res.status == "timeout" and built.mint:
                 # Sent but not confirmed in time: it may still land. Keep the mint so Helm can check for it, and
                 # don't offer a redeploy, which would create a second token.
@@ -1291,7 +1312,7 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
                     event.status = "received" if status == "confirmed" else "failed"
 
         # Platform-fee transfers do not decide whether the user's trade job succeeded.
-        primary_txs = [tx for tx in txs if tx.kind != "platform_fee"]
+        primary_txs = [tx for tx in txs if tx.kind not in ("platform_fee", "launch_fee")]
         from ..services.execution_journal import can_resolve
 
         if primary_txs and can_resolve(j, primary_txs) and all(tx.status in ("confirmed", "failed") for tx in primary_txs):
@@ -1335,13 +1356,17 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             launch_fee = await adapter.launch_fee()
         except Exception:
             raise HTTPException(503, "The launchpad fee could not be verified. Refresh before confirming a launch.") from None
+    from ..services import launch_fee as helm_launch_fee
+
+    helm_fee, fee_problem = await helm_launch_fee.quote(db, l.network)
+    fee_gas = await sender.max_gas_cost(21_000) if helm_fee else 0
     bal = await sender.rpc.get_balance(dev.address)
-    need_raw = dev_buy + launch_fee + gas
-    warnings = []
+    need_raw = dev_buy + launch_fee + gas + helm_launch_fee.headroom(helm_fee) + fee_gas
+    warnings = [fee_problem] if fee_problem else []
     funding = None
     if bal < need_raw:
         short = (f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {need_raw / WEI:.6f} "
-                 f"{coin} (dev buy, launch fee and gas).")
+                 f"{coin} (dev buy, launch fees and gas).")
         funding, why = await plan_funding(db, ex, user.id, dev, need_raw - bal) if body.auto_fund else (None, None)
         if not funding:
             warnings.append(short + (f" {why}" if why else ""))
@@ -1359,7 +1384,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     summary = {
         "launch_id": l.id, "network": l.network, "launchpad": l.launchpad, "name": l.name, "symbol": l.symbol,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "max_gas": gas / WEI,
-        "platform_fee": "none on deploy", "helm_creator_share": share,
+        "platform_fee": helm_fee.summary() if helm_fee else ("launch fee can't be priced right now" if fee_problem
+                                                             else "none on deploy"), "helm_creator_share": share,
     }
     if rewards:
         summary["pons_rewards"] = rewards
@@ -1374,7 +1400,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         summary["launch_fee"] = f"{launch_fee / WEI:g} {coin}, paid to {l.launchpad}"
     if funding:
         summary["funding"] = funding
-    summary["helm_fees"] = _helm_fees(share, funding)
+    summary["helm_fees"] = _helm_fees(share, funding, helm_fee)
     from ..services.protections import protections_for
 
     summary["launch_protections"] = protections_for(l.launchpad)["summary"]
@@ -1382,10 +1408,19 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
+    if helm_fee:
+        pf["preflight"]["launch_fee_estimate"] = helm_fee.estimate()  # display only: moves with the price
+        pf["preflight"]["launch_fee_max"] = f"at most {helm_fee.max_raw / 10**helm_fee.decimals:.6g} {helm_fee.coin}"
     if not body.confirm:
+        if helm_fee and not warnings:
+            pf["quote_approval"] = helm_launch_fee.issue_approval(user.id, l.id, helm_fee)
+            pf["preflight"]["quote_expires_in_s"] = 120
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
+    if (await find_replay(db, user, body)) is None and (reason := helm_launch_fee.check_approval(
+            body.quote_approval, user.id, l.id, helm_fee)):
+        raise HTTPException(400, reason)
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
         prior_status = l.status
@@ -1446,6 +1481,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
                 await _note_creator_share(session, launch, j, share)
                 await _note_flap_partner(session, launch)
+                await session.commit()  # live first: the fee can't strand or roll back the launch
+                await helm_launch_fee.charge(session, ex, j, launch, dev, helm_fee)
             elif len(plan.steps) == 1 and res.status == "timeout" and res.signature:
                 # The one create transaction was sent but not confirmed in time: it may still land. Stay "deploying"
                 # (which can't be deployed again) and let /recheck read its receipt, so a retry never makes a second token.

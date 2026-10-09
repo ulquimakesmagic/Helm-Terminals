@@ -70,8 +70,8 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
       const cells: [string, ReactNode][] = [["Dev buy", `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
       const f = pre.funding && typeof pre.funding === "object" ? pre.funding : null;
       if (f) cells.unshift(["Funded from", `${f.send} on ${f.from_chain}`]);
-      if (pre.launch_fee) cells.push(["Launch fee", String(pre.launch_fee)]);
-      cells.push(...gasCell, ["Platform fee", fee(pre.platform_fee)]);
+      if (pre.launch_fee) cells.push(["Launchpad fee", String(pre.launch_fee)]);
+      cells.push(...gasCell, ["Helm launch fee", <>{fee(pre.platform_fee)}{pre.launch_fee_estimate ? <span className="muted small"> ({String(pre.launch_fee_estimate)}{pre.launch_fee_max ? `, ${pre.launch_fee_max}` : ""})</span> : null}</>]);
       return {
         label: "Create token", value: `$${pre.symbol ?? ""}`, sub: <>{pre.name} on {padName(pre.launchpad)} · {chain.name}</>, cells,
         next: [
@@ -79,6 +79,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
           `Your dev wallet ${pre.dev_wallet ? short(pre.dev_wallet) : ""} signs the create transaction${num(pre.dev_buy_sol) ? " and the dev buy" : ""}.`,
           `Helm simulates it first, then sends it to ${chain.name}.`,
           "The launch turns live in its workspace once the chain confirms it. If it fails, nothing is retried automatically.",
+          ...(pre.launch_fee_estimate ? ["Only once the launch is live, your dev wallet sends Helm's launch fee to Helm's treasury, at the live price and never above the maximum shown. A failed launch pays no launch fee."] : []),
         ],
       };
     }

@@ -15,7 +15,7 @@ interface ConfigDiagnostics {
 
 const SOURCE_LABEL: Record<string, string> = {
   trade_fee: "Trading fees (Solana)", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
-  creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue",
+  creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue", launch_fee: "Launch fees",
 };
 const NETWORKS = ["solana", "evm", "base", "bsc", "ethereum", "robinhood"];
 const NET_LABEL: Record<string, string> = { solana: "Solana", evm: "All EVM chains (default)", base: "Base", bsc: "BNB Chain", ethereum: "Ethereum", robinhood: "Robinhood Chain" };
@@ -318,7 +318,11 @@ interface FeePath { id: string; label: string; networks: string[]; supported: bo
 const SETTING_LABEL: Record<string, string> = {
   trade_fee_bps_solana: "Trading fee: Solana launchpads", trade_fee_bps_evm_dex: "Trading fee: EVM trades routed through a DEX",
   route_fee_bps: "Cross-chain route fee (Relay)", creator_share_bps: "Share of new launches' creator rewards",
+  launch_fee_cents: "Launch fee (flat, per launch)",
 };
+/** launch_fee_cents is a dollar amount in cents; every other setting is a rate in basis points. */
+const isDollars = (key: string) => key === "launch_fee_cents";
+const showSetting = (key: string, v: number) => isDollars(key) ? `$${(v / 100).toFixed(2)}` : `${(v / 100).toFixed(2)}%`;
 
 function Fees({ me }: { me: AdminMe }) {
   const toast = useToast();
@@ -339,10 +343,10 @@ function Fees({ me }: { me: AdminMe }) {
           <tbody>{data.settings.map((s) => (
             <tr key={s.key}>
               <td className="span"><b>{SETTING_LABEL[s.key] ?? s.key}</b><div className="muted small">{s.source === "admin" ? `Set in the dashboard ${utc(s.updated_at)}` : "From the environment (unchanged)"}</div></td>
-              <td className="r mono" data-label="Rate">{(s.bps / 100).toFixed(2)}%</td>
-              <td className="muted small" data-label="Allowed">{(s.min / 100).toFixed(2)}–{(s.max / 100).toFixed(2)}%</td>
-              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
-              <td className="r act">{me.can_change && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: String(s.bps) })}>Change…</button>}</td>
+              <td className="r mono" data-label="Rate">{showSetting(s.key, s.bps)}</td>
+              <td className="muted small" data-label="Allowed">{showSetting(s.key, s.min)}–{showSetting(s.key, s.max)}</td>
+              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" || s.key === "launch_fee_cents" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
+              <td className="r act">{me.can_change && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: isDollars(s.key) ? String(s.bps / 100) : String(s.bps) })}>Change…</button>}</td>
             </tr>))}</tbody>
         </table></TableWrap>
       </Card>
@@ -366,11 +370,13 @@ function Fees({ me }: { me: AdminMe }) {
       </Card>
       {edit && (
         <StepUpDialog title={SETTING_LABEL[edit.key] ?? edit.key}
-          detail={<label className="field"><span>New rate in basis points (100 = 1%)</span>
-            <input inputMode="numeric" value={edit.bps} onChange={(e) => setEdit({ ...edit, bps: e.target.value.replace(/\D/g, "") })} /></label>}
+          detail={<label className="field"><span>{isDollars(edit.key) ? "New fee in US dollars (0 turns it off)" : "New rate in basis points (100 = 1%)"}</span>
+            <input inputMode={isDollars(edit.key) ? "decimal" : "numeric"} value={edit.bps}
+              onChange={(e) => setEdit({ ...edit, bps: isDollars(edit.key) ? e.target.value.replace(/[^\d.]/g, "") : e.target.value.replace(/\D/g, "") })} /></label>}
           onCancel={() => setEdit(null)}
           onConfirm={async (proof) => {
-            await api(`/admin/settings/${edit.key}`, { method: "PUT", body: { bps: Number(edit.bps), confirm: proof } });
+            const value = isDollars(edit.key) ? Math.round(Number(edit.bps) * 100) : Number(edit.bps);
+            await api(`/admin/settings/${edit.key}`, { method: "PUT", body: { bps: value, confirm: proof } });
             toast("good", "Rate saved"); setEdit(null); load();
           }} />
       )}
