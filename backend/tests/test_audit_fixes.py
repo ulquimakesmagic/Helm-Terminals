@@ -14,13 +14,14 @@ from app.db import get_sessionmaker
 from app.deps import get_executor, run_job
 from app.main import app
 from app.models import AdminAudit, FeeRecord, Job, Launch, RevenueEvent, Transaction, User, Wallet
+from app.services import extra_chains as xc
 from app.services.executor import Executor, run_single
 from app.signing import get_signer
 
 from .conftest import enable_2fa, signup
 from .test_admin import EVM_TREASURY, FakeRelay, boss
 from .test_evm_wallets import ETH
-from .test_extra_chains import ArcRPC, _nosleep
+from .test_extra_chains import TW, FakeTron, _nosleep
 from .test_flap import PNG, FlapNode, upload_transport
 
 PW = "correct-horse-battery"
@@ -348,18 +349,18 @@ async def test_a_transfer_waiting_for_the_users_wallet_isnt_called_lost(client):
     async with get_sessionmaker()() as db:
         uid = (await db.execute(select(User.id))).scalars().first()
         old = utcnow() - timedelta(hours=2)
-        waiting = Job(user_id=uid, kind="external_transfer", status="pending", params={"network": "arc"},
+        waiting = Job(user_id=uid, kind="external_transfer", status="pending", params={"network": "tron"},
                       created_at=old, updated_at=old)
         helm = Job(user_id=uid, kind="trade", status="submitted", params={}, created_at=old, updated_at=old)
         db.add_all([waiting, helm])
         await db.commit()
         ids = waiting.id, helm.id
     w = (await client.get(f"/jobs/{ids[0]}", headers=h)).json()
-    assert w["status"] == "pending" and w["network"] == "arc"
+    assert w["status"] == "pending" and w["network"] == "tron"
     assert (await client.get(f"/jobs/{ids[1]}", headers=h)).json()["status"] == "unconfirmed"
 
 
-# --- PRD-2: allocation locks apply to the generic Arc token transfer -------------------------------------------
+# --- PRD-2: allocation locks apply to the generic TRON/NEAR/Arc token transfer ----------------------------------
 
 
 async def test_generic_token_transfer_respects_allocation_locks(client, monkeypatch):
@@ -367,14 +368,16 @@ async def test_generic_token_transfer_respects_allocation_locks(client, monkeypa
     from app.services import allocations
 
     s = get_settings()
-    monkeypatch.setattr(s, "extra_networks", "arc")
-    rpc = ArcRPC()
-    rpc.balance = 10**20
-    app.dependency_overrides[get_executor] = lambda: Executor(None, get_signer(), evm_rpcs={"arc": rpc})
-    token = "0x" + "ef" * 20
+    monkeypatch.setattr(s, "extra_networks", "tron")
+    t = FakeTron()
+    xc._clients["tron"] = t
     try:
         h = await signup(client, main=False)
-        w = (await client.post("/wallets", json={"network": "arc", "count": 1}, headers=h)).json()[0]
+        w = (await client.post("/wallets", json={"network": "tron", "count": 1}, headers=h)).json()[0]
+        t.accounts[w["address"]] = 100 * 10**6
+        t.accounts[TW["to"]] = 1
+        t.tokens[(TW["token"], w["address"])] = 10_000_000
+        t.resources_["energy"] = 100_000
         seen = []
 
         async def fake_lock(db, launch, wallet, balance_raw, out_raw, decimals):
@@ -382,18 +385,18 @@ async def test_generic_token_transfer_respects_allocation_locks(client, monkeypa
             return "2 $MINE locked by your allocation plan"
 
         monkeypatch.setattr(allocations, "lock_warning", fake_lock)
-        body = {"wallet_id": w["id"], "to": "0x" + "cd" * 20, "amount": "1.5", "token": token}
-        assert not (await client.post("/chains/arc/transfer", json=body, headers=h)).json()["preflight"]["warnings"]
+        body = {"wallet_id": w["id"], "to": TW["to"], "amount": "3", "token": TW["token"]}
+        assert not (await client.post("/chains/tron/transfer", json=body, headers=h)).json()["preflight"]["warnings"]
         async with get_sessionmaker()() as db:  # the token is one of this user's launches
             u = (await db.execute(select(User))).scalars().first()
-            db.add(Launch(user_id=u.id, network="arc", launchpad="tolly", name="Mine", symbol="MINE", status="live",
-                          mint_address=token))
+            db.add(Launch(user_id=u.id, network="tron", launchpad="sunpump", name="Mine", symbol="MINE", status="live",
+                          mint_address=TW["token"]))
             await db.commit()
-        pf = (await client.post("/chains/arc/transfer", json=body, headers=h)).json()["preflight"]
+        pf = (await client.post("/chains/tron/transfer", json=body, headers=h)).json()["preflight"]
         assert any("locked by your allocation plan" in x for x in pf["warnings"])
-        assert seen and seen[-1][0] == "MINE" and seen[-1][2] == 1_500_000
+        assert seen and seen[-1][0] == "MINE" and seen[-1][2] == 3_000_000
     finally:
-        app.dependency_overrides.pop(get_executor, None)
+        xc._clients.pop("tron", None)
 
 
 # --- SEC-7: provider links must be https ----------------------------------------------------------------------
@@ -434,6 +437,23 @@ async def test_oversized_login_and_socials_are_refused(client):
     assert r.status_code == 422
     r = await client.post("/launches", json={**base, "socials": {"twitter": "https://x.com/a"}}, headers=h)
     assert r.status_code == 201
+
+
+def test_a_huge_image_is_refused_before_it_is_decoded():
+    import io
+
+    import pytest
+    from PIL import Image
+
+    from app.chains.extra_pads import icon_data_uri
+
+    buf = io.BytesIO()
+    Image.new("L", (6000, 6000)).save(buf, "PNG")  # small file, 36 megapixels
+    with pytest.raises(ValueError, match="too large"):
+        icon_data_uri(buf.getvalue())
+    small = io.BytesIO()
+    Image.new("RGB", (300, 200), (10, 20, 30)).save(small, "PNG")
+    assert icon_data_uri(small.getvalue()).startswith("data:image/png;base64,")
 
 
 # --- SEC-9: signer errors don't reach users verbatim -------------------------------------------------------------
@@ -487,20 +507,21 @@ def test_bot_renders_unconfirmed_jobs_with_the_right_explorer():
     assert "solscan" not in text
     unknown = render_job({**job, "network": None})
     assert "<a href" not in unknown  # no guessed explorer
-    ws = render_workspace({"launch": {"name": "T", "symbol": "T", "status": "live", "network": "arc",
-                                      "mint_address": "0x" + "ab" * 20}, "wallets": [], "rpc_error": None}, section="none")
-    assert "https://explorer.arc.io/token/" in ws
+    ws = render_workspace({"launch": {"name": "T", "symbol": "T", "status": "live", "network": "tron",
+                                      "mint_address": TW["token"]}, "wallets": [], "rpc_error": None}, section="none")
+    assert "https://tronscan.org/token20/" in ws
 
 
 # --- UX-1: the Tracker takes addresses on every chain Helm lists ---------------------------------------------------
 
 
-async def test_tracker_accepts_arc_addresses_and_refuses_removed_networks(client):
+async def test_tracker_accepts_tron_near_arc_and_ton_addresses(client):
     h = await signup(client, main=False)
-    r = await client.post("/tracker", json={"network": "arc", "address": "0x" + "ab" * 20, "label": "arc"}, headers=h)
-    assert r.status_code == 201, r.text
-    for net, addr in (("arc", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"), ("tron", "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"),
-                      ("near", "alice.near"), ("ton", "UQDKbjIcfM6ezt8KjKJJLshZJJSqX7XOA4ff-W72r5gqPuwA")):
+    for net, addr in (("tron", TW["to"]), ("near", "alice.near"), ("arc", "0x" + "ab" * 20),
+                      ("ton", "UQDKbjIcfM6ezt8KjKJJLshZJJSqX7XOA4ff-W72r5gqPuwA")):
+        r = await client.post("/tracker", json={"network": net, "address": addr, "label": net}, headers=h)
+        assert r.status_code == 201, (net, r.text)
+    for net, addr in (("tron", "0x" + "ab" * 20), ("near", "bob.testnet"), ("ton", "not-an-address")):
         assert (await client.post("/tracker", json={"network": net, "address": addr}, headers=h)).status_code == 400
 
 

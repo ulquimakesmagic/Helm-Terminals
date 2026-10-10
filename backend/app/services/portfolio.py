@@ -2,7 +2,7 @@
 
 Balances are read live from each chain's RPC (a few at a time, so large wallet lists don't flood the RPCs) and cached
 briefly per user. Coin prices come from Codex, Helm's only market-data source, using each coin's wrapped token on its
-home network. A coin Codex cannot price shows its amount without a USD value.
+home network. A coin Codex cannot price (NEAR and TON are not Codex networks) shows its amount without a USD value.
 Stablecoins are counted at $1.
 """
 
@@ -21,7 +21,8 @@ CHAINS = ["solana", "base", "bsc", "robinhood", "ethereum", *EXTRA_NETWORKS]
 # Ethereum's WETH price; Arc's native coin is USDC and is counted as a stablecoin.
 PRICE_TOKENS = {"SOL": ("solana", "So11111111111111111111111111111111111111112"),
                 "ETH": ("ethereum", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
-                "BNB": ("bsc", "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")}
+                "BNB": ("bsc", "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"),
+                "TRX": ("tron", "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR")}
 MAX_WALLETS = 300
 CHAIN_TIMEOUT_S = 20
 
@@ -97,7 +98,8 @@ async def _chain(ex, network: str, wallets: list[Wallet], sem: asyncio.Semaphore
            "status": "no_wallets" if not wallets else "ok", "wallets_read": 0,
            "native_read": 0, "stable_read": 0, "top": [], "message": None,
            "stable_tracked": token is not None, "native_is_stable": native_is_stable,
-           "scope": ("Native USDC, counted once; other tokens not included." if native_is_stable else
+           "scope": ("Available NEAR after storage; tokens not included." if network == "near" else
+                     "Native USDC, counted once; other tokens not included." if native_is_stable else
                      "Native coin only; tokens not included." if network in EXTRA_NETWORKS else None)}
     if not wallets:
         return out
@@ -225,7 +227,7 @@ async def _read_portfolio(ex, managed: list[Wallet], enabled: set[str]) -> dict:
            "checked_at": datetime.now(timezone.utc).isoformat(),
            "prices": prices, "priced": not unpriced, "wallets": len(managed),
            "note": "Managed wallets only. Native coins and listed stablecoins; launch tokens and other tokens are excluded. "
-                   "USDC and USDG are valued at $1; Arc USDC is counted once."}
+                   "NEAR is available after storage. USDC and USDG are valued at $1; Arc USDC is counted once."}
     return out
 
 

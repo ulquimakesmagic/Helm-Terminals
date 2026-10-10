@@ -27,21 +27,28 @@ class LocalDevSigner:
         from .base import family
 
         fam = family(network)
-        if fam == "evm":  # a new secp256k1 key
+        if fam == "ton":  # never derive a TON address from another chain's key format
+            raise SigningError("Helm doesn't create TON keys; TON wallets connect through TON Connect")
+        if fam in ("evm", "tron"):  # a new secp256k1 key; TRON shows it in its own address format
             pk = eth_keys.PrivateKey(os.urandom(32))
             token = self._f.encrypt(pk.to_bytes()).decode()
-            return WalletRef(signer_ref=EVM_PREFIX + token, address=pk.public_key.to_checksum_address())
-        kp = Keypair()  # a new ed25519 key: a Solana address
+            address = pk.public_key.to_checksum_address()
+            if fam == "tron":
+                from ..chains.tron import address_from_evm
+
+                address = address_from_evm(address)
+            return WalletRef(signer_ref=EVM_PREFIX + token, address=address)
+        kp = Keypair()  # a new ed25519 key: Solana address, or a NEAR implicit account (hex public key)
         token = self._f.encrypt(bytes(kp)).decode()
-        return WalletRef(signer_ref=PREFIX + token, address=str(kp.pubkey()))
+        return WalletRef(signer_ref=PREFIX + token, address=bytes(kp.pubkey()).hex() if fam == "near" else str(kp.pubkey()))
 
     async def import_wallet(self, user_id: str, network: str, secret: str) -> WalletRef:
         """Take custody of an existing key the user pasted. The key is only ever held encrypted, like created ones."""
         from .base import family
 
-        fam = family(network)
+        fam = family(network)  # parse_private_key refuses TON
         raw, address = parse_private_key(network, secret)
-        if fam == "evm":
+        if fam in ("evm", "tron"):
             return WalletRef(signer_ref=EVM_PREFIX + self._f.encrypt(raw).decode(), address=address)
         return WalletRef(signer_ref=PREFIX + self._f.encrypt(bytes(Keypair.from_seed(raw))).decode(), address=address)
 

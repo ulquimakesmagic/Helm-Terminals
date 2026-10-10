@@ -117,8 +117,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Signing out also clears any TON Connect or NEAR Connect session this browser kept from before Helm removed those
- * networks, so nothing is left behind for the next person. The wallets themselves are untouched. */
+/** Signing out also forgets this browser's TON Connect and NEAR Connect sessions, so the next person to use the
+ * browser doesn't find a wallet already connected. The wallets themselves are untouched. */
 function forgetWalletSessions() {
   try {
     for (const k of Object.keys(localStorage)) if (k.startsWith("helm-ton:") || k.startsWith("helm-near:")) localStorage.removeItem(k);

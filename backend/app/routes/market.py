@@ -19,7 +19,8 @@ NOTE = "Indicative market data from Codex. Not used for Helm's previews, quotes 
 def _explorer(network: str, token: str) -> str:
     urls = {"solana": "https://solscan.io/token/", "base": "https://basescan.org/token/",
             "bsc": "https://bscscan.com/token/", "ethereum": "https://etherscan.io/token/",
-            "robinhood": "https://robinhoodchain.blockscout.com/token/", "arc": "https://explorer.arc.io/token/"}
+            "robinhood": "https://robinhoodchain.blockscout.com/token/", "arc": "https://explorer.arc.io/token/",
+            "tron": "https://tronscan.org/#/token20/", "near": "https://nearblocks.io/token/", "ton": "https://tonviewer.com/"}
     return urls[network] + token if network in urls else ""
 
 

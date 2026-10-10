@@ -82,10 +82,8 @@ def _cloned_from(l: Launch) -> dict | None:
 
 
 async def _owned_launch(db: AsyncSession, user: User, launch_id: str) -> Launch:
-    from ..chains.networks import offered
-
     l = await db.get(Launch, launch_id)
-    if not l or l.user_id != user.id or not offered(l.network):  # removed networks' launches stay stored, unlisted
+    if not l or l.user_id != user.id:
         raise HTTPException(404, "launch not found")
     return l
 
@@ -322,10 +320,7 @@ async def delete_launch(launch_id: str, user: User = Depends(current_user), db: 
 async def list_launches(status: str | None = None, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     q = select(Launch).where(Launch.user_id == user.id)
     q = q.where(Launch.status == status) if status else q.where(Launch.status != "archived")
-    from ..chains.networks import offered
-
-    return [_launch_out(l) for l in (await db.execute(q.order_by(Launch.created_at.desc()))).scalars()
-            if offered(l.network)]
+    return [_launch_out(l) for l in (await db.execute(q.order_by(Launch.created_at.desc()))).scalars()]
 
 
 @router.get("/launches/{launch_id}")
@@ -521,7 +516,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         raise HTTPException(400, "set a dev wallet before deploying")
     dev = await owned_wallet(db, user, l.dev_wallet_id)
     adapter = get_adapter(l.launchpad)
-    if is_extra(adapter):  # Tolly
+    if is_extra(adapter):  # SunPump, Meme.Cooking, Tolly
         from ..services import extra_launch
 
         if (reason := needs_setup(l.launchpad)):
