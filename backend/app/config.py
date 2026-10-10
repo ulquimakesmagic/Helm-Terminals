@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # order or decode the order it signs (see docs/releases/2026-10-09-usdc-withdraw-and-route-providers.md).
     route_providers: str = "relay"
     debridge_api_url: str = "https://dln.debridge.finance"
+    # Printr launches (Solana). The public preview API needs no key; PRINTR_API_KEY is an optional partner key.
+    printr_api_url: str = "https://api-preview.printr.money"
+    printr_api_key: str = ""
     debridge_access_token: str = ""  # optional
     route_fee_bps: int = Field(default=30, ge=0, le=300)
     route_poll_seconds: float = 3.0
