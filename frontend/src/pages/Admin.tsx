@@ -17,8 +17,9 @@ const SOURCE_LABEL: Record<string, string> = {
   trade_fee: "Trading fees (Solana)", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
   creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue", launch_fee: "Launch fees",
 };
-const NETWORKS = ["solana", "evm", "base", "bsc", "ethereum", "robinhood"];
-const NET_LABEL: Record<string, string> = { solana: "Solana", evm: "All EVM chains (default)", base: "Base", bsc: "BNB Chain", ethereum: "Ethereum", robinhood: "Robinhood Chain" };
+const NETWORKS = ["solana", "evm", "base", "bsc", "ethereum", "robinhood", "tron", "near", "arc"];
+const NET_LABEL: Record<string, string> = { solana: "Solana", evm: "All EVM chains (default)", base: "Base", bsc: "BNB Chain", ethereum: "Ethereum", robinhood: "Robinhood Chain", tron: "TRON", near: "NEAR", arc: "Arc" };
+const ADDRESS_HINT: Record<string, string> = { solana: "Solana address", tron: "T… TRON address (an activated account)", near: "NEAR account, e.g. helm.near" };
 
 /** Raw integer amount as a decimal string, exact (no float rounding). */
 function units(raw: string | number | null | undefined, decimals: number, max = 6): string {
@@ -294,7 +295,7 @@ function Treasury({ me }: { me: AdminMe }) {
         <Modal title={`Treasury: ${NET_LABEL[edit.network]}`} sub="Receive-only address; paste a multisig or hardware-wallet address" onClose={() => setEdit(null)}
           foot={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button><button className="btn" onClick={() => setConfirm(true)}>Continue</button></>}>
           <div className="stack">
-            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={edit.network === "solana" ? "Solana address" : "0x…"} autoFocus /></label>
+            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={ADDRESS_HINT[edit.network] ?? "0x…"} autoFocus /></label>
             <label className="field"><span>Label (optional)</span><input value={edit.label} maxLength={80} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /></label>
             <span className="muted small">Leave the address empty to remove the dashboard entry (the environment value, if any, applies again). Never paste a private key or seed phrase anywhere in Helm.</span>
           </div>
@@ -316,7 +317,7 @@ function Treasury({ me }: { me: AdminMe }) {
 interface SettingRow { key: string; bps: number; source: string; updated_at?: string; min: number; max: number; treasury_network: string | null; treasury: string | null; paths: { id: string; label: string; supported: boolean }[] }
 interface FeePath { id: string; label: string; networks: string[]; supported: boolean; lands: string | null; how: string }
 const SETTING_LABEL: Record<string, string> = {
-  trade_fee_bps_solana: "Trading fee: Solana launchpads", trade_fee_bps_evm_dex: "Trading fee: EVM trades routed through a DEX",
+  trade_fee_bps_solana: "Trading fee: Solana launchpads", trade_fee_bps_evm_dex: "Trading fee: EVM trades routed through a DEX", trade_fee_bps_extra: "Trading fee: SunPump (TRON) and Tolly (Arc)",
   route_fee_bps: "Cross-chain route fee (Relay)", creator_share_bps: "Share of new launches' creator rewards",
   launch_fee_cents: "Launch fee (flat, per launch)",
 };
@@ -345,7 +346,7 @@ function Fees({ me }: { me: AdminMe }) {
               <td className="span"><b>{SETTING_LABEL[s.key] ?? s.key}</b><div className="muted small">{s.source === "admin" ? `Set in the dashboard ${utc(s.updated_at)}` : "From the environment (unchanged)"}</div></td>
               <td className="r mono" data-label="Rate">{showSetting(s.key, s.bps)}</td>
               <td className="muted small" data-label="Allowed">{showSetting(s.key, s.min)}–{showSetting(s.key, s.max)}</td>
-              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" || s.key === "launch_fee_cents" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
+              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" || s.key === "launch_fee_cents" || s.key === "trade_fee_bps_extra" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
               <td className="r act">{me.can_change && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: isDollars(s.key) ? String(s.bps / 100) : String(s.bps) })}>Change…</button>}</td>
             </tr>))}</tbody>
         </table></TableWrap>
