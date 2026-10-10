@@ -27,6 +27,7 @@ CACHE_S = 30.0
 BOUNDS = {
     "trade_fee_bps_solana": (0, 200),  # Helm fee on Solana buys and sells: at most 2%
     "trade_fee_bps_evm_dex": (0, 200),  # Helm fee on EVM trades routed through KyberSwap: at most 2%
+    "trade_fee_bps_extra": (0, 200),  # Helm fee on SunPump (TRON) and Tolly (Arc) trades: at most 2%
     "route_fee_bps": (0, 100),  # Helm fee on USDC routes and bridges (Relay app fee): at most 1%
     "creator_share_bps": (0, 1000),  # Helm's share of a new launch's creator rewards: at most 10%
     "launch_fee_cents": (0, 10_000),  # flat launch fee in US cents (not bps): at most $100
@@ -36,15 +37,21 @@ BOUNDS = {
 # refuse enabling paths that don't exist.
 FEE_PATHS = [
     {"id": "launch_fee", "label": "Launch fee (flat, in US dollars)", "setting": "launch_fee_cents",
-     "networks": ["solana", *EVM_CHAINS], "supported": True, "lands": "received",
-     "how": "After the token is created, the dev wallet sends the fee in the chain's coin, priced at the live USD "
-            "price, to that chain's treasury. A failed launch pays nothing."},
+     "networks": ["solana", *EVM_CHAINS, "tron", "arc"], "supported": True, "lands": "received",
+     "how": "Once the launch is live, the dev wallet sends the fee in the chain's coin, priced at the live USD "
+            "price (never above the maximum the preview showed), to that chain's treasury. A failed launch pays "
+            "nothing. Not charged on Meme.Cooking (NEAR): Helm has no verified NEAR price source yet."},
     {"id": "trade_fee_solana", "label": "Trading fee: Solana launchpads", "setting": "trade_fee_bps_solana",
      "networks": ["solana"], "supported": True, "lands": "received",
      "how": "Added as a transfer inside each confirmed buy or sell; a failed trade pays nothing."},
     {"id": "trade_fee_evm_dex", "label": "Trading fee: EVM trades routed through a DEX", "setting": "trade_fee_bps_evm_dex",
      "networks": list(EVM_CHAINS), "supported": True, "lands": "received",
      "how": "KyberSwap's router sends the fee to the treasury in the same swap transaction."},
+    {"id": "trade_fee_extra", "label": "Trading fee: SunPump (TRON) and Tolly (Arc)", "setting": "trade_fee_bps_extra",
+     "networks": ["tron", "arc"], "supported": True, "lands": "received",
+     "how": "A separate transfer of the fee from the trading wallet to that chain's treasury after each confirmed buy "
+            "(a share of the amount spent) or sell (a share of the coin received). Not on Meme.Cooking (NEAR), whose "
+            "deposits are auction bids, not trades."},
     {"id": "trade_fee_evm_curve", "label": "Trading fee: EVM bonding-curve trades", "setting": None,
      "networks": list(EVM_CHAINS), "supported": False, "lands": None,
      "how": "Not available: Four.meme, Flap and Pons curves have no fee hook, and Helm doesn't add a separate fee "
@@ -112,6 +119,7 @@ def _env_defaults() -> dict:
     return {
         "trade_fee_bps_solana": s.platform_fee_bps,
         "trade_fee_bps_evm_dex": s.platform_fee_bps,
+        "trade_fee_bps_extra": s.platform_fee_bps,
         "route_fee_bps": s.route_fee_bps,
         "creator_share_bps": s.creator_share_bps,
         # Bounded like the admin setting; a non-numeric or NaN env value means no fee rather than a crash.

@@ -1307,7 +1307,7 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
                     event.status = "received" if status == "confirmed" else "failed"
 
         # Platform-fee transfers do not decide whether the user's trade job succeeded.
-        primary_txs = [tx for tx in txs if tx.kind not in ("platform_fee", "launch_fee")]
+        primary_txs = [tx for tx in txs if tx.kind not in ("platform_fee", "launch_fee", "trade_fee")]
         from ..services.execution_journal import can_resolve
 
         if primary_txs and can_resolve(j, primary_txs) and all(tx.status in ("confirmed", "failed") for tx in primary_txs):

@@ -25,7 +25,25 @@ SOL_TRANSFER_FEE = 5_000  # lamports for the fee transfer's own signature
 MAX_DRIFT = 1.10  # confirmation may charge at most 10% more coin than the preview estimated
 MAX_CENTS = 10_000  # $100: the same bound as the admin setting, also applied to the env default
 # A price below these is treated as a bad feed, not a market move (it would multiply the coin amount charged).
-MIN_PLAUSIBLE_USD = {"SOL": 1.0, "ETH": 10.0, "BNB": 1.0}
+MIN_PLAUSIBLE_USD = {"SOL": 1.0, "ETH": 10.0, "BNB": 1.0, "TRX": 0.01, "USDC": 0.5}
+# Extra networks Helm charges on. NEAR has no verified price source in Helm yet, so Meme.Cooking stays fee-free.
+FEE_EXTRA_NETWORKS = ("tron", "arc")
+FIXED_USD = {"USDC": 1.0}  # Arc's native coin is USDC
+
+
+def coin_and_decimals(network: str) -> tuple[str, int]:
+    from ..chains.networks import EXTRA_NETWORKS
+
+    if network in EXTRA_NETWORKS:
+        n = EXTRA_NETWORKS[network]
+        return n.native, n.decimals
+    return native_coin(network), 9 if network == "solana" else 18
+
+
+def fee_applies(network: str) -> bool:
+    from ..chains.networks import EXTRA_NETWORKS
+
+    return network not in EXTRA_NETWORKS or network in FEE_EXTRA_NETWORKS
 
 
 @dataclass
@@ -90,14 +108,17 @@ async def quote(db: AsyncSession, network: str, prices: dict | None = None) -> t
     await pc.refresh(db)
     cents = min(max(pc.bps("launch_fee_cents"), 0), MAX_CENTS)
     recipient = pc.treasury_for(network)
-    if cents <= 0 or not recipient:
+    if cents <= 0 or not recipient or not fee_applies(network):
         return None, None
-    coin = native_coin(network)
-    if prices is None:
-        from .portfolio import coin_prices
+    coin, decimals = coin_and_decimals(network)
+    if coin in FIXED_USD:
+        price = FIXED_USD[coin]
+    else:
+        if prices is None:
+            from .portfolio import coin_prices
 
-        prices = await coin_prices()
-    price = prices.get(coin)
+            prices = await coin_prices()
+        price = prices.get(coin)
     usd = cents / 100
     if not price or not math.isfinite(price) or price <= 0:
         return None, (f"{coin}'s price couldn't be read, so Helm's ${usd:g} launch fee can't be sized. "
@@ -105,7 +126,6 @@ async def quote(db: AsyncSession, network: str, prices: dict | None = None) -> t
     if price < MIN_PLAUSIBLE_USD.get(coin, 0):
         return None, (f"{coin}'s price feed reads ${price:g}, which looks wrong, so Helm's ${usd:g} launch fee isn't "
                       "being sized from it. Try again shortly.")
-    decimals = 9 if network == "solana" else 18
     raw = math.ceil(usd / price * 10**decimals)
     return LaunchFee(usd, raw, coin, decimals, recipient, network), None
 
@@ -146,9 +166,29 @@ def not_charged(job: Job, fee: LaunchFee | None, reason: str) -> None:
         job.params = {**(job.params or {}), "launch_fee": {"usd": fee.usd, "status": "not_charged", "reason": reason}}
 
 
+async def send_native(ex: Executor, network: str, wallet: Wallet, to: str, raw: int) -> SubmitResult:
+    """A plain native-coin transfer on TRON or Arc, through the same checked builders as user transfers."""
+    from ..chains.networks import EXTRA_NETWORKS
+    from ..routes import chains as chain_routes
+    from .extra_chains import human
+
+    amount = human(raw, EXTRA_NETWORKS[network].decimals)
+    if EXTRA_NETWORKS[network].family == "tron":
+        plan = await chain_routes._tron_plan(network, wallet, to, None, amount)
+    else:
+        plan = await chain_routes._arc_plan(ex, network, wallet, to, None, amount)
+    if plan["warnings"]:
+        return SubmitResult(None, "failed", plan["warnings"][0])
+    return await plan["execute"](ex)
+
+
 async def _charge(session: AsyncSession, ex: Executor, job: Job, launch: Launch, dev: Wallet,
                   fee: LaunchFee) -> SubmitResult:
-    if dev.network == "solana":
+    from ..chains.networks import EXTRA_NETWORKS
+
+    if dev.network in EXTRA_NETWORKS:
+        res = await send_native(ex, dev.network, dev, fee.recipient, fee.raw)
+    elif dev.network == "solana":
         src = Pubkey.from_string(dev.address)
         raw_tx = build_unsigned(src, [sol_transfer_ix(src, Pubkey.from_string(fee.recipient), fee.raw)],
                                 await ex.rpc.get_latest_blockhash())

@@ -225,7 +225,8 @@ class SunPump:
             display = {"expected_tokens_raw": str(out), "launchpad_fee_trx": fee / TRX}
         else:
             summary = {"side": "sell", "tokens_raw": str(amount), "slippage_pct": slippage_pct}
-            display = {"expected_trx": out / TRX, "launchpad_fee_trx": fee / TRX}
+            display = {"expected_trx": out / TRX, "launchpad_fee_trx": fee / TRX,
+                       "expected_out_native_raw": str(out)}  # caps Helm's sell fee to this sale's proceeds
             held = await c.trc20_balance(token, ctx.address)
             if held < amount:
                 warnings.append("The wallet holds fewer tokens than this sell.")
@@ -720,9 +721,10 @@ class Tolly:
 
         # The quote the user confirms: a swap simulated now (it can't be before an approval exists, so a first buy
         # or sell has no confirmed floor and relies on the send-time simulation alone).
+        quoted_out = 0
         try:
-            confirmed_min = _slip_min(int(await ctx.evm.rpc.eth_call(t["router"], "0x" + call(0).hex(), ctx.address), 16),
-                                      slippage_pct)
+            quoted_out = int(await ctx.evm.rpc.eth_call(t["router"], "0x" + call(0).hex(), ctx.address), 16)
+            confirmed_min = _slip_min(quoted_out, slippage_pct)
         except Exception:
             confirmed_min = 0
 
@@ -740,7 +742,10 @@ class Tolly:
                         ("spend_usdc" if side == "buy" else "tokens_raw"): (amount_in / 10**6 if side == "buy"
                                                                             else str(amount_in)),
                         "slippage_pct": slippage_pct},
-                       {"max_gas_usdc": 2 * gas / 10**18}, warnings,
+                       {"max_gas_usdc": 2 * gas / 10**18,
+                        # a sell's quoted USDC (6 decimals) in native 18-decimal units: caps Helm's sell fee
+                        **({"expected_out_native_raw": str(quoted_out * 10**12)} if side == "sell" else {})},
+                       warnings,
                        [self._approve_step(ctx, tin, t["router"], amount_in), PadStep("swap", swap)])
 
 

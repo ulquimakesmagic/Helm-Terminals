@@ -26,10 +26,11 @@ from ..services.executor import Executor
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-TREASURY_NETWORKS = ("solana", "evm", *EVM_CHAINS)
+TREASURY_NETWORKS = ("solana", "evm", *EVM_CHAINS, "tron", "near", "arc")
 EXPLORERS = {"solana": "https://solscan.io/account/", "base": "https://basescan.org/address/",
              "bsc": "https://bscscan.com/address/", "ethereum": "https://etherscan.io/address/",
-             "robinhood": "https://robinhoodchain.blockscout.com/address/"}
+             "robinhood": "https://robinhoodchain.blockscout.com/address/", "tron": "https://tronscan.org/#/address/",
+             "near": "https://nearblocks.io/address/", "arc": "https://explorer.arc.io/address/"}
 SOURCES = ("trade_fee", "dex_trade_fee", "route_fee", "creator_share", "partner")
 STATUSES = ("received", "pending", "claimable", "failed", "configured")
 
@@ -56,6 +57,14 @@ def check_treasury_address(network: str, address: str) -> str:
     address = address.strip()
     if network not in TREASURY_NETWORKS:
         raise HTTPException(400, f"unknown network; use one of {', '.join(TREASURY_NETWORKS)}")
+    if network in ("tron", "near"):
+        from ..deps import valid_address_for
+
+        if not valid_address_for(network, address):
+            raise HTTPException(400, f"not a valid {network.upper()} address")
+        if address == "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb":
+            raise HTTPException(400, "that's TRON's zero address, not a treasury")
+        return address
     if network == "solana":
         if address.startswith("0x") or not valid_address(address):
             raise HTTPException(400, "not a valid Solana address")
@@ -472,8 +481,11 @@ async def set_setting(key: str, body: SettingChange, request: Request, user: Use
         if key == "launch_fee_cents":
             from ..chains.evm import EVM_CHAINS
 
-            if not any(pc.treasury_for(n) for n in ("solana", *EVM_CHAINS)):
+            if not any(pc.treasury_for(n) for n in ("solana", *EVM_CHAINS, "tron", "arc")):
                 raise HTTPException(400, "set a treasury address for Solana or an EVM chain before enabling this")
+        elif key == "trade_fee_bps_extra":
+            if not (pc.treasury_for("tron") or pc.treasury_for("arc")):
+                raise HTTPException(400, "set a TRON or Arc treasury address before enabling this")
         elif key == "creator_share_bps":
             if not any(pc.treasury_for(n) for n in set(pc.CREATOR_SHARE_LAUNCHPADS.values())):
                 raise HTTPException(400, "set a treasury address for Solana or an EVM chain before enabling this")
