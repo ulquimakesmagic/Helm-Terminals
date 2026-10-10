@@ -4,7 +4,7 @@ import test from "node:test";
 import { LAUNCHPAD_EXPERIENCES, launchpadExperience } from "../src/launchpadExperience.ts";
 
 const IMPLEMENTED = [
-  "pumpfun", "letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "pons", "four-meme",
+  "pumpfun", "letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "pons", "printr", "four-meme",
   "uniswap-v2", "meteora-dbc", "clanker", "clanker-robinhood", "sunpump", "meme-cooking", "tolly",
 ];
 

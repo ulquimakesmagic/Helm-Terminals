@@ -60,6 +60,14 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     rewardCopy: "Helm's disclosed platform share is set natively in Bags. Creator and Helm balances remain independently claimable; the exact percentages appear in the deployment review.",
     claimMode: "in-app", claimCopy: "SOL-paired fees can be claimed in Helm. Other pair-token fees are claimed on Bags.", accent: "#ff5aa5",
   },
+  printr: {
+    mode: "Bonding curve", title: "Launch on Printr",
+    description: "Create a Printr token on Solana with a creator buy. Printr builds the launch; your dev wallet signs it.",
+    features: ["SOL bonding curve", "Creator buy at launch", "Creator fees to your dev wallet"],
+    settingsTitle: "Printr launch settings", rewardTitle: "Printr creator fees",
+    rewardCopy: "Printr pays creator fees to your dev wallet. It has no partner split, so Helm takes no share of them; Helm's launch and trading fees appear in the review.",
+    claimMode: "external", claimCopy: "Claim creator fees on app.printr.money for now.", accent: "#ff6b3d",
+  },
   "meteora-dbc": {
     mode: "Dynamic bonding curve", title: "Launch with Meteora DBC",
     description: "Use Jupiter Studio's Meteora curve, quote currency and anti-sniping configuration.",
