@@ -81,14 +81,14 @@ FEE_PATHS = [
             "claimers. The current Jupiter Studio route does not expose that split."},
     {"id": "creator_share_other", "label": "Creator-reward share: other launchpads", "setting": None,
      "networks": [], "supported": False, "lands": None,
-     "how": "No equivalent native split is integrated for LetsBonk, Four.meme, Flap, SunPump, Tolly, "
+     "how": "No equivalent native split is integrated for LetsBonk, Printr, Four.meme, Flap, SunPump, Tolly, "
             "Meme.Cooking or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
             "rights and are not relabelled as creator rewards."},
     {"id": "partner_flap", "label": "Flap launchpad commission (tax tokens)", "setting": None,
      "networks": ["bsc", "robinhood", "base"], "supported": True, "lands": "configured",
      "how": "The treasury is set as the commission receiver on new Flap tax tokens, using Flap's protocol-calculated "
             "commission. A configured recipient is not proof of accrued or received revenue; "
-            "payouts require on-chain reconciliation. This is not Helm's 6% creator share."},
+            "payouts require on-chain reconciliation. It is separate from Helm's creator-reward share."},
     {"id": "partner_bags", "label": "Bags partner share", "setting": None,
      "networks": ["solana"], "supported": True, "lands": "claimable",
      "how": "Configured with BAGS_PARTNER_WALLET / BAGS_PARTNER_CONFIG; paid by Bags, not directly verifiable here."},
