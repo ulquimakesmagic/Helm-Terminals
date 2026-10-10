@@ -354,7 +354,7 @@ function Fees({ me }: { me: AdminMe }) {
       <Card title="Creator-reward share by launchpad" icon="rocket">
         <div className="stack tight">{Object.entries(data.creator_share_launchpads).map(([lp, c]) => (
           <div key={lp} className="row between small"><b>{lp}</b><span className="muted">{c.note}</span></div>))}
-          <span className="muted small">Other launchpads (pump.fun, LetsBonk, Meteora DBC, Four.meme, Flap, Pons, Uniswap v2): not available. Helm doesn't set up their reward splits.</span></div>
+          <span className="muted small">Other launchpads (LetsBonk, Meteora DBC, Printr, Four.meme, Flap, Uniswap v2, SunPump, Tolly, Meme.Cooking): no native split Helm can set up, so no creator-reward share. Helm's launch and trading fees still apply where shown above.</span></div>
       </Card>
       <Card title="Supported revenue paths" icon="layers" flush>
         <TableWrap><table className="rtable">

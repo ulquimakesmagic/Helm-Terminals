@@ -33,7 +33,7 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     description: "Launch Flap's supported tax-token preset on Base, funded in ETH.",
     features: ["Tax-token launch", "Creator tax to dev wallet", "Flap commission integration"],
     settingsTitle: "Flap Base token economics", rewardTitle: "Flap commission & creator tax",
-    rewardCopy: "Creator tax goes to the dev wallet. Flap calculates a separate commission for Helm's configured treasury. This is not a 6% deduction from creator rewards; configured commission is not verified revenue.",
+    rewardCopy: "Creator tax goes to the dev wallet. Flap calculates a separate commission for Helm's configured treasury. This is not a deduction from creator rewards; configured commission is not verified revenue.",
     claimMode: "automatic", claimCopy: "Creator tax is paid to the dev wallet by Flap's mechanism; no Helm claim is needed.", accent: "#4d7cff",
   },
   pumpfun: {
@@ -73,7 +73,7 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     description: "Use Jupiter Studio's Meteora curve, quote currency and anti-sniping configuration.",
     features: ["SOL or USDC curve", "Optional anti-sniping", "Locked pool after migration"],
     settingsTitle: "Dynamic curve settings", rewardTitle: "Meteora creator fees",
-    rewardCopy: "This Jupiter Studio route does not expose a Helm reward split. A native 6% share requires a Helm-owned Meteora DBC configuration.",
+    rewardCopy: "This Jupiter Studio route does not expose a Helm reward split. A native creator-reward share requires a Helm-owned Meteora DBC configuration.",
     claimMode: "in-app", claimCopy: "Claim creator fees through the supported Jupiter Studio flow.", accent: "#8258ff",
   },
   clanker: {
