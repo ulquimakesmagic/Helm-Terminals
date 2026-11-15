@@ -47,8 +47,14 @@ Current scope: `docs/uiux-rebuild-prompt.md`; branch `codex/terminal-redesign`.
 
 ## Operational and protocol gates
 
-No release deployment or production schema migration has yet been performed for this branch. The old production
-worker was configured off ahead of retirement. Back up and validate a restored production copy before upgrading.
+Application source `eeacfd466bd0d75039eea2fcddbb01d544bee2b1` was deployed to the API
+(`f9abe248-39de-467a-9597-aefe7a78e8a1`) and frontend (`e9d67376-d61d-42c1-8756-52b8fde299d3`).
+Both deployments succeeded. Production logs confirm upgrades 0004 → 0005 → 0006; readiness verifies
+the exact schema head and execution lease. The health endpoint reports the committed source hash.
+Automation and public-profile endpoints return 404. All seven release-head CI jobs pass:
+[CI run](https://github.com/ulquimakesmagic/Helm-Terminals/actions/runs/43761315109).
+The old production worker was configured off before migration. The fresh backup and restored-copy
+rehearsal completed before deployment.
 
 See `launchpad-capability-review-2026-11-15.md`. Existing Bags, Jupiter and Pinata credentials are configured.
 LetsBonk, Meteora DBC, Printr and taxed Flap routes require creator-reward collection integration; Pons requires
