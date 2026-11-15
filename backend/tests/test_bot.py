@@ -202,10 +202,11 @@ async def test_bot_spending_commands_are_read_only(client, bot_key, fake_rpc):
     ctl = make_ctl(client)
     lid, dev, holders = await live_launch(client, h, fake_rpc)
     await link(client, h, ctl)
+    sent_before = len(fake_rpc.sent)
 
     out = await say(ctl, 1001, f"/buy {sid(lid)} 0.1")
     assert "read-only" in out.text and not out.replies[0].buttons
-    assert len(fake_rpc.sent) == 1  # only the launch deploy; the bot did not submit a trade
+    assert len(fake_rpc.sent) == sent_before  # the bot did not submit a trade or any additional payment
 
 
 async def test_bot_spend_confirmation_is_rejected_at_the_api_boundary(client, bot_key, fake_rpc):
@@ -249,8 +250,9 @@ async def test_telegram_buy_limit_is_superseded_by_read_only_mode(client, bot_ke
     ctl = make_ctl(client)
     lid, _, holders = await live_launch(client, h, fake_rpc)  # 2 holder wallets
     await link(client, h, ctl)
+    sent_before = len(fake_rpc.sent)
     assert "read-only" in (await say(ctl, 1001, f"/buy {sid(lid)} 3")).text
-    assert len(fake_rpc.sent) == 1
+    assert len(fake_rpc.sent) == sent_before
 
 
 async def test_bot_sells_are_blocked_even_when_2fa_is_enabled(client, bot_key, fake_rpc):

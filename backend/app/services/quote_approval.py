@@ -106,7 +106,10 @@ def jupiter_bounds(quote: dict, input_mint: str, output_mint: str, amount: int) 
 
 def check_jupiter_bounds(quote: dict, bounds: dict, input_mint: str, output_mint: str, amount: int) -> None:
     current = jupiter_bounds(quote, input_mint, output_mint, amount)
-    if (bounds.get("expires", 0) <= time.time() or bounds.get("input") != input_mint
-            or bounds.get("asset") != output_mint or bounds.get("amount_raw") != str(amount)
-            or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
-        raise AdapterError("The approved swap expired or its minimum output fell; review a fresh preview")
+    if bounds.get("expires", 0) <= time.time():
+        raise AdapterError("The approved swap expired; review a fresh preview")
+    if (bounds.get("input") != input_mint or bounds.get("asset") != output_mint
+            or bounds.get("amount_raw") != str(amount)):
+        raise AdapterError("The swap assets or input differ from the approval; review a fresh preview")
+    if int(current["minimum_raw"]) < int(bounds["minimum_raw"]):
+        raise AdapterError("The new quote is below the approved minimum; review a fresh preview")

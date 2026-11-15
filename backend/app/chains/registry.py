@@ -90,6 +90,8 @@ def is_evm_network(network: str) -> bool:
 
 def needs_setup(launchpad_id: str) -> str | None:
     """Why an implemented launchpad can't be used on this server yet, or None if it can."""
+    if launchpad_id == "pons" and not get_settings().pons_rewards_factory_v2:
+        return "Pons 2.5% creator rewards need a separately verified PONS_REWARDS_FACTORY_V2"
     if launchpad_id == "bags" and not get_settings().bags_api_key:
         return "Bags needs an API key (BAGS_API_KEY) on the server"
     if launchpad_id in ("sunpump", "meme-cooking", "tolly"):

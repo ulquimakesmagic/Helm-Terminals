@@ -20,7 +20,7 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",

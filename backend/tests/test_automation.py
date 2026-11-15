@@ -133,6 +133,7 @@ async def test_staged_exit_sells_a_fixed_amount_per_order_and_stops_when_empty(c
     launch_id, _, wallets = await live_launch(client, headers, fake_rpc)
     sent_before = len(fake_rpc.sent)
     fake_rpc.tokens[wallets[0]["address"]] = 1_000_000  # 1 token at 6 decimals
+    fake_rpc.next_delta = 1_000_000  # the sale must actually return native proceeds
     body, preview, path = await make_plan(client, headers, launch_id, wallets[0]["id"], side="sell", budget=None,
                                           sell_amount=0.5)
     pf = preview["preflight"]

@@ -145,6 +145,8 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
     params = dict(l.launchpad_params or {})
     plans: list[tuple[Wallet, PadPlan]] = []
     warnings: list[str] = []
+    if any(wallet.network != l.network for wallet in wallets):
+        raise HTTPException(400, "Select wallets on the token's network")
     from .charges import trade_terms
     fee_terms = await trade_terms(db, l.network)
     if l.launchpad == "meme-cooking" and params.get("meme_id") is None:

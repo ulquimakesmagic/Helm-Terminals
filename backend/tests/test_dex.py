@@ -96,6 +96,7 @@ async def test_graduated_pons_token_trades_through_the_dex(client, fake_rpc):
                                                               "idempotency_key": "g1"}, headers=h)
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
         assert job["status"] == "confirmed", job
-        assert node.sent[-1]["to"].lower() == ROUTER.lower()
+        assert node.sent[-2]["to"].lower() == ROUTER.lower()
+        assert node.sent[-1]["value"] == 10**15 * 250 // 10000
     finally:
         registry._cache.pop("pons", None)

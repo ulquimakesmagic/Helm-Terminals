@@ -34,6 +34,7 @@ async def test_new_reward_routes_fail_closed_without_collection(client, monkeypa
     monkeypatch.setattr(get_settings(), "pons_rewards_factory_v2", "")
     assert not _creator_share_terms("pons", {}, CREATOR)["supported"]
     assert not _creator_share_terms("printr", {}, CREATOR)["supported"]
+    assert not _creator_share_terms("meteora-dbc", {}, CREATOR)["supported"]
     assert not _creator_share_terms("bags", {"quote": {"mint": "other-asset"}})["supported"]
     for pad in ("pumpfun", "bags", "clanker", "clanker-robinhood"):
         terms = _creator_share_terms(pad, {})
@@ -72,3 +73,16 @@ async def test_native_reward_receipt_reserves_referral_once_without_signing(clie
         assert charge.terms["no_additional_claim_fee"] and len(charge.reference_key) <= 120
         income = (await db.execute(select(RevenueEvent))).scalar_one()
         assert income.amount_raw == 175 and income.status == "received" and not income.estimated
+
+
+async def test_liquidity_principal_is_not_billed_as_an_initial_developer_trade(client):
+    from types import SimpleNamespace
+    from app.services.charges import attach_launch_fee
+    from app.services.preflight import build_preflight
+    launch = SimpleNamespace(launchpad="uniswap-v2", network="ethereum", dev_buy_sol=0.5)
+    body = SimpleNamespace(confirm=False, launch_fee_approval=None)
+    result = await attach_launch_fee(build_preflight("deploy", {"helm_fees": "Free launch"}),
+                                    None, None, None, launch, None, body)
+    assert result["preflight"]["launch_fee_payment"]["usd"] == 0
+    assert "initial_buy_fee" not in result["preflight"]
+    assert "trade_fee_terms" not in result["preflight"]

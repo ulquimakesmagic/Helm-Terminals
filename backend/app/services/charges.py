@@ -55,7 +55,7 @@ async def attach_launch_fee(pf, db, user, ex, launch, wallet, body):
     summary = {k: v for k, v in pf["preflight"].items() if k not in {"kind", "warnings"}}
     summary.update(launch_fee_payment=terms, helm_fees=summary.get("helm_fees", "Free launch"),
                    platform_fee="Free launch")
-    if launch.dev_buy_sol > 0:
+    if launch.dev_buy_sol > 0 and launch.launchpad != "uniswap-v2":
         agreed = await trade_terms(db, launch.network)
         symbol, decimals = native_asset(launch.network)
         basis = int(Decimal(str(launch.dev_buy_sol)) * 10 ** decimals)

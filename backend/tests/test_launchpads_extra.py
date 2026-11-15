@@ -33,6 +33,10 @@ def pads(monkeypatch):
     monkeypatch.setattr(s, "extra_networks", "tron,near,arc")
     monkeypatch.setattr(s, "allow_mainnet_extra_networks", True)
     monkeypatch.setattr(s, "public_api_url", "https://api.helm.test")
+    from app.services import platform_config as pc
+    original = pc.treasury_for
+    defaults = {"tron": "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7", "near": "bc" * 32}
+    monkeypatch.setattr(pc, "treasury_for", lambda network: original(network) or defaults.get(network, ""))
     xc._clients.clear()
     yield
     xc._clients.clear()
@@ -52,11 +56,22 @@ def tron_call_tx(owner: str, contract: str, data: bytes, call_value: int, fee_li
 class FakeSunPump(FakeTron):
     def __init__(self):
         super().__init__()
+        self.accounts["TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"] = ep.TRX  # configured, activated fee treasury
         self.state, self.calls, self.sent = 1, [], []
         self.allowance = 0
         self.tamper = False
 
     async def _req(self, method, path, body=None, params=None, retries=None):
+        if path == "/wallet/broadcasttransaction":
+            contract = tron.pb_fields(bytes.fromhex(body["raw_data_hex"]))[11][0]
+            fields = tron.pb_fields(contract)
+            if fields[1][0] == 31:
+                payload = tron.pb_fields(tron.pb_fields(fields[2][0])[2][0])
+                data = payload.get(4, [b""])[0]
+                if data[:4] == keccak(text="saleToken(address,uint256,uint256)")[:4]:
+                    _, amount, _ = abi_decode(["address", "uint256", "uint256"], data[4:])
+                    owner = tron.encode_address(payload[1][0])
+                    self.accounts[owner] = self.accounts.get(owner, 0) + amount // 2000
         if path == "/wallet/triggerconstantcontract" and body["contract_address"] in (SP, TOKEN_T):
             sel, p = body["function_selector"], bytes.fromhex(body.get("parameter") or "")
             word = lambda *v: {"result": {"result": True}, "energy_used": 150_000,  # noqa: E731
@@ -134,7 +149,7 @@ async def test_sunpump_launch_buy_and_sell(client, pads, monkeypatch):
     pf, r = await _go(client, h, f"/launches/{lid}/deploy", {}, "d1")
     p = pf["preflight"]
     assert p["launch_fee_trx"] == 20 and p["value_sent_trx"] == 70 and p["contract"] == SP
-    assert p["platform_fee"] == "none" and "energy_fee_trx_about" in p
+    assert p["launch_fee_payment"]["usd"] == 0 and "energy_fee_trx_about" in p
     assert r.status_code == 200, r.text
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed", job
@@ -150,7 +165,7 @@ async def test_sunpump_launch_buy_and_sell(client, pads, monkeypatch):
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
     assert t.calls[-1] == ("purchaseToken(address,uint256)", 10 * ep.TRX)
     sent = bytes.fromhex(tron.pb_fields(tron.pb_fields(tron.pb_fields(tron.pb_fields(bytes.fromhex(
-        t.broadcasts[-1]["raw_data_hex"]))[11][0])[2][0])[2][0])[4][0].hex())
+        t.broadcasts[-2]["raw_data_hex"]))[11][0])[2][0])[2][0])[4][0].hex())
     tok, min_out = abi_decode(["address", "uint256"], sent[4:])
     assert min_out == 10 * ep.TRX * 1000 * 95 // 100
     # sell 50%: approve first, then saleToken
@@ -203,7 +218,14 @@ class FakeMemeCooking(FakeNear):
             return {"result": list(json.dumps(value).encode())}
         if method == "send_tx":
             self.sent.append(params)
-            if b"create_meme" in base64.b64decode(params["signed_tx_base64"]):
+            signed = base64.b64decode(params["signed_tx_base64"])
+            if b"near_withdraw" in signed:
+                import re
+                match = re.search(rb'"amount"\s*:\s*"(\d+)"', signed)
+                if match:
+                    owner = next(iter(self.accounts))
+                    self.accounts[owner] += int(match.group(1))
+            if b"create_meme" in signed:
                 self.memes[7] = {"id": 7, "end_timestamp_ms": str(int(time.time() * 1000) + 3_600_000)}
                 return {"status": {"SuccessValue": base64.b64encode(b"7").decode()}, "receipts_outcome": []}
             return {"status": {"SuccessValue": ""}, "receipts_outcome": []}
@@ -257,8 +279,8 @@ async def test_meme_cooking_create_deposit_withdraw_and_claim(client, pads, monk
                       {"side": "sell", "wallet_ids": [dev["id"]], "amount": 50}, "m2")
     assert pf["preflight"]["per_wallet"][0]["amount_near"] == 1
     assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
-    assert b"withdraw" in base64.b64decode(n.sent[-2]["signed_tx_base64"])
-    assert b"near_withdraw" in base64.b64decode(n.sent[-1]["signed_tx_base64"])
+    assert b"withdraw" in base64.b64decode(n.sent[-3]["signed_tx_base64"])
+    assert b"near_withdraw" in base64.b64decode(n.sent[-2]["signed_tx_base64"])
     # claiming waits for the end
     r = await client.post(f"/launches/{lid}/claim-fees", json={"wallet_id": dev["id"]}, headers=h)
     assert r.status_code == 400 and "still running" in r.text
@@ -327,6 +349,9 @@ async def test_tolly_launch_with_dev_buy_then_swaps(client, pads, monkeypatch):
         return c
 
     monkeypatch.setattr(extra_launch, "ctx_for", ctx_for)
+    from app.services.executor import Executor
+    original_evm = Executor.evm
+    monkeypatch.setattr(Executor, "evm", lambda self, network: arc if network == "arc" else original_evm(self, network))
     h = await signup(client, main=False)
     dev = (await client.post("/wallets", json={"network": "arc", "count": 1}, headers=h)).json()[0]
     lid = (await _launch(client, h, "tolly", dev, dev_buy_sol=100))["id"]

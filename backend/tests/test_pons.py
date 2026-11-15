@@ -184,65 +184,18 @@ async def test_claims():
 async def test_pons_is_not_listed_as_available_while_its_reward_splitter_is_off(client):
     pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
     assert pads["pons"]["status"] != "available"
-    assert "PONS_REWARDS_ENABLED" in registry.needs_setup("pons")
+    assert "PONS_REWARDS_FACTORY_V2" in registry.needs_setup("pons")
     h = await signup(client)
     w = (await client.post("/wallets", json={"network": "robinhood", "count": 1}, headers=h)).json()[0]
     r = await client.post("/launches", json={"launchpad": "pons", "name": "Hood Cat", "symbol": "hood",
                                              "dev_wallet_id": w["id"]}, headers=h)
-    assert r.status_code == 400 and "paused" in r.json()["detail"]
+    assert r.status_code == 400 and "2.5%" in r.json()["detail"]
 
 
-async def test_pons_through_the_api(client, fake_rpc, monkeypatch):
-    # The deploy mechanics, with the release gate opened for the test only (the splitter is covered separately).
-    real = registry.needs_setup
-    monkeypatch.setattr(registry, "needs_setup", lambda lid: None if lid == "pons" else real(lid))
-    import app.routes.launches as launches_routes
-
-    if hasattr(launches_routes, "needs_setup"):
-        monkeypatch.setattr(launches_routes, "needs_setup", lambda lid: None if lid == "pons" else real(lid))
-    node = PonsNode()
-    registry._cache["pons"] = PonsAdapter(node)
-    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"robinhood": node})
-    try:
-        h = await signup(client)
-        pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
-        assert pads["pons"]["status"] == "available"
-        dev, holder = (await client.post("/wallets", json={"network": "robinhood", "count": 2}, headers=h)).json()
-        for w in (dev, holder):
-            node.balances[w["address"].lower()] = ETH
-        r = await client.post("/launches", json={"launchpad": "pons", "name": "Hood Cat", "symbol": "hood",
-                                                 "dev_wallet_id": dev["id"], "image_b64": base64.b64encode(PNG).decode(),
-                                                 "options": {"creator_tax_pct": 1}}, headers=h)
-        assert r.status_code == 201, r.text
-        lid = r.json()["id"]
-        assert (await client.get(f"/public/launch-images/{lid}")).status_code == 404  # not public before deploy
-        pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-        assert pf["preflight"]["launch_fee"].startswith("0.0005 ETH") and pf["preflight"]["creator_tax"].startswith("1%")
-        r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                              "idempotency_key": "p1"}, headers=h)
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed", job
-        launch = (await client.get(f"/launches/{lid}", headers=h)).json()
-        assert launch["status"] == "live" and launch["mint_address"].lower() == TOKEN
-        params = node.launch_calls[-1][1][0]
-        assert params[2].endswith(f"/public/launch-images/{lid}")
-        img = await client.get(f"/public/launch-images/{lid}")
-        assert img.status_code == 200 and img.content == PNG and img.headers["content-type"] == "image/png"
-
-        await client.post(f"/launches/{lid}/wallets", json={"wallet_ids": [holder["id"]]}, headers=h)
-        node.tokens[holder["address"].lower()] = 10**21
-        body = {"side": "sell", "wallet_ids": [holder["id"]], "amount": 100, "mode": "stagger", "stagger_ms": 0}
-        pf = (await client.post(f"/launches/{lid}/trade", json=body, headers=h)).json()
-        r = await client.post(f"/launches/{lid}/trade", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                              "idempotency_key": "p2"}, headers=h)
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed" and [t["kind"] for t in job["transactions"]] == ["sell_approve", "sell"], job
-
-        node.pending_fees = 10**15
-        pf = (await client.post(f"/launches/{lid}/claim-fees", json={"wallet_id": dev["id"]}, headers=h)).json()
-        r = await client.post(f"/launches/{lid}/claim-fees", json={"wallet_id": dev["id"], "confirm": True,
-                                                                  "preflight_hash": pf["preflight_hash"], "idempotency_key": "p3"}, headers=h)
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed", job
-    finally:
-        registry._cache.pop("pons", None)
+async def test_new_pons_launch_cannot_use_an_unconfigured_reward_factory(client, fake_rpc):
+    h = await signup(client)
+    dev = (await client.post("/wallets", json={"network": "robinhood", "count": 1}, headers=h)).json()[0]
+    created = await client.post("/launches", json={"launchpad": "pons", "name": "Pending", "symbol": "PEND",
+        "dev_wallet_id": dev["id"]}, headers=h)
+    assert created.status_code == 400 and "PONS_REWARDS_FACTORY_V2" in created.json()["detail"]
+    assert fake_rpc.sent == []  # positive V2 creation and historical claims are covered in test_pons_rewards

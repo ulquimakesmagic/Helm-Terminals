@@ -146,7 +146,7 @@ class CreateLaunch(BaseModel):
     name: str = Field(min_length=1, max_length=32)
     symbol: str = Field(min_length=1, max_length=10)
     description: str = Field(default="", max_length=500)
-    image_b64: str | None = None
+    image_b64: str | None = Field(default=None, max_length=2_800_000)
     # twitter, telegram, website: a handful of short strings, never an unbounded blob
     socials: dict[Annotated[str, StringConstraints(max_length=32)], Annotated[str, StringConstraints(max_length=300)]] = \
         Field(default_factory=dict, max_length=10)
@@ -156,6 +156,26 @@ class CreateLaunch(BaseModel):
     quote_mint: str | None = None  # pair the token with this instead of SOL (Bags only)
     eligibility_confirmed: bool = False  # required for pair-token launches (tokenized-stock restrictions)
     options: dict = Field(default_factory=dict)  # launchpad-specific settings from /launchpads/{id}/options
+
+
+def _clean_socials(socials: dict) -> dict:
+    """Links written into token metadata that other sites render: https only, no credentials (audit HT-13)."""
+    from urllib.parse import urlsplit
+
+    out = {}
+    for key, value in (socials or {}).items():
+        value = (value or "").strip()
+        if not value:
+            continue
+        try:
+            parts = urlsplit(value)
+        except ValueError:
+            parts = None
+        if not parts or parts.scheme != "https" or not parts.hostname or parts.username or parts.password \
+                or any(c.isspace() for c in value):
+            raise HTTPException(400, f"{key} must be a full https:// link")
+        out[key] = value
+    return out
 
 
 @router.post("/launches", status_code=201)
@@ -215,7 +235,7 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
         if dev.network != network:
             raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {network}")
     l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
-               description=body.description, image_blob=image, socials=body.socials, dev_wallet_id=body.dev_wallet_id,
+               description=body.description, image_blob=image, socials=_clean_socials(body.socials), dev_wallet_id=body.dev_wallet_id,
                dev_buy_sol=body.dev_buy_sol, launchpad_params=params)
     db.add(l)
     await log_activity(db, user.id, "launch.created", "launch", l.id, {"launchpad": body.launchpad})
@@ -1312,7 +1332,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         except Exception:
             raise HTTPException(503, "The launchpad fee could not be verified. Refresh before confirming a launch.") from None
     bal = await sender.rpc.get_balance(dev.address)
-    need_raw = dev_buy + dev_buy * 250 // 10_000 + launch_fee + gas
+    developer_trade_fee = dev_buy * 250 // 10_000 if l.launchpad != "uniswap-v2" else 0
+    need_raw = dev_buy + developer_trade_fee + launch_fee + gas
     warnings = []
     funding = None
     if bal < need_raw:

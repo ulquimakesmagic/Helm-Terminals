@@ -12,6 +12,8 @@ class FakeRPC:
     def __init__(self):
         self.balances: dict[str, int] = {}
         self.tokens: dict[str, int] = {}
+        self.existing_accounts: set[str] = set()
+        self.owners: dict[str, str] = {}
         self.sim_error: str | None = None
         self.next_delta = -5_000
         self.sent: list[bytes] = []

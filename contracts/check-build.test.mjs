@@ -20,10 +20,10 @@ test('LF and CRLF compile to pinned bytes; actual source drift fails without rew
     // Resolve installed compiler without fetching dependencies or executing package scripts.
     await fs.symlink(path.join(root, 'contracts/node_modules'), path.join(contracts, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     await fs.copyFile(path.join(root, 'contracts/build.mjs'), path.join(contracts, 'build.mjs'));
-    for (const name of ['HelmPonsRewards','HelmPonsRewardsFactory','HelmRewardsSplitter','HelmRewardsSplitterFactory'])
+    for (const name of ['HelmPonsRewards','HelmPonsRewardsFactory','HelmPonsRewardsV2','HelmPonsRewardsV2Factory','HelmRewardsSplitter','HelmRewardsSplitterFactory'])
       await fs.copyFile(path.join(root, `backend/app/chains/contracts/${name}.json`), path.join(artifacts, `${name}.json`));
     await fs.copyFile(path.join(root, 'backend/tests/fixtures/reward-helpers.json'), path.join(fixtures, 'reward-helpers.json'));
-    const sources = ['HelmPonsRewards.sol','HelmRewardsSplitter.sol','RewardTestHelpers.sol'];
+    const sources = ['HelmPonsRewards.sol','HelmPonsRewardsV2.sol','HelmRewardsSplitter.sol','RewardTestHelpers.sol'];
     const check = () => spawnSync(process.execPath, ['build.mjs','--check'], {cwd:contracts, encoding:'utf8', timeout:60000, windowsHide:true});
     for (const ending of ['\n','\r\n']) {
       for (const name of sources) await fs.writeFile(path.join(contracts,name), (await fs.readFile(path.join(root,'contracts',name),'utf8')).replace(/\r\n?/g,'\n').replace(/\n/g,ending));

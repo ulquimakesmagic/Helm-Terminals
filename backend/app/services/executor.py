@@ -282,6 +282,42 @@ async def _can_receive(rpc: SolanaRPC, address: str, lamports: int) -> bool:
     return lamports >= RENT_EXEMPT_MIN or await rpc.get_balance(address) >= RENT_EXEMPT_MIN
 
 
+def sol_to_lamports(amount) -> int:
+    """Exact decimal SOL -> lamports (half-even), so previews, transactions and ledgers agree (audit HT-16)."""
+    from decimal import ROUND_HALF_EVEN, Decimal
+
+    return int((Decimal(str(amount)) * LAMPORTS_PER_SOL).quantize(Decimal(1), rounding=ROUND_HALF_EVEN))
+
+
+def _percent(amount) -> float:
+    text = str(amount).strip().rstrip("%")
+    value = float(text)
+    if not 0 < value <= 100:
+        raise ValueError("sell percentage out of range")
+    return value
+
+
+async def trade_limits(rpc: SolanaRPC, wallet: str, mint: str, side: str, amount, denominated_in_sol: bool,
+                       helm_fee_lamports: int):
+    """The most a launchpad-built buy or sell may take from `wallet` (audit HT-01)."""
+    from .solana_guard import SpendLimits, budget
+
+    if side == "buy":
+        if not denominated_in_sol:
+            raise ValueError("token-denominated buys have no SOL bound")
+        return SpendLimits(wallet, budget(sol_to_lamports(amount), helm_fee_lamports), watch_mints=(mint,),
+                           label="buy")
+    held = int(await rpc.get_token_balance(wallet, mint))
+    if denominated_in_sol:
+        raise ValueError("SOL-denominated sells have no token bound")
+    pct = _percent(amount)
+    from decimal import ROUND_DOWN, Decimal
+
+    allowed = int((Decimal(held) * Decimal(str(pct)) / 100).to_integral_value(rounding=ROUND_DOWN))
+    return SpendLimits(wallet, budget(0, helm_fee_lamports), token_out={mint: allowed}, watch_mints=(mint,),
+                       label="sell")
+
+
 async def run_trade(
     db: AsyncSession,
     ex: Executor,
@@ -319,7 +355,7 @@ async def run_trade(
         if not plan.active:
             return None, []
         if side == "buy":
-            basis = int(float(amount) * LAMPORTS_PER_SOL) if denominated_in_sol else 0
+            basis = sol_to_lamports(amount) if denominated_in_sol else 0
         else:
             after = await ex.rpc.simulate_balance_after(built.raw, w.address)
             basis = max(0, after - await ex.rpc.get_balance(w.address)) if after is not None else 0
@@ -354,6 +390,16 @@ async def run_trade(
             return [(side, SubmitResult(None, "failed", str(e)), None)], None
         refs = {w.address: w.signer_ref or ""}
         try:
+            from .solana_guard import enforce
+            base_limits = await trade_limits(ex.rpc, w.address, mint, side, amount, denominated_in_sol, 0)
+            refusal = await enforce(ex.rpc, built.raw, base_limits)
+            if refusal:
+                before_task.cancel()
+                return [(side, SubmitResult(None, "failed", f"refused before signing: {refusal}"), None)], None
+        except Exception as error:
+            before_task.cancel()
+            return [(side, SubmitResult(None, "failed", f"couldn't bound this order before signing ({type(error).__name__})"), None)], None
+        try:
             fee, transfers = await price_fee(w, built)
         except AdapterError as error:
             before_task.cancel()
@@ -386,7 +432,9 @@ async def run_trade(
             await _persist_pending_transaction(job, w, side, signature, pending_fee, destination)
 
         res = await ex.submit(raw, refs, built.extra_signers, fast_poll_s=fast_poll,
-                              on_signed=persist_trade_signature)
+                              on_signed=persist_trade_signature, limits=await trade_limits(
+                                  ex.rpc, w.address, mint, side, amount, denominated_in_sol,
+                                  sum(n for _, n in transfers) if fee and fee.mode == "in_tx" else 0))
         delta = None
         if res.status == "confirmed":
             delta = await ex.rpc.get_balance(w.address) - before
@@ -468,11 +516,12 @@ async def run_single(
     refs: dict[str, str],
     extra: list[Keypair] | None = None,
     submit_via=None,
+    limits=None,
 ) -> SubmitResult:
     job.status = "submitted"
     await db.commit()
     before = await ex.rpc.get_balance(wallet.address) if wallet else None
-    res = await submit_tracked(ex, job, wallet, kind, raw, refs, extra, submit_via)
+    res = await submit_tracked(ex, job, wallet, kind, raw, refs, extra, submit_via, limits=limits)
     delta = None
     if res.status == "confirmed" and wallet is not None and before is not None:
         delta = await ex.rpc.get_balance(wallet.address) - before

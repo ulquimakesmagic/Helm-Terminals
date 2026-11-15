@@ -63,47 +63,27 @@ def jupiter(log: list):
     return httpx.MockTransport(handler)
 
 
-async def test_create_uploads_and_submits_through_studio(client, fake_rpc):
-    log = []
-    registry._cache["meteora-dbc"] = MeteoraDbcAdapter("JUPKEY", fake_rpc, client=httpx.AsyncClient(transport=jupiter(log)))
-    s = get_settings()
-    saved = s.jupiter_api_key
-    s.jupiter_api_key = "JUPKEY"
+async def test_new_studio_launch_requires_reward_collection(client, fake_rpc, monkeypatch):
+    registry._cache["meteora-dbc"] = MeteoraDbcAdapter("JUPKEY", fake_rpc, client=httpx.AsyncClient(transport=jupiter([])))
+    monkeypatch.setattr(get_settings(), "jupiter_api_key", "JUPKEY")
     try:
         h = await signup(client)
-        pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
-        assert pads["meteora-dbc"]["status"] == "available"
-        (dev,) = (await client.post("/wallets", json={"count": 1}, headers=h)).json()
-        r = await client.post("/launches", json={"launchpad": "meteora-dbc", "name": "Jup Cat", "symbol": "jcat",
-                                                 "dev_wallet_id": dev["id"], "image_b64": base64.b64encode(PNG).decode(),
-                                                 "socials": {"website": "https://jc.xyz"}, "options": {"dbc_quote": "SOL"}},
-                              headers=h)
-        lid = r.json()["id"]
-        pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-        assert "100 to 400 SOL" in pf["preflight"]["curve"] and not pf["preflight"]["warnings"]
-        r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                              "idempotency_key": "j1"}, headers=h)
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed", job
-        launch = (await client.get(f"/launches/{lid}", headers=h)).json()
-        assert launch["mint_address"] == str(MINT.pubkey())
-
-        body = json.loads(next(q for q in log if q.url.path.endswith("/create-tx")).content)
-        assert body["buildCurveByMarketCapParam"]["quoteMint"] == WSOL and body["tokenImageContentType"] == "image/png"
-        assert body["antiSniping"] is True and body["isLpLocked"] is True and body["creator"] == dev["address"]
-        img = next(q for q in log if q.url.host == "upload.test" and q.url.path == "/img")
-        assert img.method == "PUT" and img.content == PNG
-        meta = json.loads(next(q for q in log if q.url.path == "/meta").content)
-        assert meta["image"] == "https://static.jup.ag/img.png" and meta["website"] == "https://jc.xyz"
-        sub = next(q for q in log if q.url.path.endswith("/dbc-pool/submit"))
-        form = urllib.parse.parse_qs(sub.content.decode())
-        tx = VersionedTransaction.from_bytes(base64.b64decode(form["transaction"][0]))
-        assert form["owner"] == [dev["address"]]
-        assert tx.signatures[0] != Signature.default()  # signed by the dev wallet
-        assert tx.signatures[1] == Signature.default()  # the mint slot is left for Studio
-        assert fake_rpc.sent == []  # sent through Studio, not our RPC
+        listed = {p["id"]: p for p in (await client.get("/launchpads")).json()}
+        assert listed["meteora-dbc"]["status"] == "setup_required"
+        dev = (await client.post("/wallets", json={"count": 1}, headers=h)).json()[0]
+        created = await client.post("/launches", json={"launchpad": "meteora-dbc", "name": "Pending", "symbol": "PEND",
+            "dev_wallet_id": dev["id"], "image_b64": base64.b64encode(PNG).decode()}, headers=h)
+        assert created.status_code == 201, created.text
+        path = f"/launches/{created.json()['id']}/deploy"
+        pf = (await client.post(path, json={}, headers=h)).json()
+        assert pf["preflight"]["launch_fee_payment"]["usd"] == 0
+        share = pf["preflight"]["helm_creator_share"]
+        assert share["bps"] == 250 and not share["supported"]
+        sent = await client.post(path, json={"confirm": True, "preflight_hash": pf["preflight_hash"],
+            "idempotency_key": "pending-collection"}, headers=h)
+        assert sent.status_code == 400 and "collection" in sent.json()["detail"]
+        assert fake_rpc.sent == []
     finally:
-        s.jupiter_api_key = saved
         registry._cache.pop("meteora-dbc", None)
 
 

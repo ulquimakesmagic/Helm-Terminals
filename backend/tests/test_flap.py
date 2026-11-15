@@ -78,8 +78,13 @@ class FlapNode(FakeEvm):
         return {"name": "T", "symbol": "T", "decimals": 18, "total_supply": 10**9 * 10**18}
 
     async def send_raw(self, raw_hex):
-        # contract calls: charge gas only, keep value accounting simple
-        return await super().send_raw(raw_hex)
+        h = await super().send_raw(raw_hex)
+        d = self.sent[-1]
+        if d["data"][:4] == selector("swapExactInput((address,address,uint256,uint256,bytes))"):
+            q, = abi_decode(["(address,address,uint256,uint256,bytes)"], d["data"][4:])
+            if int(q[1], 16) == 0:
+                self.balances[d["from"].lower()] += q[2] * 1000
+        return h
 
 
 def req(**kw):
@@ -214,7 +219,7 @@ async def test_flap_launch_and_trade_through_the_api(client, fake_rpc):
         r = await client.post(f"/launches/{lid}/trade", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
                                                               "idempotency_key": "t1"}, headers=h)
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed" and [t["kind"] for t in job["transactions"]] == ["buy"], job
+        assert job["status"] == "confirmed" and [t["kind"] for t in job["transactions"]] == ["buy", "trade_fee"], job
 
         # sell 50%: approve first, then sell
         node.tokens[holder["address"].lower()] = 10**21
@@ -223,7 +228,7 @@ async def test_flap_launch_and_trade_through_the_api(client, fake_rpc):
         r = await client.post(f"/launches/{lid}/trade", json={**body, "confirm": True, "preflight_hash": pf["preflight_hash"],
                                                               "idempotency_key": "t2"}, headers=h)
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed" and sorted(t["kind"] for t in job["transactions"]) == ["sell", "sell_approve"], job
+        assert job["status"] == "confirmed" and sorted(t["kind"] for t in job["transactions"]) == ["sell", "sell_approve", "trade_fee"], job
 
         ws_view = (await client.get(f"/launches/{lid}/workspace", headers=h)).json()
         assert ws_view["rpc_error"] is None, ws_view["rpc_error"]

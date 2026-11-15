@@ -16,7 +16,7 @@ def launchpad_capabilities(identifier, network, status):
     from .pricing import CREATOR_SHARE_BPS
     share = pc.creator_share(identifier)
     no_rewards = identifier in {"uniswap-v2", "four-meme", "sunpump", "meme-cooking", "tolly"}
-    reward_ready = no_rewards or share["supported"] or identifier.startswith("flap-sh")
+    reward_ready = no_rewards or share["supported"] or identifier in {"flap-sh", "flap-sh-robinhood"}
     return {"create": implemented and reward_ready, "buy": implemented, "sell": implemented,
             "claim_mode": claim, "automation": implemented and not extra,
             "supply_lock": False, "creator_reward_share_bps": CREATOR_SHARE_BPS,
