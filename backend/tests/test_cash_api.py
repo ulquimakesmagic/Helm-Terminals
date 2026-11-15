@@ -29,8 +29,11 @@ async def test_usdc_withdraw_preserves_2fa_and_gross_debit(client, fake_rpc):
     job = (await client.get('/jobs/' + response.json()["job_id"], headers=h)).json()
     assert job["status"] == "confirmed", job
     msg = VersionedTransaction.from_bytes(fake_rpc.sent[-1]).message
-    assert len(msg.instructions) == 1
-    assert int.from_bytes(msg.instructions[0].data[1:9], "little") == 2_000_000
+    from app.chains.solana import TOKEN_PROGRAM
+    transfers = [ix for ix in msg.instructions if msg.account_keys[ix.program_id_index] == TOKEN_PROGRAM
+                 and ix.data[:1] == bytes([12])]
+    assert len(transfers) == 1  # an idempotent ATA setup may precede the transfer
+    assert int.from_bytes(transfers[0].data[1:9], "little") == 2_000_000
     replay = await client.post("/wallets/withdraw", headers=h, json=confirmation)
     assert replay.status_code == 200 and len(fake_rpc.sent) == 1
 

@@ -162,7 +162,8 @@ async def test_sunpump_launch_buy_and_sell(client, pads, monkeypatch):
     pf, r = await _go(client, h, f"/launches/{lid}/trade",
                       {"side": "buy", "wallet_ids": [dev["id"]], "amount": 10, "slippage_pct": 5}, "b1")
     assert pf["preflight"]["per_wallet"][0] == {"side": "buy", "spend_trx": 10, "slippage_pct": 5}
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     assert t.calls[-1] == ("purchaseToken(address,uint256)", 10 * ep.TRX)
     sent = bytes.fromhex(tron.pb_fields(tron.pb_fields(tron.pb_fields(tron.pb_fields(bytes.fromhex(
         t.broadcasts[-2]["raw_data_hex"]))[11][0])[2][0])[2][0])[4][0].hex())
@@ -171,7 +172,8 @@ async def test_sunpump_launch_buy_and_sell(client, pads, monkeypatch):
     # sell 50%: approve first, then saleToken
     pf, r = await _go(client, h, f"/launches/{lid}/trade",
                       {"side": "sell", "wallet_ids": [dev["id"]], "amount": 50, "slippage_pct": 5}, "s1")
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     assert [c[0] for c in t.calls[-2:]] == ["approve(address,uint256)", "saleToken(address,uint256,uint256)"]
     # a node that returns a different call than planned is refused before signing
     t.tamper = True
@@ -262,7 +264,8 @@ async def test_meme_cooking_create_deposit_withdraw_and_claim(client, pads, monk
     assert pins == []  # nothing is uploaded for a preview
     r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
                                                            "idempotency_key": "m1"}, headers=h)
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     assert len(pins) == 2
     created = base64.b64decode(n.sent[0]["signed_tx_base64"])
     assert b"storage_deposit" in created, created[:200]
@@ -278,7 +281,8 @@ async def test_meme_cooking_create_deposit_withdraw_and_claim(client, pads, monk
     pf, r = await _go(client, h, f"/launches/{lid}/trade",
                       {"side": "sell", "wallet_ids": [dev["id"]], "amount": 50}, "m2")
     assert pf["preflight"]["per_wallet"][0]["amount_near"] == 1
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     assert b"withdraw" in base64.b64decode(n.sent[-3]["signed_tx_base64"])
     assert b"near_withdraw" in base64.b64decode(n.sent[-2]["signed_tx_base64"])
     # claiming waits for the end
@@ -289,7 +293,8 @@ async def test_meme_cooking_create_deposit_withdraw_and_claim(client, pads, monk
     assert r.status_code == 400 and "ended" in r.text
     pf, r = await _go(client, h, f"/launches/{lid}/claim-fees", {"wallet_id": dev["id"]}, "m3")
     assert "refund" in pf["preflight"]["action"]  # the token account doesn't exist: the soft cap wasn't met
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     assert b"claim" in base64.b64decode(n.sent[-1]["signed_tx_base64"])
 
 
@@ -357,7 +362,8 @@ async def test_tolly_launch_with_dev_buy_then_swaps(client, pads, monkeypatch):
     lid = (await _launch(client, h, "tolly", dev, dev_buy_sol=100))["id"]
     pf, r = await _go(client, h, f"/launches/{lid}/deploy", {}, "t1")
     assert pf["preflight"]["dev_buy_usdc"] == 100 and "Uniswap V3" in pf["preflight"]["pool"]
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
     approve, create = arc.sent[0], arc.sent[1]
     assert approve.to == ep.TOLLY["arc"]["usdc"] and abi_decode(["address", "uint256"], approve.data[4:])[1] == 100 * 10**6
     name, symbol, meta, salt, quote = abi_decode(
@@ -371,8 +377,10 @@ async def test_tolly_launch_with_dev_buy_then_swaps(client, pads, monkeypatch):
     arc.allowance = 0
     pf, r = await _go(client, h, f"/launches/{lid}/trade",
                       {"side": "buy", "wallet_ids": [dev["id"]], "amount": 25, "slippage_pct": 10}, "t2")
-    assert (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()["status"] == "confirmed"
-    swap = arc.sent[-1]
+    job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
+    assert job["status"] == "confirmed", job
+    swap = arc.sent[-2]
+    assert arc.sent[-1].value == 25 * 10**18 * 250 // 10000
     assert swap.to == ep.TOLLY["arc"]["router"]
     (params,) = abi_decode(["(address,address,uint24,address,uint256,uint256,uint160)"], swap.data[4:])
     assert params[2] == 10_000 and params[4] == 25 * 10**6 and params[5] == 10**21 * 90 // 100

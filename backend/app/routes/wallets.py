@@ -729,7 +729,13 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     network = wallets[0].network
     a = await _asset(db, user, ex, network, "stable")
     d, sym = a["decimals"], a["symbol"]
-    per_wallet = None if body.all else int(round((body.amount or 0) * 10**d))
+    from decimal import Decimal
+    per_wallet = None
+    if not body.all:
+        units = Decimal(str(body.amount or 0)) * 10**d
+        if not units.is_finite() or units <= 0 or units != units.to_integral_value():
+            raise HTTPException(400, "amount must be a positive whole token base unit")
+        per_wallet = int(units)
     plan: list[tuple[Wallet, int, Wallet | None]] = []  # (source, raw amount, fee payer on Solana)
     warnings: list[str] = []
     fees_paid_by = []
