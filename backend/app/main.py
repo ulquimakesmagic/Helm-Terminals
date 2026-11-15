@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     check_production_config(settings)
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
     worker = None
+    reconciler = None
     replica_lock = None
     try:
         replica_lock = await _acquire_single_replica_lock(settings)
@@ -48,10 +49,16 @@ async def lifespan(app: FastAPI):
             from .services.automation_runner import automation_worker
 
             worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
+        from .services.reconciliation import reconciliation_worker
+        reconciler = asyncio.create_task(reconciliation_worker(), name="helm-reconciliation-worker")
         yield
     finally:
         from .services import execution_lease
         execution_lease.invalidate()
+        if reconciler:
+            reconciler.cancel()
+            with suppress(asyncio.CancelledError):
+                await reconciler
         if worker:
             worker.cancel()
             with suppress(asyncio.CancelledError):
@@ -178,6 +185,7 @@ def check_production_config(s) -> None:
 
 def create_app() -> FastAPI:
     s = get_settings()
+    from .routes import billing
     docs = s.env != "production"  # the interactive schema is a development aid, not a public page (audit HT-10)
     app = FastAPI(title="Helm Terminals", version="0.1.0", lifespan=lifespan,
                   docs_url="/docs" if docs else None, redoc_url="/redoc" if docs else None,
@@ -225,6 +233,7 @@ def create_app() -> FastAPI:
     for r in (admin.router, allocations.router, auth.router, recovery.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
+    app.include_router(billing.router)
 
     # Upstream failures (RPC down, launchpad API changed, signer unreachable) become clear 502s. These are
     # handled responses, so CORS headers are attached and the UI can show the message instead of a network error.
@@ -263,7 +272,9 @@ def create_app() -> FastAPI:
     async def public_info():
         # A deliberately small, user-facing custody statement; detailed configuration stays private.
         from .chains.evm import EVM_CHAINS
+        from .services.pricing import public_pricing
         return {"test_signer": s.env != "production" or s.signer != "turnkey",
+                "pricing": public_pricing(),
                 "capabilities": {"telegram": "read_only", "cash_routes": ["solana", *EVM_CHAINS],
                                  "session_storage": "memory_only", "email_recovery": bool(s.smtp_host and s.smtp_from)}}
 

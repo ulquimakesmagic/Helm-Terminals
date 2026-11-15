@@ -62,8 +62,16 @@ class Settings(BaseSettings):
     turnkey_api_private_key: str = ""  # P-256 private scalar, hex
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    # Codex (codex.io) GraphQL data API: Helm's only third-party market-data source (prices, candles, pools,
-    # liquidity, volume, holders, market cap / FDV). Display only; without a key market panels say "not configured".
+    # Dedicated fee payer, never inferred from a user's wallet or treasury recipient.
+    solana_cash_sponsor_address: str = ""
+    solana_cash_sponsor_ref: str = Field(default="", repr=False)
+    solana_cash_sponsor_usdc_raw: int = Field(default=0, ge=0, le=10_000_000)
+    solana_cash_sponsor_max_lamports: int = Field(default=3_000_000, ge=1, le=10_000_000)
+    # GMGN display-only OpenAPI. No private key or GMGN trading access required.
+    gmgn_api_key: str = Field(default="", repr=False)
+    gmgn_requests_per_minute: int = Field(default=30, ge=1, le=300)
+    # Codex (codex.io) display-only GraphQL data API. When set it is Helm's primary market source —
+    # its coverage includes tokens DexScreener does not index; DexScreener stays the keyless fallback.
     codex_api_key: str = Field(default="", repr=False)
     codex_requests_per_minute: int = Field(default=120, ge=1, le=600)
     pumpportal_trade_url: str = "https://pumpportal.fun/api/trade-local"
@@ -79,7 +87,8 @@ class Settings(BaseSettings):
     evm_rpc_robinhood: str = ""
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
-    pons_rewards_factory: str = ""
+    pons_rewards_factory: str = ""  # Historical immutable 6% splitters only
+    pons_rewards_factory_v2: str = ""  # New, separately deployed 2.5% factory
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
     extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
@@ -117,7 +126,7 @@ class Settings(BaseSettings):
     printr_api_url: str = "https://api-preview.printr.money"
     printr_api_key: str = ""
     debridge_access_token: str = ""  # optional
-    route_fee_bps: int = Field(default=30, ge=0, le=300)
+    route_fee_bps: int = Field(default=0, ge=0, le=300)
     route_poll_seconds: float = 3.0
     route_wait_seconds: float = 180.0
     # Public base URL of this API. Launchpads that store an image URL on-chain (Pons) get the token image from here.
@@ -130,8 +139,8 @@ class Settings(BaseSettings):
     bags_partner_config: str = ""
 
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
-    # transaction and shown in every preview. 0 turns fees off. An admin setting in the dashboard overrides this.
-    platform_fee_bps: int = 100
+    # transaction and shown in every preview. 0 turns fees off.
+    platform_fee_bps: int = 250
     platform_fee_wallet: str = ""
     # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
     # commission to it). Optional.
@@ -141,17 +150,17 @@ class Settings(BaseSettings):
     clanker_platform_reward_bps: int = 0  # legacy; superseded by CREATOR_SHARE_BPS
     # Helm's share of a new launch's creator rewards where the launchpad supports a native split (Pump.fun, Bags,
     # Clanker), in bps (300 = 3%). An admin setting in the dashboard overrides this.
-    creator_share_bps: int = 300
+    creator_share_bps: int = 250
     # Flat fee per launch in US dollars, charged in the launch chain's coin at the live price after the token is
     # created (a failed launch pays nothing). 0 turns it off. An admin setting in the dashboard overrides this.
-    launch_fee_usd: float = 10.0
+    launch_fee_usd: float = 0.0
     # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
     # The owner account's email. Superadmin binds only when BOTH this email and the user ID above match
     # the signing-in account; either left empty or mismatched leaves the deployment without a superadmin.
     superadmin_email: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
-    referral_share_bps: int = 2500
+    referral_share_bps: int = 3000
     referral_code_max_uses: int = 1000
     referral_max_codes_per_user: int = Field(default=10, ge=1, le=100)
 

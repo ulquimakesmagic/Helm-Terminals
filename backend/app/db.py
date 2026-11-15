@@ -4,12 +4,33 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
+from sqlalchemy import Numeric, String
+from sqlalchemy.types import TypeDecorator
 
 from .config import get_settings
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class ExactRawAmount(TypeDecorator):
+    """Integers up to uint256: NUMERIC on PostgreSQL, decimal text on SQLite (never a float)."""
+    impl = Numeric(78, 0)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(String(78) if dialect.name == "sqlite" else Numeric(78, 0))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if value != int(value):
+            raise ValueError("Raw amounts must be whole base units")
+        return str(int(value)) if dialect.name == "sqlite" else int(value)
+
+    def process_result_value(self, value, dialect):
+        return int(value) if value is not None else None
 
 
 _engine: AsyncEngine | None = None
@@ -53,7 +74,7 @@ async def create_all() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-SCHEMA_REVISION = "42c9a01f0003"
+SCHEMA_REVISION = "42c9a01f0004"
 
 
 async def require_schema() -> None:

@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
 from ..db import get_db
@@ -65,7 +66,13 @@ async def register(body: Register, request: Request, background: BackgroundTasks
         return response
     user = User(email=email, password_hash=password_hash)
     db.add(user)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        if (await db.execute(select(User.id).where(User.email == email))).scalar_one_or_none():
+            return response  # a simultaneous registration won; never overwrite its credentials
+        raise
     if ref:
         ref.uses += 1
         db.add(ReferralLink(referred_user_id=user.id, referrer_user_id=ref.owner_user_id, code=ref.code))

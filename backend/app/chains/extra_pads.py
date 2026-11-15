@@ -556,7 +556,8 @@ class MemeCooking:
 
         return PadPlan({"side": "withdraw", "meme_id": meme_id, "amount_near": amount / YOCTO,
                         "withdrawal_fee": "2% (paid to the depositors who stay)"},
-                       {"auction_ends_ms": ends, "you_receive_about_near": amount * 98 // 100 / YOCTO}, warnings,
+                       {"auction_ends_ms": ends, "you_receive_about_near": amount * 98 // 100 / YOCTO,
+                        "expected_out_native_raw": str(amount * 98 // 100)}, warnings,
                        [PadStep("withdraw", withdraw), PadStep("unwrap", unwrap, essential=False)])
 
     async def plan_claim(self, ctx: PadContext, network: str, token: str, meme_id: int) -> PadPlan:

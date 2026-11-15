@@ -1,7 +1,7 @@
 {
   "name": "helm-contract-build",
   "private": true,
-  "scripts": { "build": "node build.mjs", "check": "node build.mjs --check" },
+  "scripts": { "build": "node build.mjs", "check": "node build.mjs --check", "test": "node --test check-build.test.mjs" },
   "devDependencies": { "solc": "0.8.26" },
   "overrides": { "tmp": "0.2.7" }
 }

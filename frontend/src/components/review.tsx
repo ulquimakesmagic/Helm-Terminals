@@ -141,17 +141,18 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
     }
     case "sweep": {
       const from = list(pre.from);
-      const swept = from.reduce((s: number, x: any) => s + (num(x?.amount) ?? 0), 0);
+      const swept = num(pre.wallets_swept) ?? from.length;
       return {
-        label: "Sweep dust", value: fmt(swept, 6), unit: "",
-        sub: <>Everything from {from.length} wallet{from.length === 1 ? "" : "s"} into {pre.to ? short(pre.to.address) : "the destination"} on {pre.chain}</>,
+        label: "Sweep dust", value: String(swept), unit: "wallets",
+        sub: <>Supported balances from {swept} wallet{swept === 1 ? "" : "s"} into {pre.to ? short(pre.to.address) : "the destination"} on {pre.chain}</>,
         cells: [["Wallets swept", String(pre.wallets_swept ?? from.length)],
           ["Stablecoins moved", fmt(num(pre.total_stable) ?? 0, 2)], ["Coin moved", fmt(num(pre.total_native) ?? 0, 6)],
-          ["Max network fees", `${fmt(num(pre.network_fees_max) ?? 0, 6)} ${pre.network_fee_coin ?? ""}`], ...payerCell,
-          ["Skipped (nothing to move)", String(list(pre.skipped_empty).length)], ["Platform fee", fee(pre.platform_fee)]],
+          ["Max network fees", `${fmt(num(pre.network_fees_max) ?? 0, 6)} ${pre.network_fee_coin ?? ""}`],
+          ["Skipped (nothing to move)", String(list(pre.skipped_empty).length)], ["Platform fee", fee(pre.platform_fee)],
+          ["Automatic fee funding", `${fmt(num(pre.fee_reimbursement_usdc) ?? 0, 6)} USDC`]],
         tone: "danger",
-        next: ["Stablecoins move first, then the coin empties — every wallet keeps only its fee reserve.",
-          "Wallets with nothing to move are skipped. This can't be undone except by funding them again."],
+        next: [pre.network === "solana" ? "USDC, eligible USDC account rent, and SOL move atomically per wallet." : "Stablecoins move first; remaining coin is recalculated after fees.",
+          "Shown amounts allow for account creation; saved account rent also reaches the recipient. Other token accounts are untouched."],
       };
     }
     case "fund_cash": {
@@ -178,11 +179,10 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
       const from = list(pre.from);
       const total = sum(from, "sol") + sum(from, "amount");
       return {
-        label: "Withdraw", value: fmt(total, 6), unit: coin, sub: <>From {from.length} wallet{from.length === 1 ? "" : "s"} to {pre.destination ? short(pre.destination) : "the destination"}</>,
-        cells: [["Source wallets", String(from.length)], ...gasCell, ["Platform fee", fee(pre.platform_fee)]], tone: "danger",
-        next: ["Funds leave your Helm wallets for the destination address.",
-          ...(uniquePayers.length ? ["The sending wallet has too little SOL for the network fee, so the wallet shown above pays it (and opens the recipient's token account if needed). Only the fee leaves that wallet."] : []),
-          "Transfers can't be reversed. Check the destination carefully."],
+        label: "Withdraw", value: fmt(total, 6), unit: pre.asset || coin, sub: <>From {from.length} wallet{from.length === 1 ? "" : "s"} to {pre.destination ? short(pre.destination) : "the destination"}</>,
+        cells: [["Source wallets", String(from.length)], ...gasCell, ["Platform fee", fee(pre.platform_fee)],
+          ...(pre.automatic_fee_funding ? [["Automatic fee funding", `${fmt(pre.fee_reimbursement_usdc, 6)} USDC deducted; amount above is received`] as [string, ReactNode]] : [])], tone: "danger",
+        next: ["Funds leave your Helm wallets for the destination address.", "Transfers can't be reversed. Check the destination carefully."],
       };
     }
     case "claim_fees":

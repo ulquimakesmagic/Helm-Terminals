@@ -21,10 +21,14 @@ from .test_admin import boss
 
 
 @pytest.mark.parametrize("delayed", [False, True])
-async def test_base_commission_configuration_survives_treasury_change_and_late_confirmation(client, fake_rpc, monkeypatch, delayed):
+async def test_historical_base_commission_configuration_survives_treasury_change_and_late_confirmation(client, fake_rpc, monkeypatch, delayed):
     async def no_sleep(_):
         pass
     monkeypatch.setattr(evm_exec.asyncio, "sleep", no_sleep)
+    # Reproduce a launch approved under historical commission terms, not a new 2.5% launch.
+    original_share = pc.creator_share
+    monkeypatch.setattr(pc, "creator_share", lambda pad: {"bps": 0, "recipient": "", "supported": True,
+        "collection": "historical", "note": "Historical commission fixture"} if pad == "flap-sh-base" else original_share(pad))
     class Node(FlapNode):
         ready = not delayed
         async def receipt(self, h):
@@ -91,5 +95,5 @@ async def test_configured_commission_does_not_count_as_received_or_claimable(cli
     assert bucket["unknown_amount_entries"] == 1
     ledger = await client.get("/admin/revenue/ledger?status=configured", headers=h)
     assert ledger.status_code == 200
-    assert pc.creator_share("pons")["bps"] == 0  # disabled until a reviewed factory is configured
-    assert next(p for p in pc.FEE_PATHS if p["id"] == "creator_share_pons")["lands"] == "configured"
+    assert pc.creator_share("pons")["bps"] == 250 and not pc.creator_share("pons")["supported"]
+    assert next(p for p in pc.FEE_PATHS if p["id"] == "creator_rewards")["lands"] == "configured"

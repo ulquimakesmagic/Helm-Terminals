@@ -206,9 +206,9 @@ def outcome_status(result: dict) -> tuple[str, str | None]:
 
 
 async def sign_and_send(client: NearClient, signer, signer_ref: str, signer_id: str, pubkey32: bytes,
-                        receiver_id: str, actions: list[bytes]) -> tuple[str | None, str, str | None]:
+                        receiver_id: str, actions: list[bytes], on_signed=None) -> tuple[str | None, str, str | None]:
     """(tx hash base58, status, error). Nonce and a recent final block hash are read fresh for each send."""
-    h, status, err, _ = await sign_and_send_result(client, signer, signer_ref, signer_id, pubkey32, receiver_id, actions)
+    h, status, err, _ = await sign_and_send_result(client, signer, signer_ref, signer_id, pubkey32, receiver_id, actions, on_signed=on_signed)
     return h, status, err
 
 
@@ -224,7 +224,7 @@ def success_value(result: dict) -> object:
 
 
 async def sign_and_send_result(client: NearClient, signer, signer_ref: str, signer_id: str, pubkey32: bytes,
-                               receiver_id: str, actions: list[bytes]) -> tuple[str | None, str, str | None, dict]:
+                               receiver_id: str, actions: list[bytes], on_signed=None) -> tuple[str | None, str, str | None, dict]:
     key = await client.access_key(signer_id, pubkey32)
     nonce = int(key["nonce"]) + 1
     block_hash = await client.final_block_hash()
@@ -233,6 +233,8 @@ async def sign_and_send_result(client: NearClient, signer, signer_ref: str, sign
     sig = await signer.sign_message(signer_ref, digest)
     signed = signed_transaction(tx, sig)
     h = _b58(digest)
+    if on_signed is not None:
+        await on_signed(h)
     try:
         result = await client.send(signed)
     except AdapterError as e:

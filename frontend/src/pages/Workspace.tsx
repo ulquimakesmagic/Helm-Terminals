@@ -230,7 +230,7 @@ export default function Workspace() {
   const l = ws.launch;
   const chain = chainOf(l.network);
   const experience = launchpadExperience(l.launchpad);
-  const claimMode = l.launchpad === "bags" && l.quote ? "external" : experience.claimMode;
+  const claimMode = l.launchpad === "bags" && l.quote ? "external" : (l.capabilities?.claim_mode ?? experience.claimMode);
   const claimUrl = l.launchpad === "bags" && l.quote ? "https://bags.fm/" : experience.claimUrl;
   const claimInApp = claimMode === "in-app";
   const effectiveOp: Op = op === "claim" && !claimInApp ? "burn" : op;

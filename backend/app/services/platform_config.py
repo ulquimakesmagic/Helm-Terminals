@@ -1,13 +1,9 @@
 """Effective fee settings and treasury addresses.
 
-Each value comes from an admin setting in the database when one has been saved, otherwise from the environment
-(where Helm's fees were configured before the admin dashboard existed), so admin-saved rates keep
-winning over the code defaults.
-Values are cached in the process for a short time; admin changes refresh the cache immediately on this process and
-within CACHE_S on any other.
-
-Unsupported or unconfigured fee paths are off: a path is active only when its rate is above zero, a treasury address
-is set for its network, and the provider supports taking the fee (see FEE_PATHS).
+Rates come from the fixed pricing policy. Legacy database/environment rates are
+reported for audit but cannot override it. Treasuries remain configurable, cached
+for CACHE_S, and refreshed immediately after an admin change. Fee-bearing actions
+fail closed when their network's treasury is missing.
 """
 
 import math
@@ -25,73 +21,22 @@ CACHE_S = 30.0
 
 # Safe bounds for what an admin may set, in basis points.
 BOUNDS = {
-    "trade_fee_bps_solana": (0, 200),  # Helm fee on Solana buys and sells: at most 2%
-    "trade_fee_bps_evm_dex": (0, 200),  # Helm fee on EVM trades routed through KyberSwap: at most 2%
-    "trade_fee_bps_extra": (0, 200),  # Helm fee on SunPump (TRON) and Tolly (Arc) trades: at most 2%
-    "route_fee_bps": (0, 100),  # Helm fee on USDC routes and bridges (Relay app fee): at most 1%
-    "creator_share_bps": (0, 1000),  # Helm's share of a new launch's creator rewards: at most 10%
-    "launch_fee_cents": (0, 10_000),  # flat launch fee in US cents (not bps): at most $100
+    "trade_fee_bps_solana": (250, 250),
+    "trade_fee_bps_evm_dex": (250, 250),
+    "route_fee_bps": (0, 0),
+    "creator_share_bps": (250, 250),
 }
 
-# Every way Helm can earn, where it lands, and whether it's available. Used for the admin support matrix and to
-# refuse enabling paths that don't exist.
 FEE_PATHS = [
-    {"id": "launch_fee", "label": "Launch fee (flat, in US dollars)", "setting": "launch_fee_cents",
-     "networks": ["solana", *EVM_CHAINS, "tron", "arc"], "supported": True, "lands": "received",
-     "how": "Once the launch is live, the dev wallet sends the fee in the chain's coin, priced at the live USD "
-            "price (never above the maximum the preview showed), to that chain's treasury. A failed launch pays "
-            "nothing. Not charged on Meme.Cooking (NEAR): Helm has no verified NEAR price source yet."},
-    {"id": "trade_fee_solana", "label": "Trading fee: Solana launchpads", "setting": "trade_fee_bps_solana",
-     "networks": ["solana"], "supported": True, "lands": "received",
-     "how": "Added as a transfer inside each confirmed buy or sell; a failed trade pays nothing."},
-    {"id": "trade_fee_evm_dex", "label": "Trading fee: EVM trades routed through a DEX", "setting": "trade_fee_bps_evm_dex",
-     "networks": list(EVM_CHAINS), "supported": True, "lands": "received",
-     "how": "KyberSwap's router sends the fee to the treasury in the same swap transaction."},
-    {"id": "trade_fee_extra", "label": "Trading fee: SunPump (TRON) and Tolly (Arc)", "setting": "trade_fee_bps_extra",
-     "networks": ["tron", "arc"], "supported": True, "lands": "received",
-     "how": "A separate transfer of the fee from the trading wallet to that chain's treasury after each confirmed buy "
-            "(a share of the amount spent) or sell (a share of the coin received). Not on Meme.Cooking (NEAR), whose "
-            "deposits are auction bids, not trades."},
-    {"id": "trade_fee_evm_curve", "label": "Trading fee: EVM bonding-curve trades", "setting": None,
-     "networks": list(EVM_CHAINS), "supported": False, "lands": None,
-     "how": "Not available: Four.meme, Flap and Pons curves have no fee hook, and Helm doesn't add a separate fee "
-            "transfer on EVM."},
-    {"id": "route_fee", "label": "Cross-chain route fee (Relay)", "setting": "route_fee_bps",
-     "networks": ["evm"], "supported": True, "lands": "claimable",
-     "how": "A Relay app fee: Relay holds it as a balance for the treasury address until it's claimed at relay.link, "
-            "so it counts as claimable, not received."},
-    {"id": "creator_share_bags", "label": "Creator-reward share: Bags", "setting": "creator_share_bps",
-     "networks": ["solana"], "supported": True, "lands": "claimable",
-     "how": "Set in the launch's Bags fee-share config (treasury as a second claimer); claimed on Bags."},
-    {"id": "creator_share_clanker", "label": "Creator-reward share: Clanker", "setting": "creator_share_bps",
-     "networks": ["base", "robinhood"], "supported": True, "lands": "claimable",
-     "how": "The treasury is a reward recipient in Clanker's LP locker; claimed from Clanker's fee locker."},
-    {"id": "creator_share_pumpfun", "label": "Creator-reward share: Pump.fun", "setting": "creator_share_bps",
-     "networks": ["solana"], "supported": True, "lands": "claimable",
-     "how": "After the token confirms, Helm creates pump.fun's native one-time sharing config. Creator and treasury "
-            "are separate shareholders; either party can trigger the permissionless distribution."},
-    {"id": "creator_share_pons", "label": "Creator-reward share: Pons", "setting": None,
-     "networks": ["robinhood"], "supported": True, "lands": "configured",
-     "how": "Fixed 6% via a separate immutable reward splitter for each new native-ETH launch. Disabled until "
-            "PONS_REWARDS_ENABLED and a verified PONS_REWARDS_FACTORY are configured. Configuration is not income; "
-            "only confirmed treasury payouts through Helm enter received revenue. Legacy claims stay unsplit."},
-    {"id": "creator_share_meteora", "label": "Creator-reward share: Meteora DBC", "setting": None,
-     "networks": ["solana"], "supported": False, "lands": None,
-     "how": "A split requires a Helm-owned Meteora DBC configuration with explicit partner and creator fee "
-            "claimers. The current Jupiter Studio route does not expose that split."},
-    {"id": "creator_share_other", "label": "Creator-reward share: other launchpads", "setting": None,
-     "networks": [], "supported": False, "lands": None,
-     "how": "No equivalent native split is integrated for LetsBonk, Printr, Four.meme, Flap, SunPump, Tolly, "
-            "Meme.Cooking or Uniswap v2. Creator taxes, LP ownership and auction proceeds are different economic "
-            "rights and are not relabelled as creator rewards."},
-    {"id": "partner_flap", "label": "Flap launchpad commission (tax tokens)", "setting": None,
-     "networks": ["bsc", "robinhood", "base"], "supported": True, "lands": "configured",
-     "how": "The treasury is set as the commission receiver on new Flap tax tokens, using Flap's protocol-calculated "
-            "commission. A configured recipient is not proof of accrued or received revenue; "
-            "payouts require on-chain reconciliation. It is separate from Helm's creator-reward share."},
-    {"id": "partner_bags", "label": "Bags partner share", "setting": None,
-     "networks": ["solana"], "supported": True, "lands": "claimable",
-     "how": "Configured with BAGS_PARTNER_WALLET / BAGS_PARTNER_CONFIG; paid by Bags, not directly verifiable here."},
+    {"id": "launch_fee", "label": "Free launches", "setting": None,
+     "networks": ["solana", *EVM_CHAINS, "tron", "near", "arc"], "supported": True, "lands": None,
+     "how": "Launches are free for everyone. Network and third-party launchpad costs are separate."},
+    {"id": "trade_fee_solana", "label": "2.5% Solana trading fee", "setting": "trade_fee_bps_solana",
+     "networks": ["solana"], "supported": True, "lands": "received", "how": "2.5% of trade notional; referral share is 30% of the fee."},
+    {"id": "trade_fee_evm_dex", "label": "2.5% EVM trading fee", "setting": "trade_fee_bps_evm_dex",
+     "networks": list(EVM_CHAINS), "supported": True, "lands": "received", "how": "2.5% of trade notional, including bonding curves; referral share is 30% of the fee."},
+    {"id": "creator_rewards", "label": "2.5% creator-reward share", "setting": "creator_share_bps",
+     "networks": ["solana", "base", "robinhood"], "supported": True, "lands": "configured", "how": "2.5% of creator rewards on new Helm launches. Collection readiness is launchpad-specific; historical immutable splits retain their beneficiaries."},
 ]
 
 # Fixed in HelmPonsRewards / HelmRewardsSplitter (HELM_BPS = 600). Existing splitters' addresses derive from that
@@ -115,17 +60,9 @@ _snap = Snapshot()
 
 
 def _env_defaults() -> dict:
-    s = get_settings()
-    return {
-        "trade_fee_bps_solana": s.platform_fee_bps,
-        "trade_fee_bps_evm_dex": s.platform_fee_bps,
-        "trade_fee_bps_extra": s.platform_fee_bps,
-        "route_fee_bps": s.route_fee_bps,
-        "creator_share_bps": s.creator_share_bps,
-        # Bounded like the admin setting; a non-numeric or NaN env value means no fee rather than a crash.
-        "launch_fee_cents": (min(int(round(max(s.launch_fee_usd, 0) * 100)), BOUNDS["launch_fee_cents"][1])
-                             if math.isfinite(s.launch_fee_usd) else 0),
-    }
+    from .pricing import TRADE_BPS, CREATOR_SHARE_BPS
+    return {"trade_fee_bps_solana": TRADE_BPS, "trade_fee_bps_evm_dex": TRADE_BPS,
+            "route_fee_bps": 0, "creator_share_bps": CREATOR_SHARE_BPS}
 
 
 async def refresh(db: AsyncSession, force: bool = False) -> Snapshot:
@@ -137,8 +74,8 @@ async def refresh(db: AsyncSession, force: bool = False) -> Snapshot:
     settings = {}
     for key, default in env.items():
         r = rows.get(key)
-        settings[key] = ({"value": int(r.value.get("bps", 0)), "source": "admin", "updated_at": r.updated_at.isoformat()}
-                         if r else {"value": int(default), "source": "env"})
+        settings[key] = {"value": int(default), "source": "policy",
+                         "previous_setting": int(r.value.get("bps", 0)) if r else None}
     s = get_settings()
     treasury = {"solana": {"address": s.platform_fee_wallet, "label": "", "source": "env"} if s.platform_fee_wallet else None,
                 "evm": {"address": s.platform_fee_wallet_evm, "label": "", "source": "env"} if s.platform_fee_wallet_evm else None}
@@ -164,7 +101,7 @@ def current() -> Snapshot:
 
 
 def bps(key: str) -> int:
-    return current().settings.get(key, {}).get("value", 0)
+    return _env_defaults().get(key, 0)
 
 
 def treasury_for(network: str) -> str:
@@ -172,31 +109,24 @@ def treasury_for(network: str) -> str:
     t = current().treasury
     if network in t:
         return t[network]["address"]
-    if network in EVM_CHAINS and "evm" in t:
+    if (network in EVM_CHAINS or network == "arc") and "evm" in t:
         return t["evm"]["address"]
     return ""
 
 
 def creator_share(launchpad: str) -> dict:
-    """Helm's share of creator rewards for a new launch on this launchpad: {bps, recipient, supported, note}."""
+    """Policy and verified collection capability; never silently waive a missing split."""
+    from .pricing import CREATOR_SHARE_BPS
     network = CREATOR_SHARE_LAUNCHPADS.get(launchpad)
-    if network is None:
-        return {"bps": 0, "recipient": "", "supported": False,
-                "note": "Helm takes no share of creator rewards on this launchpad"}
-    recipient = treasury_for(network)
+    recipient = treasury_for(network) if network else ""
+    native = launchpad in {"pumpfun", "bags", "clanker", "clanker-robinhood"}
     if launchpad == "pons":
-        s = get_settings()
-        # An explicit enable must fail closed at preflight if its factory/treasury is missing, not silently
-        # create a launch with no revenue split. Actual addresses and bytecode are checked before confirmation.
-        active = s.pons_rewards_enabled
-        return {"bps": PONS_SHARE_BPS if active else 0, "recipient": recipient if active else "", "supported": True,
-                "note": ("Fixed split: 94% of native creator rewards to you; 6% to Helm, including creator tax. "
-                         "Recipients cannot be changed through Helm. Pons retains its timelocked override."
-                         if active else "Pons reward splitting is not enabled; rewards go to your dev wallet")}
-    share = min(max(bps("creator_share_bps"), 0), 1000) if recipient else 0
-    return {"bps": share, "recipient": recipient, "supported": True,
-            "note": (f"{share / 100:g}% of your creator rewards go to Helm's treasury; you keep {100 - share / 100:g}%"
-                     if share else "Helm takes no share of your creator rewards")}
+        native = bool(get_settings().pons_rewards_factory_v2)
+    supported = native and bool(recipient)
+    return {"bps": CREATOR_SHARE_BPS, "recipient": recipient, "supported": supported,
+            "collection": "native_split" if supported else "integration_required",
+            "note": ("2.5% of creator rewards to Helm; 97.5% to the creator" if supported else
+                     "2.5% creator-reward policy; collection is not ready for this launchpad or treasury")}
 
 
 def reset_cache() -> None:

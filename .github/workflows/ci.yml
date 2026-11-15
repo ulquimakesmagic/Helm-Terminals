@@ -5,6 +5,13 @@
 
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: helm-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -21,7 +28,7 @@ jobs:
           python-version: "3.12.14"
           cache: pip
       - run: pip install -r backend/requirements.lock
-      - run: pytest -q --ignore=tests/test_pons_contract.py
+      - run: pytest -q --ignore=tests/test_pons_contract.py --ignore=tests/test_pons_contract_v2.py --ignore=tests/test_rewards_contract.py
         working-directory: backend
 
   contract-tests:
@@ -35,7 +42,7 @@ jobs:
           python-version: "3.12.14"
           cache: pip
       - run: pip install -r backend/requirements.lock
-      - run: pytest tests/test_pons_contract.py -q
+      - run: pytest tests/test_pons_contract.py tests/test_pons_contract_v2.py tests/test_rewards_contract.py -q
         working-directory: backend
 
   postgres-execution:
@@ -78,6 +85,8 @@ jobs:
         working-directory: contracts
       # Compare with committed artifacts before any command can overwrite them.
       - run: npm run check
+        working-directory: contracts
+      - run: npm test
         working-directory: contracts
 
   frontend:

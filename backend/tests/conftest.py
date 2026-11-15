@@ -42,98 +42,9 @@ TEST_OPENAPI = "test-only-secret"  # fake provider credential for the market-dat
 OWNER_EMAIL = "owner@example.com"  # the deployment's configured superadmin email for tests
 
 
-class FakeRPC:
-    def __init__(self):
-        self.balances: dict[str, int] = {}
-        self.tokens: dict[str, int] = {}
-        self.sim_error: str | None = None
-        self.next_delta = -5_000
-        self.sent: list[bytes] = []
-        self.supply = 1_000_000_000 * 10**6
-        self.holders: list[tuple[str, int]] = []
-        self.existing_accounts: set[str] = set()  # token accounts that already exist (others need rent)
-
-    async def get_balance(self, a):
-        return self.balances.get(a, 5 * SOL)
-
-    async def account_owner(self, address):
-        return getattr(self, "owners", {}).get(address)
-
-    async def account_exists(self, address):
-        return address in self.existing_accounts
-
-    async def get_latest_blockhash(self):
-        return str(Hash.default())
-
-    async def get_token_balance(self, owner, mint):
-        return self.tokens.get(owner, 0)
-
-    async def get_token_supply(self, mint):
-        return self.supply, 6
-
-    async def get_largest_owners(self, mint):
-        return self.holders
-
-    async def get_asset(self, mint):
-        return {"content": {"metadata": {"name": "Cloned", "symbol": "CLN", "description": "d"}}}
-
-    async def simulate(self, tx, sig_verify=True):
-        return self.sim_error
-
-    async def simulate_balance_after(self, tx, address):
-        if self.sim_error:
-            return None
-        return await self.get_balance(address) + self.next_delta
-
-    async def wallet_effects(self, tx, wallet, watch_mints=()):
-        """Simulated effects for the spend guard: by default the wallet pays `next_delta` lamports and no token
-        balance changes. Tests set `effects_override` to model a provider-built transaction that misbehaves."""
-        from app.services.solana_guard import WalletEffects
-
-        if self.sim_error:
-            return WalletEffects(0, 0, "11111111111111111111111111111111", {}, {}, error=self.sim_error)
-        if getattr(self, "effects_override", None) is not None:
-            return self.effects_override(tx, wallet)
-        before = await self.get_balance(wallet)
-        return WalletEffects(before, before + self.next_delta, "11111111111111111111111111111111", {}, {})
-
-    async def send(self, tx):
-        self.sent.append(tx)
-        payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])
-        self.balances[payer] = self.balances.get(payer, 5 * SOL) + self.next_delta
-        return str(VersionedTransaction.from_bytes(tx).signatures[0])
-
-    async def confirm(self, sig, timeout_s=60, poll_s=1.0, **_):
-        return "confirmed", None
+from .fakes import FakeRPC, FakeAdapter
 
 
-class FakeAdapter:
-    id = "pumpfun"
-    network = "solana"
-    quote_assets = ["SOL"]
-
-    def options_schema(self):
-        return {"fields": []}
-
-    async def build_create_tx(self, req):
-        mint = Keypair()
-        dev = Pubkey.from_string(req.dev_pubkey)
-        ix_mint = Instruction(SYSTEM_PROGRAM, b"", [AccountMeta(mint.pubkey(), True, False)])
-        raw = build_unsigned(dev, [sol_transfer_ix(dev, dev, 1), ix_mint], str(Hash.default()))
-        return BuiltTx(raw=raw, extra_signers=[mint], mint=str(mint.pubkey()))
-
-    async def _simple(self, req):
-        p = Pubkey.from_string(req.wallet_pubkey)
-        return BuiltTx(raw=build_unsigned(p, [sol_transfer_ix(p, p, 1)], str(Hash.default())))
-
-    async def build_buy_tx(self, req):
-        return await self._simple(req)
-
-    async def build_sell_tx(self, req):
-        return await self._simple(req)
-
-    async def build_claim_fees_tx(self, req):
-        return await self._simple(req)
 
 
 @pytest.fixture
@@ -153,7 +64,9 @@ async def client(fake_rpc):
 
     settings = get_settings()
     saved = (settings.platform_fee_bps, settings.platform_fee_wallet, settings.superadmin_user_id,
-             settings.superadmin_email)
+             settings.superadmin_email, settings.platform_fee_wallet_evm)
+    settings.platform_fee_wallet = str(Keypair().pubkey())
+    settings.platform_fee_wallet_evm = "0x" + "77" * 20
     settings.superadmin_user_id = ""
     settings.superadmin_email = OWNER_EMAIL  # what a configured deployment looks like
     registry._cache["pumpfun"] = FakeAdapter()
@@ -165,13 +78,24 @@ async def client(fake_rpc):
     registry._cache.pop("pumpfun", None)
     settings.platform_fee_bps, settings.platform_fee_wallet = saved[0], saved[1]
     settings.superadmin_user_id, settings.superadmin_email = saved[2], saved[3]
+    settings.platform_fee_wallet_evm = saved[4]
 
 
-async def signup(client, email="a@example.com", password=TEST_PW, main=True):
+async def signup(client, email="a@example.com", password=TEST_PW, main=True, launch_exempt=True):
     """Register and sign in. `main=False` removes the main wallets sign-up creates, for tests that count wallets
     or balances and predate main wallets."""
     r = await client.post("/auth/register", json={"email": email, "password": password})
     assert r.status_code == 201, r.text
+    if launch_exempt:
+        # Most feature tests use a promotional account so launch payment is not an unrelated prerequisite.
+        # Pricing API tests explicitly opt out; production grants remain protected by admin step-up.
+        from sqlalchemy import select
+        from app.db import get_sessionmaker
+        from app.models import User, LaunchFeeExemption
+        async with get_sessionmaker()() as db:
+            account = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one()
+            db.add(LaunchFeeExemption(user_id=account.id, enabled=True, reason="Feature-test launch promotion", changed_by=account.id))
+            await db.commit()
     if not main:
         from sqlalchemy import delete, select
 

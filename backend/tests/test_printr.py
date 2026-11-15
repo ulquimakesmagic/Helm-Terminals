@@ -80,28 +80,24 @@ async def test_printr_refuses_foreign_signers_overpriced_quotes_and_bad_images(f
         await a.build_buy_tx(None)
 
 
-async def test_printr_launch_through_helm_goes_live(client, fake_rpc):
-    seen: list = []
-    registry._cache["printr"] = adapter(fake_rpc, seen)
+async def test_printr_new_launch_requires_reward_collection(client, fake_rpc, monkeypatch):
+    registry._cache["printr"] = adapter(fake_rpc, [])
     try:
-        listed = {p["id"]: p for p in (await client.get("/launchpads")).json()}
-        assert listed["printr"]["status"] == "available"
-        assert "gaspump" not in listed
         h = await signup(client)
-        dev = (await make_wallets(client, h, 1))[0]
-        r = await client.post("/launches", json={"launchpad": "printr", "name": "Helm Printr", "symbol": "HPRT",
-                                                 "dev_wallet_id": dev["id"], "dev_buy_sol": 0.5,
-                                                 "image_b64": base64.b64encode(PNG).decode()}, headers=h)
-        assert r.status_code == 201, r.text
-        lid = r.json()["id"]
-        pf, r = await confirm(client, h, f"/launches/{lid}/deploy", {})
-        assert r.status_code == 200, r.text
-        assert "Printr bonding curve" in pf["preflight"]["curve"]
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed", job
-        launch = (await client.get(f"/launches/{lid}", headers=h)).json()
-        assert launch["status"] == "live" and launch["mint_address"] == MINT
-        tx = VersionedTransaction.from_bytes(fake_rpc.sent[-1])
-        assert str(tx.message.account_keys[0]) == dev["address"]
+        listed = {p["id"]: p for p in (await client.get("/launchpads")).json()}
+        assert listed["printr"]["status"] == "setup_required"
+        dev = (await client.post("/wallets", json={"count": 1}, headers=h)).json()[0]
+        created = await client.post("/launches", json={"launchpad": "printr", "name": "Pending", "symbol": "PEND",
+            "dev_wallet_id": dev["id"], "image_b64": base64.b64encode(PNG).decode()}, headers=h)
+        assert created.status_code == 201, created.text
+        path = f"/launches/{created.json()['id']}/deploy"
+        pf = (await client.post(path, json={}, headers=h)).json()
+        assert pf["preflight"]["launch_fee_payment"]["usd"] == 0
+        share = pf["preflight"]["helm_creator_share"]
+        assert share["bps"] == 250 and not share["supported"]
+        sent = await client.post(path, json={"confirm": True, "preflight_hash": pf["preflight_hash"],
+            "idempotency_key": "pending-collection"}, headers=h)
+        assert sent.status_code == 400 and "collection" in sent.json()["detail"]
+        assert fake_rpc.sent == []
     finally:
         registry._cache.pop("printr", None)

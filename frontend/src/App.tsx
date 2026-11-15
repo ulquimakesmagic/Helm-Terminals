@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, hasToken, setToken } from "./api";
 import { Icon, IconName, Loading, Logo } from "./components/ui";
@@ -23,17 +23,18 @@ const Activity = lazy(() => import("./pages/Activity"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
 const PublicProfile = lazy(() => import("./pages/PublicProfile"));
+const Billing = lazy(() => import("./pages/Billing"));
 const Admin = lazy(() => import("./pages/Admin"));
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
   { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/networks", "Networks", "layers"]] },
   { group: "Monitor", items: [["/tracker", "Tracker", "radar"], ["/activity", "Activity", "activity"]] },
-  { group: "Account", items: [["/profile", "Profile", "user"], ["/settings", "Settings", "settings"]] },
+  { group: "Account", items: [["/profile", "Profile", "user"], ["/billing", "Fees & payments", "coins"], ["/settings", "Settings", "settings"]] },
 ];
 
 const TITLES: Record<string, string> = {
-  "": "Dashboard", launches: "Launches", wallets: "Wallets", networks: "Networks", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings", admin: "Admin",
+  "": "Dashboard", launches: "Launches", wallets: "Wallets", networks: "Networks", tracker: "Tracker", activity: "Activity", profile: "Profile", settings: "Settings", admin: "Admin", billing: "Fees & payments",
 };
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -41,7 +42,35 @@ function Shell({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
   const { me, health, healthChecked, testSigner, tg } = useSession();
   const [open, setOpen] = useState(false);
+  const sidebar = useRef<HTMLElement>(null);
+  const main = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   useEffect(() => setOpen(false), [loc.pathname]);
+  useEffect(() => {
+    if (!open || !window.matchMedia("(max-width: 900px)").matches) return;
+    const previousOverflow = document.body.style.overflow;
+    if (main.current) main.current.inert = true;
+    document.body.style.overflow = "hidden";
+    const controls = () => Array.from(sidebar.current?.querySelectorAll<HTMLElement>('a[href],button:not([disabled])') ?? []).filter(el => el.getClientRects().length);
+    controls()[0]?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+      if (event.key !== "Tab") return;
+      const elements = controls(), first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    const resize = () => { if (innerWidth > 900) setOpen(false); };
+    document.addEventListener("keydown", keydown);
+    window.addEventListener("resize", resize);
+    return () => {
+      if (main.current) main.current.inert = false;
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", keydown);
+      window.removeEventListener("resize", resize);
+      menuButton.current?.focus();
+    };
+  }, [open]);
 
   const seg = loc.pathname.split("/")[1] ?? "";
   useEffect(() => { setMeta({ title: `${TITLES[seg] ?? "Helm"} · Helm Terminals`, index: false }); }, [seg]);
@@ -49,7 +78,8 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className={`app ${open ? "open" : ""}`}>
       <a href="#main" className="skip-link">Skip to content</a>
       <button type="button" className="scrim" aria-label="Close menu" tabIndex={-1} onClick={() => setOpen(false)} />
-      <aside className="sidebar" aria-label="Main navigation">
+      <aside ref={sidebar} id="main-navigation" className="sidebar" aria-label="Main navigation">
+        <button type="button" className="btn secondary menu-close" onClick={() => setOpen(false)}><Icon name="x" size={16} />Close menu</button>
         <Link to="/" className="logo">
           <Logo size={34} />
           <div className="logo-name">Helm Terminals<small>On-chain ops</small></div>
@@ -59,12 +89,13 @@ function Shell({ children }: { children: React.ReactNode }) {
             <div key={g.group}>
               <div className="nav-group">{g.group}</div>
               {g.items.map(([to, label, icon]) => (
-                <NavLink key={to} to={to} end={to === "/"}><Icon name={icon} size={17} />{label}</NavLink>
+                <NavLink key={to} to={to} end={to === "/"} onClick={() => setOpen(false)}><Icon name={icon} size={17} />{label}</NavLink>
               ))}
             </div>
           ))}
         </nav>
         <div className="side-foot">
+          <Link to="/billing" className="side-pricing"><span>Free launch · 2.5% trade</span><small>2.5% creator-reward share</small></Link>
           {me && !me.totp_enabled && seg !== "" && seg !== "settings" && (
             <div className="nudge">
               <strong><Icon name="shield" size={14} />2FA is off</strong>
@@ -89,9 +120,9 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="main">
+      <div ref={main} className="main">
         <header className="topbar">
-          <button className="btn icon secondary menu-btn" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><Icon name="menu" size={17} /></button>
+          <button ref={menuButton} className="btn icon secondary menu-btn" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} aria-controls="main-navigation"><Icon name="menu" size={17} /></button>
           <nav className="crumbs" aria-label="Breadcrumb">
             <span className="hide-sm">Helm</span>
             <Icon name="chevron" size={13} className="hide-sm" />
@@ -111,7 +142,9 @@ function Shell({ children }: { children: React.ReactNode }) {
           </span>
         </header>
         <main className="content" id="main" tabIndex={-1}><Suspense fallback={<div className="card"><Loading rows={4} /></div>}>{children}</Suspense></main>
-        <AppFooter />
+        <AppFooter /><nav className="mobile-dock" aria-label="Quick navigation">
+          {[["/", "Home", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/activity", "Activity", "activity"]].map(([to, label, icon]) => <NavLink key={to} to={to} end={to === "/"}><Icon name={icon as IconName} size={19} /><span>{label}</span></NavLink>)}
+        </nav>
       </div>
     </div>
   );
@@ -167,6 +200,7 @@ export default function App() {
         <Route path="/activity" element={<Private><Activity /></Private>} />
         <Route path="/profile" element={<Private><Profile /></Private>} />
         <Route path="/settings" element={<Private><Settings /></Private>} />
+        <Route path="/billing" element={<Private><Billing /></Private>} />
         <Route path="/admin" element={<Private><Admin /></Private>} />
         <Route path="/u/:handle" element={<Suspense fallback={null}><PublicProfile /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={null}><Legal doc="terms" /></Suspense>} />

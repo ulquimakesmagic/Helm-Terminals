@@ -133,7 +133,11 @@ class SolanaRPC:
         """The token program that owns a mint: classic SPL Token or Token-2022."""
         res = await self._call("getAccountInfo", [mint, {"encoding": "base64", "commitment": "confirmed"}])
         owner = ((res or {}).get("value") or {}).get("owner")  # type: ignore[union-attr]
-        return TOKEN_2022_PROGRAM if owner == str(TOKEN_2022_PROGRAM) else TOKEN_PROGRAM
+        if owner == str(TOKEN_2022_PROGRAM):
+            return TOKEN_2022_PROGRAM
+        if owner == str(TOKEN_PROGRAM):
+            return TOKEN_PROGRAM
+        raise ValueError("Mint is missing or belongs to an unsupported token program")
 
     async def get_token_supply(self, mint: str) -> tuple[int, int]:
         """Return (raw_supply, decimals)."""

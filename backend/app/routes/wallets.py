@@ -3,6 +3,8 @@ import logging
 import math
 from typing import Literal
 
+ERC20_TRANSFER_GAS = 90_000
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr
 from solders.pubkey import Pubkey
@@ -25,8 +27,8 @@ from ..chains.base import AdapterError
 from ..chains.evm import EVM_CHAINS, WEI
 from ..chains.jupiter import Jupiter
 from ..chains.relay import DONE
-from ..services.routing import (ROUTE_GAS, execute_route, currency as route_currency, provider_label, provider_terms,
-                                send_item)
+from ..services.routing import (ROUTE_GAS, execute_route, currency as route_currency, send_item,
+                                provider_label, provider_terms)
 from ..signing import get_signer
 from ..services.evm_exec import EvmCall
 from ..services.guard import check_password, check_totp_once
@@ -569,9 +571,9 @@ class WithdrawBody(SpendConfirm):
     wallet_ids: list[str] = Field(min_length=1, max_length=50)
     destination: str
     all: bool = True
-    amount_sol: float | None = Field(default=None, gt=0)  # native coin per wallet (asset="native")
+    amount_sol: float | None = Field(default=None, gt=0, allow_inf_nan=False)  # native coin per wallet (asset="native")
     asset: Literal["native", "stable"] = "native"  # "stable": the chain's dollar stablecoin (USDC, USDG)
-    amount: float | None = Field(default=None, gt=0)  # stablecoin per wallet (asset="stable")
+    amount: float | None = Field(default=None, gt=0, allow_inf_nan=False)  # stablecoin per wallet (asset="stable")
 
 
 @router.post("/wallets/fund")
@@ -672,6 +674,48 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
     return {"job_id": job.id, "status": job.status}
 
 
+# --- EVM chains (Base, BNB Chain, Ethereum, Robinhood Chain) ---------------------------------------
+# Amounts in the request bodies (`sol`, `amount_sol`) are in the chain's own coin here: ETH or BNB.
+
+
+async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, src: Wallet, targets: list,
+                    kind: str = "fund"):
+    sender = ex.evm(src.network)
+    coin = EVM_CHAINS[src.network]["native"]
+    wei = [(w, int(round(amt * WEI))) for w, amt in targets]
+    total = sum(v for _, v in wei)
+    bal = await sender.rpc.get_balance(src.address)
+    gas = await sender.max_gas_cost() * len(wei)
+    warnings = []
+    if bal < total + gas:
+        warnings.append(f"Funder balance {bal / WEI:.6f} {coin} is below the {total / WEI:.6f} {coin} required "
+                        f"plus about {gas / WEI:.6f} {coin} gas.")
+    pf = build_preflight(kind, {
+        "network": src.network, "from": src.address,
+        "to": [{"address": w.address, "amount": v / WEI, "coin": coin} for w, v in wei],
+        "total": total / WEI, "coin": coin, "max_gas": gas / WEI, "platform_fee": "none",
+    }, warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400, warnings[0])
+    job, created = await begin_spend(db, user, body, pf, kind, None, pf["preflight"])
+    if created:
+        async def work(session, j):
+            j.status = "submitted"
+            await session.commit()
+            results = []
+            for w, v in wei:
+                res = await send_evm_tracked(sender, j, src, "fund", EvmCall(to=w.address, value=v))
+                await _record(session, j, src, "fund", res, None)
+                results.append(res)
+                await session.commit()
+            _finish(j, results)
+            await session.commit()
+        await run_job(job.id, work)
+    return {"job_id": job.id, "status": job.status}
+
+
 async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex: Executor, wallets: list[Wallet]):
     """Withdraw the chain's stablecoin (USDC; USDG on Robinhood Chain) to an outside address.
 
@@ -685,7 +729,13 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     network = wallets[0].network
     a = await _asset(db, user, ex, network, "stable")
     d, sym = a["decimals"], a["symbol"]
-    per_wallet = None if body.all else int(round((body.amount or 0) * 10**d))
+    from decimal import Decimal
+    per_wallet = None
+    if not body.all:
+        units = Decimal(str(body.amount or 0)) * 10**d
+        if not units.is_finite() or units <= 0 or units != units.to_integral_value():
+            raise HTTPException(400, "amount must be a positive whole token base unit")
+        per_wallet = int(units)
     plan: list[tuple[Wallet, int, Wallet | None]] = []  # (source, raw amount, fee payer on Solana)
     warnings: list[str] = []
     fees_paid_by = []
@@ -775,51 +825,6 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     return {"job_id": job.id, "status": job.status}
 
 
-ERC20_TRANSFER_GAS = 90_000
-
-
-# --- EVM chains (Base, BNB Chain, Ethereum, Robinhood Chain) ---------------------------------------
-# Amounts in the request bodies (`sol`, `amount_sol`) are in the chain's own coin here: ETH or BNB.
-
-
-async def _fund_evm(body: FundBody, user: User, db: AsyncSession, ex: Executor, src: Wallet, targets: list,
-                    kind: str = "fund"):
-    sender = ex.evm(src.network)
-    coin = EVM_CHAINS[src.network]["native"]
-    wei = [(w, int(round(amt * WEI))) for w, amt in targets]
-    total = sum(v for _, v in wei)
-    bal = await sender.rpc.get_balance(src.address)
-    gas = await sender.max_gas_cost() * len(wei)
-    warnings = []
-    if bal < total + gas:
-        warnings.append(f"Funder balance {bal / WEI:.6f} {coin} is below the {total / WEI:.6f} {coin} required "
-                        f"plus about {gas / WEI:.6f} {coin} gas.")
-    pf = build_preflight(kind, {
-        "network": src.network, "from": src.address,
-        "to": [{"address": w.address, "amount": v / WEI, "coin": coin} for w, v in wei],
-        "total": total / WEI, "coin": coin, "max_gas": gas / WEI, "platform_fee": "none",
-    }, warnings)
-    if not body.confirm:
-        return pf
-    if warnings:
-        raise HTTPException(400, warnings[0])
-    job, created = await begin_spend(db, user, body, pf, kind, None, pf["preflight"])
-    if created:
-        async def work(session, j):
-            j.status = "submitted"
-            await session.commit()
-            results = []
-            for w, v in wei:
-                res = await send_evm_tracked(sender, j, src, "fund", EvmCall(to=w.address, value=v))
-                await _record(session, j, src, "fund", res, None)
-                results.append(res)
-                await session.commit()
-            _finish(j, results)
-            await session.commit()
-        await run_job(job.id, work)
-    return {"job_id": job.id, "status": job.status}
-
-
 async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Executor, wallets: list[Wallet]):
     network = wallets[0].network
     sender = ex.evm(network)
@@ -890,15 +895,7 @@ async def swap(body: SwapBody, user: User = Depends(current_user), db: AsyncSess
 
 async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: SolanaRPC, ex: Executor, w: Wallet):
     """Swap through Jupiter: quote -> preflight -> confirm -> a fresh quote and an unsigned transaction
-    Helm signs for the wallet.
-
-    The confirmation is bound to the stable intent (wallet, tokens, raw amount, slippage) and, through an
-    authenticated quote approval, to the minimum output the user reviewed. Execution refuses a fresh quote whose
-    minimum is lower, and the signed transaction must deliver that minimum in simulation while spending at most
-    the approved input (audits HT-01, HT-03, HT-04)."""
-    from ..services import quote_approval
-    from ..services.solana_guard import TRADE_OVERHEAD_LAMPORTS, SpendLimits, budget
-
+    Helm signs for the wallet (the executor simulates before broadcast)."""
     jup = Jupiter()
     in_mint = WSOL if body.input_mint == "native" else body.input_mint
     out_mint = WSOL if body.output_mint == "native" else body.output_mint
@@ -908,89 +905,82 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
     out_meta = {"symbol": "SOL", "decimals": 9} if body.output_mint == "native" else await jup.token(out_mint)
     if not in_meta or not out_meta:
         raise HTTPException(400, "one of these tokens isn't on Jupiter's list; check the mint address")
-    from decimal import ROUND_DOWN, Decimal
-
-    amount_raw = int((Decimal(str(body.amount)) * 10 ** int(in_meta["decimals"])).to_integral_value(rounding=ROUND_DOWN))
-    if amount_raw <= 0:
-        raise HTTPException(400, "amount is smaller than the token's smallest unit")
-    slippage_bps = int(round(body.slippage_pct * 100))
+    amount_raw = int(round(body.amount * 10 ** int(in_meta["decimals"])))
+    slippage_bps = int(body.slippage_pct * 100)
 
     async def quote():
         return await jup.quote(in_mint, out_mint, amount_raw, slippage_bps)
 
-    scope = {"kind": "jupiter_swap", "wallet_id": w.id, "input_mint": in_mint, "output_mint": out_mint,
-             "amount_raw": str(amount_raw), "slippage_bps": slippage_bps}
-    approved = quote_approval.verify(body.quote_approval, user.id, scope) if body.confirm else None
     q = await quote()
+    from ..services.quote_approval import issue, verify, jupiter_bounds, check_jupiter_bounds
+    scope = {"purpose": "swap", "wallet_id": w.id, "input": in_mint, "output": out_mint,
+             "amount_raw": str(amount_raw), "slippage_bps": slippage_bps}
+    bounds = verify(body.quote_approval, user.id, scope) if body.confirm else jupiter_bounds(q, in_mint, out_mint, amount_raw)
+    if body.confirm:
+        check_jupiter_bounds(q, bounds, in_mint, out_mint, amount_raw)
     out_dec = int(out_meta["decimals"])
-    try:
-        floor_raw = int(q["otherAmountThreshold"])
-        out_raw = int(q["outAmount"])
-        if floor_raw <= 0 or out_raw < floor_raw or str(q.get("inAmount")) != str(amount_raw):
-            raise ValueError()
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(502, "Jupiter returned an unusable quote; try again")
-    if approved:
-        floor_raw = int(approved["minimum_raw"])  # the reviewed floor, never a lower re-quote
+    out_amount = int(q["outAmount"]) / 10 ** out_dec
+    min_out = int(bounds["minimum_raw"]) / 10 ** out_dec
     route = " → ".join(dict.fromkeys(
         (s.get("swapInfo") or {}).get("label") or "pool" for s in q.get("routePlan") or [])) or "Jupiter"
     impact = float(q.get("priceImpactPct") or 0)
+    from ..services.charges import trade_terms
+    fee_terms = await trade_terms(db, w.network)
     warnings = []
+    needed = amount_raw + amount_raw * 250 // 10_000
+    if body.input_mint == "native":
+        if await rpc.get_balance(w.address) < needed + 10_000_000:
+            warnings.append("Keep the swap amount, its 2.5% fee and SOL for network costs in this wallet.")
+    elif await rpc.get_token_balance(w.address, in_mint) < needed:
+        warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
     if impact >= 0.1:
         warnings.append(f"price impact is {impact * 100:.1f}% — check the route before confirming")
     warnings += two_fa_warnings(user, "swap")
     pf = build_preflight("swap", {
-        "wallet": w.address, "network": "solana", "provider": "Jupiter",
-        "input": f"{body.amount:g} {in_meta['symbol']}", "input_raw": str(amount_raw),
-        "output_asset": out_meta["symbol"], "output_mint": out_mint,
-        "slippage": f"{body.slippage_pct:g}%", "platform_fee": "none",
+        "wallet": w.address, "network": "solana",
+        "input": f"{body.amount:g} {in_meta['symbol']}",
+        "output": f"at least {min_out:g} {out_meta['symbol']}",
+        "approved_minimum_raw": bounds["minimum_raw"], "slippage": f"{body.slippage_pct:g}%",
+        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
+        "trade_fee_terms": fee_terms,
     }, warnings)
-    # Display-only quote details; the approved floor is bound by the quote approval, not by this hash.
-    pf["preflight"].update({
-        "output": f"at least {floor_raw / 10 ** out_dec:g} {out_meta['symbol']}",
-        "estimated_output": f"{out_raw / 10 ** out_dec:g} {out_meta['symbol']}",
-        "route": route, "price_impact": f"{impact * 100:.2f}%",
-        "quote_expires_in_s": quote_approval.TTL_SECONDS,
-    })
+    pf["preflight"].update(estimated_output=f"{out_amount:g} {out_meta['symbol']}",
+                            route=route, price_impact=f"{impact * 100:.2f}%")
     if not body.confirm:
-        if not warnings:
-            pf["quote_approval"] = quote_approval.issue(user.id, scope, {"minimum_raw": str(floor_raw)})
+        pf["quote_approval"] = issue(user.id, scope, bounds)
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
-    if not approved:
-        raise HTTPException(409, "quote_expired_or_changed: request a new preview and confirm again")
     job, created = await begin_spend(db, user, body, pf, "swap", None, {
         "wallet_id": w.id, "input_mint": in_mint, "output_mint": out_mint, "amount_raw": amount_raw,
-        "slippage_bps": slippage_bps, "approved_minimum_raw": str(floor_raw), "network": "solana",
+        "slippage_bps": slippage_bps, "trade_fee_terms": fee_terms,
     })
     if created:
-        if body.input_mint == "native":
-            limits = SpendLimits(w.address, budget(amount_raw), watch_mints=(out_mint,), label="swap")
-        else:
-            limits = SpendLimits(w.address, TRADE_OVERHEAD_LAMPORTS, token_out={in_mint: amount_raw},
-                                 watch_mints=(in_mint,) if body.output_mint == "native" else (in_mint, out_mint),
-                                 label="swap")
-        if body.output_mint == "native":
-            limits = SpendLimits(limits.wallet, limits.max_lamports_out, limits.token_out,
-                                 min_lamports_in=max(0, floor_raw - TRADE_OVERHEAD_LAMPORTS),
-                                 watch_mints=limits.watch_mints, label="swap")
-        else:
-            limits = SpendLimits(limits.wallet, limits.max_lamports_out, limits.token_out,
-                                 token_in_min={out_mint: floor_raw}, watch_mints=limits.watch_mints, label="swap")
-
+        from ..services.solana_guard import SpendLimits, budget, TRADE_OVERHEAD_LAMPORTS
+        floor_raw = int(bounds["minimum_raw"])
+        limits = SpendLimits(w.address,
+            budget(amount_raw) if body.input_mint == "native" else TRADE_OVERHEAD_LAMPORTS,
+            token_out={} if body.input_mint == "native" else {in_mint: amount_raw},
+            token_in_min={} if body.output_mint == "native" else {out_mint: floor_raw},
+            min_lamports_in=max(0, floor_raw - TRADE_OVERHEAD_LAMPORTS) if body.output_mint == "native" else None,
+            watch_mints=(in_mint, out_mint), label="swap")
         async def work(session, j):
             fresh = await quote()  # quotes expire; a new one is taken at execution time
-            try:
-                if int(fresh["otherAmountThreshold"]) < floor_raw:
-                    raise ValueError()
-            except (KeyError, TypeError, ValueError):
-                j.status, j.params = "failed", {**j.params, "error": "The new quote is below the approved "
-                                               "minimum; nothing was signed. Review a new preview."}
-                await session.commit()
-                return
+            check_jupiter_bounds(fresh, bounds, in_mint, out_mint, amount_raw)
             raw = await jup.swap_tx(fresh, w.address)
-            await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""}, limits=limits)
+            swap_result = await run_single(session, ex, j, w, "swap", raw, {w.address: w.signer_ref or ""}, limits=limits)
+            if j.status == "confirmed":
+                from ..services.charges import charge_trade
+                # The execution journal is extended before settling the explicitly reviewed fee.
+                j.params = {**j.params, "execution": {**j.params["execution"], "dispatch_complete": False}}
+                fee = await charge_trade(session, ex, j, w, amount_raw,
+                    token=None if body.input_mint == "native" else in_mint,
+                    asset=in_meta["symbol"], decimals=int(in_meta["decimals"]))
+                _finish(j, [swap_result, fee])
+                if fee.status != "confirmed":
+                    j.status = "unconfirmed" if fee.status == "timeout" else "partial"
+                    j.params = {**j.params, "fee_outstanding": True, "error": fee.error}
+                await session.commit()
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
 
@@ -1035,27 +1025,29 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                                     from_currency=in_cur, to_currency=out_cur, amount=amount_raw,
                                     slippage_pct=body.slippage_pct)
 
-    from ..services import quote_approval
-
-    scope = {"kind": "relay_swap", "wallet_id": w.id, "network": net, "input": in_cur.lower(), "output": out_cur.lower(),
-             "amount_raw": str(amount_raw), "slippage_pct": body.slippage_pct, "fee_bps": ex.relay.fee_bps,
-             "fee_recipient": ex.relay.fee_recipient}
-    approved = quote_approval.verify(body.quote_approval, user.id, scope) if body.confirm else None
+    from ..services.charges import trade_terms
+    fee_terms = await trade_terms(db, w.network)
+    from ..services.quote_approval import issue, verify, relay_bounds, check_relay_bounds
+    scope = {"purpose": "swap", "wallet_id": w.id, "input": in_cur, "output": out_cur,
+             "amount_raw": str(amount_raw), "slippage_pct": body.slippage_pct}
+    bounds = verify(body.quote_approval, user.id, scope) if body.confirm else None
     warnings: list[str] = []
-    bounds = None
     try:
         q = await quote()
         summary = ex.relay.summarize(q)
-        bounds = quote_approval.relay_bounds(q, destination_asset=out_cur, destination_network=net)
+        if body.confirm:
+            check_relay_bounds(q, bounds, out_cur, net)
+        else:
+            bounds = relay_bounds(q, destination_asset=out_cur, destination_network=net)
     except AdapterError as e:
         q, summary = None, None
         warnings.append(str(e))
-    if approved:
-        bounds = {k: v for k, v in approved.items() if k != "expires"}
     try:
         gas = await fee_reserve(ex, net, 2, ROUTE_GAS)
         native_bal = await sender.rpc.get_balance(w.address) / WEI
-        need = gas + (body.amount if body.input_mint == "native" else 0)
+        need = gas + (body.amount * 1.025 if body.input_mint == "native" else 0)
+        if body.input_mint != "native" and await sender.rpc.erc20_balance(in_cur, w.address) < amount_raw + amount_raw * 250 // 10_000:
+            warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
         if native_bal < need:
             warnings.append(f"{w.label or w.address[:8]} needs about {need:.6f} {native_coin(net)} on "
                             f"{chain_name(net)} for network fees" + (" plus the amount" if body.input_mint == "native" else "") + ".")
@@ -1066,57 +1058,42 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
     warnings += two_fa_warnings(user, "swap")
     pf = build_preflight("swap", {
         "wallet": w.address, "network": net, "chain": chain_name(net),
-        "input": f"{body.amount:g} {in_sym}", "input_raw": str(amount_raw), "output_asset": out_sym,
-        "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%", "provider": "Relay (relay.link)",
-        "platform_fee": ex.relay.fee_note,
-    }, warnings)
-    # Display-only quote details. The reviewed minimum is bound by the quote approval (audits HT-03, HT-04).
-    minimum = int(bounds["minimum_raw"]) / 10 ** out_dec if bounds else None
-    pf["preflight"].update({
-        "output": f"at least {minimum:g} {out_sym}" if minimum is not None else f"at least some {out_sym}",
+        "input": f"{body.amount:g} {in_sym}",
+        "output": (f"at least {summary['receive_minimum']:g} {out_sym}"
+                   if summary and summary.get("receive_minimum") is not None else f"at least some {out_sym}"),
         "estimated_output": (f"{summary['receive_estimate']:g} {out_sym}"
                              if summary and summary.get("receive_estimate") is not None else None),
-        "quote": summary, "quote_expires_in_s": quote_approval.TTL_SECONDS,
-    })
+        "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%",
+        "quote": summary, "provider": "Relay (relay.link)",
+        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
+        "trade_fee_terms": fee_terms,
+    }, warnings)
     if not body.confirm:
-        if bounds and not warnings:
-            pf["quote_approval"] = quote_approval.issue(user.id, scope, bounds)
+        if bounds:
+            pf["quote_approval"] = issue(user.id, scope, bounds)
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
-    if not approved:
-        raise HTTPException(409, "quote_expired_or_changed: request a new preview and confirm again")
     job, created = await begin_spend(db, user, body, pf, "swap", None, {
         "wallet_id": w.id, "network": net, "input_currency": in_cur, "output_currency": out_cur,
-        "amount_raw": amount_raw, "slippage_pct": body.slippage_pct, "approved_minimum_raw": bounds["minimum_raw"],
+        "amount_raw": amount_raw, "slippage_pct": body.slippage_pct, "trade_fee_terms": fee_terms,
     })
     if created:
         async def work(session, j):
             j.status = "submitted"
             await session.commit()
-            try:
-                fresh = await quote()  # re-quote at execution time, never below the reviewed minimum
-                quote_approval.check_relay_bounds(fresh, approved, out_cur, net)
-                quote_approval.check_relay_recipient(fresh, w.address, net)
-            except AdapterError as e:
-                j.status, j.params = "failed", {**(j.params or {}), "error": f"{e}; nothing was signed"}
-                await session.commit()
-                return
+            fresh = await quote()  # re-quote at execution time
+            check_relay_bounds(fresh, bounds, out_cur, net)
             info = ex.relay.summarize(fresh)
             j.params = {**(j.params or {}), "request_id": info["request_id"], "quote": info}
             await session.commit()
-            from ..services.execution_journal import require_steps
-            await require_steps(session, j, w.id, [
-                "swap" if step.get("id") == "deposit" else f"swap_{step.get('id')}"[:24]
-                for step in fresh["steps"] for item in step.get("items") or [] if item.get("status") != "complete"])
             results = []
             for step in fresh["steps"]:
                 for item in step.get("items") or []:
                     if item.get("status") == "complete":
                         continue
                     tx_kind = "swap" if step.get("id") == "deposit" else f"swap_{step.get('id')}"[:24]
-                    res = await send_item(ex, w, item.get("data") or {}, j, tx_kind, max_allowance=amount_raw,
-                                          from_asset=body.input_mint, amount_raw=amount_raw)
+                    res = await send_item(ex, w, item.get("data") or {}, j, tx_kind, max_allowance=amount_raw)
                     await _record(session, j, w, tx_kind, res, None)
                     await session.commit()
                     results.append(res)
@@ -1125,6 +1102,13 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                 else:
                     continue
                 break
+            if results and all(result.status == "confirmed" for result in results):
+                from ..services.charges import charge_trade
+                fee = await charge_trade(session, ex, j, w, amount_raw,
+                    token=None if body.input_mint == "native" else in_cur, asset=in_sym, decimals=in_dec)
+                results.append(fee)
+                if fee.status != "confirmed":
+                    j.params = {**j.params, "fee_outstanding": True, "error": fee.error}
             _finish(j, results)
             await session.commit()
         await run_job(job.id, work)

@@ -384,11 +384,13 @@ def bandwidth_bytes(tx: dict) -> int:
 
 
 async def sign_and_send(client: TronClient, signer, signer_ref: str, tx: dict, confirm_timeout_s: float = 120,
-                        poll_s: float = 3.0) -> tuple[str | None, str, str | None, dict]:
+                        poll_s: float = 3.0, on_signed=None) -> tuple[str | None, str, str | None, dict]:
     """(txid, status, error, receipt). status: confirmed | failed | timeout (sent, not final yet)."""
     txid = tx["txID"]
     y, r, s = await signer.sign_digest(signer_ref, bytes.fromhex(txid))
     signed = {**tx, "signature": [r.to_bytes(32, "big").hex() + s.to_bytes(32, "big").hex() + bytes([y % 27 if y >= 27 else y]).hex()]}
+    if on_signed is not None:
+        await on_signed(txid)
     return await submit_signed(client, signed, confirm_timeout_s, poll_s)
 
 

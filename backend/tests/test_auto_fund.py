@@ -28,7 +28,7 @@ def relay_mock(seen: list, on_status, status: str = "success"):
                     {"id": "deposit", "kind": "transaction", "requestId": "0xfund", "items": [{"status": "incomplete", "data": {
                         "to": "0x" + "cd" * 20, "data": "0xabcdef", "value": "0", "chainId": 8453}}]},
                 ],
-                "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.30"}},
+                "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.30" if seen[-1].get("appFees") else "0"}},
                 "details": {"timeEstimate": 10, "currencyOut": {"currency": {"symbol": "SOL", "decimals": 9, "chainId": seen[-1]["destinationChainId"], "address": seen[-1]["destinationCurrency"]},
                                                                 "amount": str(SOL), "minimumAmount": str(SOL)}},
             })
@@ -73,9 +73,9 @@ async def test_deploy_funds_the_dev_wallet_from_usdc_then_launches(client, fake_
         pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
         assert not pf["preflight"]["warnings"], pf
         f = pf["preflight"]["funding"]
-        # 0.53 SOL short at $150, +5% and the 0.3% route fee, +$1 headroom, rounded up to whole dollars
-        assert f["from_address"] == src["address"] and f["from_chain"] == "Base" and f["amount_usd"] == 85
-        assert f["send"] == "85 USDC" and f["route_fee"] == "0.3% of the amount sent"
+        # 0.5425 SOL short at $150, +5% funding buffer and no Helm route fee, +$1 headroom, rounded up to whole dollars
+        assert f["from_address"] == src["address"] and f["from_chain"] == "Base" and f["amount_usd"] == 87
+        assert f["send"] == "87 USDC" and f["route_fee"] == "none"
         assert "SOL short" in pf["preflight"]["funding_detail"]["covers"]
         r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
                                                               "idempotency_key": "af1"}, headers=h)
@@ -83,7 +83,7 @@ async def test_deploy_funds_the_dev_wallet_from_usdc_then_launches(client, fake_
         assert job["status"] == "confirmed", job
         kinds = [t["kind"] for t in job["transactions"]]
         assert kinds[:2] == ["fund_route_approve", "fund_route"] and "deploy" in kinds
-        assert seen[0]["originChainId"] == 8453 and seen[0]["amount"] == str(85 * 10**6)
+        assert seen[0]["originChainId"] == 8453 and seen[0]["amount"] == str(87 * 10**6)
         assert seen[0]["recipient"] == dev["address"] and seen[0]["destinationCurrency"] == "1" * 32
         assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "live"
     finally:
@@ -109,7 +109,7 @@ async def test_no_usdc_source_keeps_the_shortfall_warning_and_opt_out_works(clie
         h, lid, dev, src, base, seen = await _setup(client, fake_rpc, monkeypatch)
         base.balances[src["address"].lower()] = 0  # USDC but no gas to send it
         pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-        assert "funding" not in pf["preflight"] and "No wallet holds about $85 in USDC" in pf["preflight"]["warnings"][0]
+        assert "funding" not in pf["preflight"] and "No wallet holds about $87 in USDC" in pf["preflight"]["warnings"][0]
         base.balances[src["address"].lower()] = ETH // 100
         pf = (await client.post(f"/launches/{lid}/deploy", json={"auto_fund": False}, headers=h)).json()
         assert "funding" not in pf["preflight"] and pf["preflight"]["warnings"]
@@ -141,7 +141,7 @@ async def test_fund_cash_tops_up_any_wallet_from_the_best_usdc_source(client, fa
         p = pf["preflight"]
         assert p["from"]["address"] == src["address"] and p["to_chain"] == "Solana"
         assert p["receive"] == "0.5 SOL" and p["send"] == "80 USDC"  # 0.5 SOL at $150 + buffer + $1, rounded up
-        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.3 and p["route_fee"] == "0.3% of the amount sent"
+        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0 and p["route_fee"] == "none"
         assert not p["warnings"], p
         r = await client.post("/wallets/fund-cash", json={**body, "confirm": True, "quote_approval": pf["quote_approval"], "preflight_hash": pf["preflight_hash"],
                                                           "idempotency_key": "cash-1"}, headers=h)

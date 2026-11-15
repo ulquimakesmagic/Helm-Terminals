@@ -1,0 +1,149 @@
+{
+  "results": [
+    {
+      "page": "Revenue",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Treasury",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Fees",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Users",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Audit log",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Operations",
+      "width": 375,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Revenue",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Treasury",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Fees",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Users",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Audit log",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Operations",
+      "width": 768,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Revenue",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Treasury",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Fees",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Users",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Audit log",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Operations",
+      "width": 1024,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Revenue",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Treasury",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Fees",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Users",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Audit log",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    },
+    {
+      "page": "Operations",
+      "width": 1440,
+      "overflow": false,
+      "violations": []
+    }
+  ],
+  "errors": []
+}

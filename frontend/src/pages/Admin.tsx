@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errMsg } from "../api";
+import { formatRaw } from "../amounts";
 import {
   Callout, Card, CopyButton, Empty, Icon, LoadError, Loading, Metrics, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TableWrap, useToast,
 } from "../components/ui";
@@ -14,24 +15,15 @@ interface ConfigDiagnostics {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  trade_fee: "Trading fees (Solana)", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
-  creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue", launch_fee: "Launch fees",
+  launch_fee: "Historical launch fees", trade_fee: "Trading fees", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
+  creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue",
 };
 const NETWORKS = ["solana", "evm", "base", "bsc", "ethereum", "robinhood", "tron", "near", "arc"];
 const NET_LABEL: Record<string, string> = { solana: "Solana", evm: "All EVM chains (default)", base: "Base", bsc: "BNB Chain", ethereum: "Ethereum", robinhood: "Robinhood Chain", tron: "TRON", near: "NEAR", arc: "Arc" };
-const ADDRESS_HINT: Record<string, string> = { solana: "Solana address", tron: "T… TRON address (an activated account)", near: "NEAR account, e.g. helm.near" };
 
-/** Raw integer amount as a decimal string, exact (no float rounding). */
+/** Preserve integer precision in treasury and referral displays. */
 function units(raw: string | number | null | undefined, decimals: number, max = 6): string {
-  if (raw === null || raw === undefined) return "amount not reported";
-  let s = String(raw);
-  const neg = s.startsWith("-");
-  if (neg) s = s.slice(1);
-  s = s.padStart(decimals + 1, "0");
-  const whole = s.slice(0, s.length - decimals) || "0";
-  let frac = decimals ? s.slice(s.length - decimals).slice(0, max).replace(/0+$/, "") : "";
-  if (!frac && decimals && /[1-9]/.test(s.slice(s.length - decimals))) frac = "0".repeat(max - 1) + "1";
-  return `${neg ? "−" : ""}${Number(whole).toLocaleString()}${frac ? "." + frac : ""}`;
+  return raw == null ? "amount not reported" : formatRaw(String(raw), decimals, max);
 }
 const utc = (s: string | null | undefined) => (s ? s.replace("T", " ").replace(/\.\d+/, "").replace("Z", " UTC") : "—");
 
@@ -121,6 +113,7 @@ function Revenue({ me }: { me: AdminMe }) {
   const [led, setLed] = useState<{ total: number; items: LedgerItem[] } | null>(null);
   const [err, setErr] = useState("");
   const [sel, setSel] = useState<string[]>([]);
+  const [verifying, setVerifying] = useState(false);
   const qs = (extra: Record<string, string | number> = {}) => {
     const p = new URLSearchParams();
     Object.entries({ ...f, ...extra }).forEach(([k, v]) => { if (v !== "" && v !== undefined) p.set(k, String(v)); });
@@ -140,6 +133,17 @@ function Revenue({ me }: { me: AdminMe }) {
     api<{ reconciled: number }>("/admin/revenue/reconcile", { body: { ids: sel, note: "" } })
       .then((r) => { toast("good", `${r.reconciled} entries marked reviewed`); setSel([]); load(); })
       .catch((e) => toast("bad", errMsg(e)));
+  };
+  const verifyDex = async () => {
+    setVerifying(true);
+    try {
+      const ids = (led?.items ?? []).filter(r => sel.includes(r.id) && r.source === "dex_trade_fee" && !r.receipt_evidence).slice(0, 2).map(r => r.id);
+      if (!ids.length) { toast("bad", "Select up to two unverified EVM DEX fee entries."); return; }
+      const result = await api("/admin/revenue/verify-dex", { body: { ids } });
+      toast("info", `${result.verified ?? 0} verified; ${result.unavailable ?? 0} need provider evidence. No funds moved.`);
+      setSel([]); load();
+    } catch (e) { toast("bad", errMsg(e)); }
+    finally { setVerifying(false); }
   };
 
   if (err && !sum) return <LoadError what="Revenue" error={err} onRetry={load} />;
@@ -220,7 +224,10 @@ function Revenue({ me }: { me: AdminMe }) {
       )}
 
       <Card title="Ledger" icon="layers" sub={led ? `${led.total} entries · times in UTC` : undefined} flush
-        actions={me.can_change && sel.length > 0 ? <button className="btn sm" onClick={reconcile}><Icon name="check" size={14} />Mark {sel.length} reviewed</button> : undefined}
+        actions={me.can_change && sel.length > 0 ? <div className="row">
+          <button className="btn sm secondary" disabled={verifying} onClick={verifyDex}>{verifying ? <Spinner /> : null}Verify DEX receipts (up to 2)</button>
+          <button className="btn sm" onClick={reconcile}><Icon name="check" size={14} />Mark {sel.length} reviewed</button>
+        </div> : undefined}
         foot={led && led.total > 50 ? <div className="row between"><button className="btn sm ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
           <span className="muted small">Page {page} of {Math.ceil(led.total / 50)}</span>
           <button className="btn sm ghost" disabled={page * 50 >= led.total} onClick={() => setPage(page + 1)}>Next</button></div> : undefined}>
@@ -230,7 +237,7 @@ function Revenue({ me }: { me: AdminMe }) {
             <thead><tr>{me.can_change && <th><span className="sr-only">Select</span></th>}<th>When (UTC)</th><th>Source</th><th>Launch</th><th className="r">Amount</th><th>Status</th><th className="hide-sm">Destination</th><th className="hide-sm">Reference</th></tr></thead>
             <tbody>{led.items.map((r) => (
               <tr key={r.id} className={me.can_change ? "has-cb" : ""}>
-                {me.can_change && <td className="cb"><input type="checkbox" aria-label="Select entry" disabled={!!r.reviewed_at} checked={sel.includes(r.id)}
+                {me.can_change && <td className="cb"><input type="checkbox" aria-label="Select entry" checked={sel.includes(r.id)}
                   onChange={(e) => setSel(e.target.checked ? [...sel, r.id] : sel.filter((x) => x !== r.id))} /></td>}
                 <td className="muted small mono" data-label="When">{utc(r.created_at)}</td>
                 <td data-label="Source" title={r.note}>{SOURCE_LABEL[r.source] ?? r.source}<div className="muted small">{NET_LABEL[r.network] ?? r.network}</div></td>
@@ -275,12 +282,12 @@ function Treasury({ me }: { me: AdminMe }) {
       <div className="grid g-2">
         {rows.map((t) => (
           <Card key={t.network} title={NET_LABEL[t.network] ?? t.network} icon="wallet"
-            sub={t.address ? `${t.source === "admin" ? "Set in the dashboard" : "From the environment"}${t.updated_at ? ` · ${utc(t.updated_at)}` : ""}` : t.effective ? "Uses the EVM default" : "Not set: fee paths paying here are off"}
+            sub={t.address ? `${t.source === "admin" ? "Set in the dashboard" : "From the environment"}${t.updated_at ? ` · ${utc(t.updated_at)}` : ""}` : t.effective ? "Uses the EVM default" : "Required before fee-bearing actions"}
             actions={me.can_change ? <button className="btn sm ghost" onClick={() => setEdit({ network: t.network, address: t.address ?? "", label: t.label })}><Icon name="edit" size={13} />Change</button> : undefined}>
             <div className="stack tight">
-              {t.address ? <span className="row nowrap mono small" style={{ wordBreak: "break-all" }}>{t.address}<CopyButton text={t.address} />
+              {t.address ? <span className="row nowrap mono small"><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{t.address}</span><CopyButton text={t.address} />
                 {t.explorer && <a className="icon-btn" href={t.explorer} target="_blank" rel="noreferrer noopener" aria-label="Open in explorer"><Icon name="ext" size={13} /></a>}</span>
-                : <span className="muted small">{t.effective ? `Effective: ${t.effective}` : "No address"}</span>}
+                : <span className="muted small" style={{ overflowWrap: "anywhere" }}>{t.effective ? `Effective: ${t.effective}` : "No address"}</span>}
               {t.label && <span className="small">{t.label}</span>}
               {t.used_for.length > 0 && <span className="muted small">Receives: {t.used_for.join(" · ")}</span>}
               {t.balances?.map((b) => (
@@ -295,7 +302,7 @@ function Treasury({ me }: { me: AdminMe }) {
         <Modal title={`Treasury: ${NET_LABEL[edit.network]}`} sub="Receive-only address; paste a multisig or hardware-wallet address" onClose={() => setEdit(null)}
           foot={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button><button className="btn" onClick={() => setConfirm(true)}>Continue</button></>}>
           <div className="stack">
-            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={ADDRESS_HINT[edit.network] ?? "0x…"} autoFocus /></label>
+            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={(edit.network === "solana" ? "Solana address" : "Network treasury address")} autoFocus /></label>
             <label className="field"><span>Label (optional)</span><input value={edit.label} maxLength={80} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /></label>
             <span className="muted small">Leave the address empty to remove the dashboard entry (the environment value, if any, applies again). Never paste a private key or seed phrase anywhere in Helm.</span>
           </div>
@@ -323,7 +330,6 @@ const SETTING_LABEL: Record<string, string> = {
 };
 /** launch_fee_cents is a dollar amount in cents; every other setting is a rate in basis points. */
 const isDollars = (key: string) => key === "launch_fee_cents";
-const showSetting = (key: string, v: number) => isDollars(key) ? `$${(v / 100).toFixed(2)}` : `${(v / 100).toFixed(2)}%`;
 
 function Fees({ me }: { me: AdminMe }) {
   const toast = useToast();
@@ -336,25 +342,25 @@ function Fees({ me }: { me: AdminMe }) {
   if (!data) return <Loading />;
   return (
     <div className="stack">
-      <Callout tone="warn" icon="alert">Rate changes apply to new previews only. Existing launches keep the reward split they were created with. A fee can't be turned on until its treasury address is set and the provider supports it.</Callout>
+      <Callout tone="warn" icon="alert">Launches are free for everyone. Helm charges 2.5% on trades, including admin accounts. Helm receives 2.5% of creator rewards from new Helm launches. Historical immutable reward splits retain their original terms.</Callout>
       <Card title="Rates" icon="coins" flush>
         <TableWrap><table className="rtable">
           <caption className="sr-only">Fee settings</caption>
           <thead><tr><th>Setting</th><th className="r">Rate</th><th>Allowed</th><th>Pays to</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{data.settings.map((s) => (
             <tr key={s.key}>
-              <td className="span"><b>{SETTING_LABEL[s.key] ?? s.key}</b><div className="muted small">{s.source === "admin" ? `Set in the dashboard ${utc(s.updated_at)}` : "From the environment (unchanged)"}</div></td>
-              <td className="r mono" data-label="Rate">{showSetting(s.key, s.bps)}</td>
-              <td className="muted small" data-label="Allowed">{showSetting(s.key, s.min)}–{showSetting(s.key, s.max)}</td>
-              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" || s.key === "launch_fee_cents" || s.key === "trade_fee_bps_extra" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
-              <td className="r act">{me.can_change && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: isDollars(s.key) ? String(s.bps / 100) : String(s.bps) })}>Change…</button>}</td>
+              <td className="span"><b>{SETTING_LABEL[s.key] ?? s.key}</b><div className="muted small">{s.source === "policy" ? "Fixed by the published pricing policy" : s.source === "admin" ? `Set in the dashboard ${utc(s.updated_at)}` : "Environment default"}</div></td>
+              <td className="r mono" data-label="Rate">{(s.bps / 100).toFixed(2)}%</td>
+              <td className="muted small" data-label="Allowed">{(s.min / 100).toFixed(2)}–{(s.max / 100).toFixed(2)}%</td>
+              <td className="small" data-label="Pays to">{s.key === "creator_share_bps" ? "Each launchpad's chain treasury" : s.treasury ? <span className="mono">{s.treasury.slice(0, 6)}…{s.treasury.slice(-4)}</span> : <span className="badge warn">No treasury: off</span>}</td>
+              <td className="r act">{me.can_change && s.min !== s.max && <button className="btn sm ghost" onClick={() => setEdit({ key: s.key, bps: String(s.bps) })}>Change…</button>}</td>
             </tr>))}</tbody>
         </table></TableWrap>
       </Card>
       <Card title="Creator-reward share by launchpad" icon="rocket">
         <div className="stack tight">{Object.entries(data.creator_share_launchpads).map(([lp, c]) => (
           <div key={lp} className="row between small"><b>{lp}</b><span className="muted">{c.note}</span></div>))}
-          <span className="muted small">Other launchpads (LetsBonk, Meteora DBC, Printr, Four.meme, Flap, Uniswap v2, SunPump, Tolly, Meme.Cooking): no native split Helm can set up, so no creator-reward share. Helm's launch and trading fees still apply where shown above.</span></div>
+          <span className="muted small">New Helm launches share 2.5% of creator rewards. Collection readiness and missing integrations are shown per launchpad.</span></div>
       </Card>
       <Card title="Supported revenue paths" icon="layers" flush>
         <TableWrap><table className="rtable">
@@ -460,15 +466,16 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
   const toast = useToast();
   const [u, setU] = useState<any>(null);
   const [err, setErr] = useState("");
-  const [action, setAction] = useState<"suspend" | "restore" | "viewer" | "revoke" | null>(null);
+  const [action, setAction] = useState<"suspend" | "restore" | "viewer" | "revoke" | "free_launches" | "paid_launches" | null>(null);
   const load = useCallback(() => { api(`/admin/users/${id}`).then(setU).catch((e) => setErr(errMsg(e))); }, [id]);
   useEffect(load, [load]);
   if (action) {
-    const path = action === "viewer" ? `/admin/roles/${id}/viewer` : action === "revoke" ? `/admin/roles/${id}/revoke` : `/admin/users/${id}/${action}`;
-    const titles = { suspend: "Suspend account", restore: "Restore account", viewer: "Grant read-only admin (viewer)", revoke: "Remove admin role" };
+    const feeAction = action === "free_launches" || action === "paid_launches";
+    const path = feeAction ? `/admin/users/${id}/launch-fee-exemption` : action === "viewer" ? `/admin/roles/${id}/viewer` : action === "revoke" ? `/admin/roles/${id}/revoke` : `/admin/users/${id}/${action}`;
+    const titles = { suspend: "Suspend account", restore: "Restore account", viewer: "Grant read-only admin (viewer)", revoke: "Remove admin role", free_launches: "Grant free launches", paid_launches: "Remove launch-fee exemption" };
     return <StepUpDialog title={titles[action]} needsReason detail={action === "suspend" ? "Signs the account out everywhere, blocks sign-in and stops its scheduled trades. Funds stay in the user's wallets." : "Recorded in the audit log with your reason."}
       onCancel={() => setAction(null)}
-      onConfirm={async (proof, reason) => { await api(path, { body: { reason, confirm: proof } }); toast("good", "Done"); setAction(null); load(); onChanged(); }} />;
+      onConfirm={async (proof, reason) => { await api(path, { method: feeAction ? "PUT" : "POST", body: { reason, confirm: proof, ...(feeAction ? { enabled: action === "free_launches" } : {}) } }); toast("good", "Done"); setAction(null); load(); onChanged(); }} />;
   }
   return (
     <Modal title={u ? (u.display_name || u.email) : "Account"} sub={u ? <span className="mono">{u.id}</span> : undefined} onClose={onClose} wide
@@ -484,6 +491,7 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
             <div><div className="muted">Last sign-in</div><span className="mono">{utc(u.last_login)}</span></div>
             <div><div className="muted">Role</div>{u.role}</div>
             <div><div className="muted">Status</div>{u.status}{u.status_reason && <div className="muted">{u.status_reason} · {utc(u.status_changed_at)}</div>}</div>
+            <div><div className="muted">Launch pricing</div>{u.launch_fee?.exempt ? `Free · ${u.launch_fee.reason}` : "Free launches"}<div className="small muted">Trading fee: 2.5%</div></div>
             <div><div className="muted">2FA</div>{u.two_factor ? "On" : "Off"}</div>
             <div><div className="muted">Referred with</div>{u.referred_by_code ?? "—"}</div>
             <div><div className="muted">Jobs</div>{Object.entries(u.jobs).map(([k, v]) => `${v} ${k}`).join(" · ") || "none"}</div>

@@ -241,6 +241,8 @@ async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncS
         raise HTTPException(400, f"A plan can run for at most {s.automation_max_days} days")
     wallet = await _plan_wallet(db, user, launch, body.wallet_id or "")
     plan = await fee_plan_for(db, user, launch.network)
+    from ..services.charges import trade_terms
+    confirmed_fee_terms = await trade_terms(db, launch.network)
     orders = body.total_orders
     first_at = utcnow() + timedelta(minutes=body.start_in_minutes)
     expires_at = utcnow() + timedelta(hours=body.expires_in_hours)
@@ -267,8 +269,7 @@ async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncS
             helm_fee = {"estimated_helm_fee": round(body.budget * plan.bps / 10_000, 9)}
     else:
         dex = pc.bps("trade_fee_bps_evm_dex") if pc.treasury_for("evm") else 0
-        fee_text = (f"none on bonding-curve trades; {dex / 100:g}% if an order is routed through a DEX" if dex
-                    else "none")
+        fee_text = "1% of every trade, including bonding curves; 30% of the fee goes to your referrer when applicable"
         if body.side == "buy" and dex:
             helm_fee = {"estimated_helm_fee_max": round(body.budget * dex / 10_000, 9)}
     impact_check = ("checked against the DEX quote before each order that is routed through a DEX; bonding-curve "
@@ -290,6 +291,7 @@ async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncS
         "max_price_impact_pct": body.max_price_impact_pct,
         "price_impact_check": impact_check,
         "platform_fee": fee_text,
+        "trade_fee_terms": confirmed_fee_terms,
         **helm_fee,
         "network_fees": f"Paid in {coin}; variable and not part of the budget",
         "what_this_is": "Trades your own position from one wallet on a fixed, finite schedule. It doesn't create "
@@ -382,7 +384,7 @@ async def _schedule(launch_id: str, body: AutomationBody, user: User, db: AsyncS
                             max_price_impact_pct=body.max_price_impact_pct, expires_at=expires_at))
     # The trading-fee rates this plan is confirmed at (see AutomationTerms): a later increase stops the plan.
     db.add(AutomationTerms(automation_id=automation.id, trade_fee_bps_solana=pc.bps("trade_fee_bps_solana"),
-                           trade_fee_bps_evm_dex=pc.bps("trade_fee_bps_evm_dex")))
+                           trade_fee_bps_evm_dex=pc.bps("trade_fee_bps_evm_dex"), fee_terms=confirmed_fee_terms))
     await log_activity(db, user.id, "automation.scheduled", "automation", automation.id, {
         "launch_id": launch.id, "side": body.side, "orders": orders, "wallet": wallet.address,
         "budget": body.budget, "sell_amount": body.sell_amount, "slippage_pct": body.slippage_pct,

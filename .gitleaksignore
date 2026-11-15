@@ -1,0 +1,12 @@
+# Reviewed public token contract addresses in offline TRON fixtures (not API credentials).
+cbb8866f3161b8c84e7aac292e675b995db3100a:backend/tests/test_extra_chains.py:generic-api-key:23
+cbb8866f3161b8c84e7aac292e675b995db3100a:backend/tests/test_launchpads_extra.py:generic-api-key:27
+db23b5a8e68d54c7708874cb2b62114377efeba8:backend/tests/test_launchpads_extra.py:generic-api-key:27
+a649b432d5588b8e2b2c589185707502c7574187:backend/tests/test_extra_chains.py:generic-api-key:23
+# Public Solana mint addresses in offline visual-QA responses.
+9d03fc2d967c38476fd38a8be5140c44d00b79f0:tools/visual-qa/fixtures.json:generic-api-key:2225
+9d03fc2d967c38476fd38a8be5140c44d00b79f0:tools/visual-qa/fixtures.json:generic-api-key:2327
+# Disposable local SQLite/ASGI QA session, produced by capture_fixtures.py with SIGNER=local.
+9d03fc2d967c38476fd38a8be5140c44d00b79f0:tools/visual-qa/fixtures.json:generic-api-key:4285
+# Empty RELAY_API_KEY followed by the numeric ROUTE_FEE_BPS assignment (multiline regex false positive).
+c381e3dfadf10ad580b2d3bddaa0a12ab45b1f0e:backend/.env.example:generic-api-key:68

@@ -189,7 +189,8 @@ async def send_item(ex: Executor, w: Wallet, data: dict, job: Job | None = None,
     if job is None:
         return await sender.send(w.address, w.signer_ref or "", call, max_allowance=max_allowance,
                                  require_contract_recipients=True)
-    return await send_evm_tracked(sender, job, w, kind, call, max_allowance=max_allowance)
+    return await send_evm_tracked(sender, job, w, kind, call, max_allowance=max_allowance,
+                                  require_contract_recipients=True)
 
 
 async def quote(ex: Executor, src: Wallet, dst: Wallet, from_asset: str, to_asset: str, amount_raw: int,

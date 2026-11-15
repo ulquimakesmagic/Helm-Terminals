@@ -77,10 +77,13 @@ async def _fee_raised(db, automation, net: str) -> bool:
     key = "trade_fee_bps_solana" if net == "solana" else "trade_fee_bps_evm_dex"
     agreed = getattr(terms, key) if terms else pc._env_defaults()[key]  # older plans: the env rate of the time
     await pc.refresh(db)
-    return pc.bps(key) > agreed
+    return (pc.bps(key) > agreed or not terms or not terms.fee_terms
+            or terms.fee_terms.get("bps") != pc.bps(key)
+            or terms.fee_terms.get("destination") != pc.treasury_for(net))
 
 
 async def run_due_automation_once(ex: Executor | None = None) -> bool:
+    from . import platform_config as pc
     """Claim and execute at most one due tranche. Returns whether work was found."""
     await _mark_interrupted()
     async with get_sessionmaker()() as db:
@@ -158,6 +161,13 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
 
             net = launch.network
             coin = native_coin(net)
+            from ..models import PlatformCharge
+            outstanding = (await db.execute(select(PlatformCharge.id).where(
+                PlatformCharge.payer_user_id == user.id, PlatformCharge.kind == "trade",
+                PlatformCharge.status == "failed").limit(1))).first()
+            if outstanding:
+                await _stop_in_session(db, automation, "A trading fee needs settlement in Fees & payments before this plan can continue.")
+                return True
             fee_plan = await fee_plan_for(db, user, net)
             if await _fee_raised(db, automation, net):
                 await _stop_in_session(db, automation, "Helm's trading fee went up after this plan was scheduled, so it "
@@ -166,7 +176,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                 return True
             remaining = automation.total_orders - automation.runs_completed
             if automation.side == "buy":
-                fee_mult = 1 + (fee_plan.bps / 10_000 if fee_plan.active and net == "solana" else 0)
+                fee_mult = 1.025
                 per_wallet_required = automation.order_sol * remaining * fee_mult + await fee_reserve(ex, net, remaining)
                 for wallet in wallets:
                     if await native_balance(ex, net, wallet.address) < per_wallet_required:
@@ -242,6 +252,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                     "wallets": [w.address for w in wallets],
                     "amount": amount,
                     "network": launch.network,
+                    "trade_fee_terms": {"bps": 250, "destination": pc.treasury_for(launch.network), "network": launch.network},
                     "slippage_pct": automation.slippage_pct,
                 },
                 idempotency_key=f"automation:{automation.id}:{order_number}",

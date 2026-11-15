@@ -89,8 +89,8 @@ class PonsAdapter:
 
     def deploy_notes(self, params: dict) -> dict:
         ct = int(params.get("creator_tax_pct") or 0)
-        split = (params.get("helm_creator_share") or {}).get("bps") == 600
-        return {"creator_tax": (f"{ct}% on trades; included in the 94/6 creator-reward split" if split else
+        split = int((params.get("helm_creator_share") or {}).get("bps") or 0)
+        return {"creator_tax": (f"{ct}% on trades; included in the {100 - split / 100:g}% creator / {split / 100:g}% Helm reward split" if split else
                                 f"{ct}% on trades, paid to your dev wallet") if ct else "none",
                 "graduates_to": "a Uniswap V4 pool at 4.2 ETH raised"}
 
@@ -122,7 +122,7 @@ class PonsAdapter:
             from .pons_rewards import verify
             await verify(self.rpc, rewards)
             share = opts.get("helm_creator_share") or {}
-            if (rewards["creator"].lower() != req.dev_pubkey.lower() or share.get("bps") != 600
+            if (rewards["creator"].lower() != req.dev_pubkey.lower() or share.get("bps") != rewards["bps"]
                     or share.get("recipient", "").lower() != rewards["treasury"].lower()):
                 raise AdapterError("Pons reward recipients do not match the approved launch terms")
             recipient = rewards["splitter"]
@@ -152,7 +152,7 @@ class PonsAdapter:
         notes = {"launch_fee_wei": fee, "creator_tax": f"{tax_pct}% to your dev wallet" if tax_pct else "none",
                  "graduates_to": "a Uniswap V4 pool at 4.2 ETH raised"}
         if rewards:
-            notes.update(pons_rewards=rewards, creator_tax=f"{tax_pct}%; creator rewards split 94% creator / 6% Helm")
+            notes.update(pons_rewards=rewards, creator_tax=f"{tax_pct}%; creator rewards split {100 - rewards['bps'] / 100:g}% creator / {rewards['bps'] / 100:g}% Helm")
 
         if dev_buy <= 0:
             data = selector(LAUNCH_TOKEN) + abi_encode([PARAMS_T, "uint256", "address"], [params, CONFIG_ID, ZERO])

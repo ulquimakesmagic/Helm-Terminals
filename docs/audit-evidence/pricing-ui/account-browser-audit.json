@@ -1,0 +1,479 @@
+{
+  "fixture": "Simulated local chains; no real funds",
+  "results": [
+    {
+      "page": "Dashboard",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Launches",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Wallets",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Networks",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Tracker",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Activity",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Profile",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Fees & payments",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Settings",
+      "admin": false,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Dashboard",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Launches",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Wallets",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Networks",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": [
+          {
+            "tag": "TABLE",
+            "cls": "rtable"
+          },
+          {
+            "tag": "THEAD",
+            "cls": ""
+          },
+          {
+            "tag": "TR",
+            "cls": ""
+          },
+          {
+            "tag": "TH",
+            "cls": ""
+          },
+          {
+            "tag": "TH",
+            "cls": ""
+          },
+          {
+            "tag": "TH",
+            "cls": ""
+          },
+          {
+            "tag": "TBODY",
+            "cls": ""
+          },
+          {
+            "tag": "TR",
+            "cls": ""
+          }
+        ]
+      },
+      "violations": []
+    },
+    {
+      "page": "Tracker",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Activity",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Profile",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Fees & payments",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Settings",
+      "admin": false,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Dashboard",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Launches",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Wallets",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Networks",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Tracker",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Activity",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Profile",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Fees & payments",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Settings",
+      "admin": false,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Dashboard",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Launches",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Wallets",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Networks",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Tracker",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Activity",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Profile",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Fees & payments",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Settings",
+      "admin": false,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Admin",
+      "admin": true,
+      "width": 375,
+      "overflow": {
+        "viewport": 375,
+        "width": 375,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Admin",
+      "admin": true,
+      "width": 768,
+      "overflow": {
+        "viewport": 768,
+        "width": 768,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Admin",
+      "admin": true,
+      "width": 1024,
+      "overflow": {
+        "viewport": 1024,
+        "width": 1024,
+        "offenders": []
+      },
+      "violations": []
+    },
+    {
+      "page": "Admin",
+      "admin": true,
+      "width": 1440,
+      "overflow": {
+        "viewport": 1440,
+        "width": 1440,
+        "offenders": []
+      },
+      "violations": []
+    }
+  ],
+  "errors": []
+}

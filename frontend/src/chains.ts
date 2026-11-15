@@ -74,7 +74,8 @@ export const PAD_NAMES: Record<string, string> = {
 };
 export const padName = (id: string) => PAD_NAMES[id] ?? id;
 
-export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string }
+export interface Pad { id: string; network: string; status: string; quote_assets?: string[]; reason?: string;
+  capabilities?: { create: boolean; buy: boolean; sell: boolean; claim_mode: "in-app" | "external" | "automatic" | "none" | "auction"; automation: boolean; configured: boolean; verification: string } }
 
 /** Launchpads that need a token image to launch. */
 export const NEEDS_IMAGE = new Set(["letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "four-meme", "meteora-dbc", "meme-cooking", "tolly"]);

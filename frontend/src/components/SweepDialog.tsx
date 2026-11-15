@@ -25,7 +25,7 @@ export default function SweepDialog({ wallets, selectedIds, network, onClose, on
 
   return (
     <Modal title={`Sweep dust on ${chain.name}`} onClose={onClose}
-      sub={`Empty ${selectedIds.length} wallet${selectedIds.length === 1 ? "" : "s"} into one — stablecoins and network coin, fees kept back`}
+      sub={`Empty ${selectedIds.length} wallet${selectedIds.length === 1 ? "" : "s"} into one — stablecoins and network coin, after applicable fees`}
       foot={<><button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn" disabled={!dest}
           onClick={() => onReview({
@@ -40,7 +40,7 @@ export default function SweepDialog({ wallets, selectedIds, network, onClose, on
               {candidates.map((w) => <option key={w.id} value={w.id}>{label(w)}</option>)}
             </select>
           </Field>}
-      <Callout icon="info">Each selected wallet sends its whole dollar balance and everything but its fee reserve. Wallets with nothing to move are listed as skipped, not failed.</Callout>
+      <Callout icon="info">Sweeps move supported stablecoins and available network coin. Solana sweeps also recover eligible empty USDC account rent. Automatic fee funding costs, when applicable, appear in the review. Other token accounts remain untouched.</Callout>
       <p className="muted small">The preview shows every amount and the fee estimate before anything is confirmed.</p>
     </Modal>
   );

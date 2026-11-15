@@ -48,6 +48,7 @@ export function PublicHeader({ refCode, authLinks = true, children }: { refCode?
         <nav className="pub-nav hide-sm" aria-label="Overview">
           <a href="/#coverage">Coverage</a>
           <a href="/#capabilities">What it does</a>
+          <a href="/#pricing">Pricing</a>
           <a href="/#safeguards">Safeguards</a>
         </nav>
         <div className="spacer" />
@@ -86,7 +87,7 @@ export const SAFEGUARDS: [IconName, string, string][] = [
   ["eye", "Preview, then confirm", "Every action that moves funds returns a preview of its wallets, amounts and fees first. Confirming is tied to that exact preview; if anything changes, you review it again."],
   ["shield", "2FA on transfers out", "Withdrawals and token sends stay blocked until two-factor authentication is on, then ask for an authenticator code each time."],
   ["key", "Keys stay out of the browser", "Wallet private keys are never sent to or shown in the browser."],
-  ["lock", "Session per tab", "A sign-in lasts for the browser tab it was made in and ends when you close it."],
+  ["lock", "Session per tab", "Sign-in stays in this tab's memory. Closing or reloading the tab requires signing in again."],
 ];
 
 export function SafeguardList({ compact }: { compact?: boolean }) {

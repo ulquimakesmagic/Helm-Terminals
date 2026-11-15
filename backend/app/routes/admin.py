@@ -29,9 +29,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 TREASURY_NETWORKS = ("solana", "evm", *EVM_CHAINS, "tron", "near", "arc")
 EXPLORERS = {"solana": "https://solscan.io/account/", "base": "https://basescan.org/address/",
              "bsc": "https://bscscan.com/address/", "ethereum": "https://etherscan.io/address/",
-             "robinhood": "https://robinhoodchain.blockscout.com/address/", "tron": "https://tronscan.org/#/address/",
-             "near": "https://nearblocks.io/address/", "arc": "https://explorer.arc.io/address/"}
-SOURCES = ("trade_fee", "dex_trade_fee", "route_fee", "creator_share", "partner")
+             "robinhood": "https://robinhoodchain.blockscout.com/address/"}
+SOURCES = ("launch_fee", "trade_fee", "dex_trade_fee", "route_fee", "creator_share", "partner")
 STATUSES = ("received", "pending", "claimable", "failed", "configured")
 
 
@@ -70,6 +69,11 @@ def check_treasury_address(network: str, address: str) -> str:
             raise HTTPException(400, "not a valid Solana address")
         if address == "11111111111111111111111111111111":
             raise HTTPException(400, "that's the system program, not a treasury")
+        return address
+    if network in {"tron", "near"}:
+        from ..deps import valid_address_for
+        if not valid_address_for(network, address):
+            raise HTTPException(400, f"not a valid {network} treasury address")
         return address
     if len(address) != 42 or address[:2] != "0x" or any(c not in "0123456789abcdefABCDEF" for c in address[2:]):
         raise HTTPException(400, "not a valid EVM address (0x followed by 40 hex characters)")
@@ -191,13 +195,23 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
                                   .where(FeeRecord.status == "confirmed", FeeRecord.referral_status == "owed",
                                          FeeRecord.referral_lamports > 0)
                                   .group_by(FeeRecord.network))).all()
+    from ..models import PlatformCharge
+    liabilities = [{"network": net, "asset": "SOL" if net == "solana" else net.upper(),
+                    "amount_raw": str(int(total or 0)), "decimals": 9 if net == "solana" else 18, "entries": n}
+                   for net, total, n in owed_rows]
+    grouped = {(row["network"], row["asset"], row["decimals"]): (int(row["amount_raw"]), row["entries"])
+               for row in liabilities}
+    for charge in (await db.execute(select(PlatformCharge).where(PlatformCharge.status == "confirmed",
+        PlatformCharge.referral_status == "owed", PlatformCharge.referral_raw > 0))).scalars():
+        key = (charge.network, charge.asset, charge.decimals)
+        raw, count = grouped.get(key, (0, 0))
+        grouped[key] = (raw + int(charge.referral_raw), count + 1)
+    liabilities = [{"network": net, "asset": asset, "decimals": dec, "amount_raw": str(raw), "entries": count}
+                   for (net, asset, dec), (raw, count) in sorted(grouped.items())]
     return {
         "totals": sorted(buckets.values(), key=lambda b: (b["network"], b["asset"])),
         "by_source": [by_source.get(src, {"source": src, "entries": 0, "by_asset": []}) for src in SOURCES],
-        "referral_liabilities": [{"network": net, "asset": "SOL" if net == "solana" else net.upper(),
-                                  "amount_raw": str(int(total or 0)),
-                                  "decimals": 9 if net == "solana" else 18, "entries": n}
-                                 for net, total, n in owed_rows],
+        "referral_liabilities": liabilities,
         "valuation": {"method": "none: amounts are shown in their original asset and network, never converted or "
                                 "added across assets",
                       "as_of": iso(utcnow())},
@@ -231,10 +245,9 @@ def _warnings() -> list[str]:
             out.append(f"{p['label']}: provider-held until claimed; not directly verifiable from Helm.")
     t = pc.current().treasury
     if "solana" not in t:
-        out.append("No Solana treasury address is set, so Solana trading fees are off.")
+        out.append("No Solana treasury is configured; fee-bearing Solana launches and trades cannot proceed.")
     if "evm" not in t:
-        out.append("No default EVM treasury address is set, so EVM DEX fees, Relay route fees and Flap commission "
-                   "are off.")
+        out.append("No default EVM treasury is configured; configure per-chain treasuries before fee-bearing launches and trades.")
     return out
 
 
@@ -282,13 +295,17 @@ async def reconcile(body: Reconcile, request: Request, user: User = Depends(supe
     return {"reconciled": len(rows)}
 
 
+class VerifyDex(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=2)
+
+
 @router.post("/revenue/verify-dex")
-async def verify_dex(request: Request, user: User = Depends(superadmin), db: AsyncSession = Depends(get_db),
+async def verify_dex(request: Request, body: VerifyDex, user: User = Depends(superadmin), db: AsyncSession = Depends(get_db),
                      ex: Executor = Depends(get_executor)):
     from ..services.revenue import verify_dex_fee
     # Row locks make concurrent reconciliation idempotent. No transaction is sent.
     rows = (await db.execute(select(RevenueEvent).where(
-        RevenueEvent.source == "dex_trade_fee", RevenueEvent.receipt_evidence.is_(None))
+        RevenueEvent.source == "dex_trade_fee", RevenueEvent.receipt_evidence.is_(None), RevenueEvent.id.in_(body.ids))
         .order_by(RevenueEvent.created_at).limit(2).with_for_update(skip_locked=True))).scalars().all()
     counts = {}
     for row in rows:
@@ -586,6 +603,10 @@ async def user_detail(user_id: str, request: Request, user: User = Depends(any_a
     if not u:
         raise HTTPException(404, "no such user")
     full = user.admin_role == "superadmin"  # type: ignore[attr-defined]
+    from ..models import LaunchFeeExemption
+    launch_exemption = await db.get(LaunchFeeExemption, u.id)
+    from ..services.charges import exemption
+    launch_fee_reason = await exemption(db, u)
     await audit(db, user, "user.view", u.id, request=request)
     await db.commit()
     prof = (await db.execute(select(Profile).where(Profile.user_id == u.id))).scalar_one_or_none()
@@ -611,6 +632,8 @@ async def user_detail(user_id: str, request: Request, user: User = Depends(any_a
         "id": u.id, "email": u.email if full else mask_email(u.email),
         "display_name": (prof.display_name if prof else "") or "", "registered_at": iso(u.created_at),
         "role": await _role_label(db, u), "status": st.status if st else "active",
+        "launch_fee": {"exempt": bool(launch_fee_reason), "reason": launch_fee_reason,
+                       "account_exception": bool(launch_exemption and launch_exemption.enabled)},
         "status_reason": st.reason if st else None, "status_changed_at": iso(st.changed_at) if st else None,
         "last_login": iso(last), "two_factor": u.totp_enabled, "plan": None,
         "referred_by_code": ref.code if ref else None,
@@ -633,6 +656,32 @@ async def _role_label(db: AsyncSession, u: User) -> str:
 class AccessChange(BaseModel):
     reason: str = Field(min_length=5, max_length=300)
     confirm: StepUp
+
+
+class LaunchExemptionChange(AccessChange):
+    enabled: bool
+
+
+@router.put("/users/{user_id}/launch-fee-exemption")
+async def set_launch_exemption(user_id: str, body: LaunchExemptionChange, request: Request,
+                              user: User = Depends(superadmin), db: AsyncSession = Depends(get_db)):
+    """Only the owner can grant/revoke an auditable launch-only exception; no trade discount."""
+    from ..models import LaunchFeeExemption
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "no such user")
+    await step_up(db, user, body.confirm)
+    row = await db.get(LaunchFeeExemption, user_id)
+    old = bool(row and row.enabled)
+    if row is None:
+        row = LaunchFeeExemption(user_id=user_id, enabled=body.enabled, reason=body.reason, changed_by=user.id)
+        db.add(row)
+    else:
+        row.enabled, row.reason, row.changed_by, row.updated_at = body.enabled, body.reason, user.id, utcnow()
+    await audit(db, user, "launch_fee.exemption", user_id,
+                {"enabled": [old, body.enabled], "reason": [None, body.reason]}, request)
+    await db.commit()
+    return {"user_id": user_id, "enabled": body.enabled, "trade_fee_bps": 250}
 
 
 async def _target(db: AsyncSession, actor: User, user_id: str) -> User:

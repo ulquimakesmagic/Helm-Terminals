@@ -1,5 +1,6 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg, fmt } from "../api";
+import { formatRaw } from "../amounts";
 import { chainOf, explorerUrl } from "../chains";
 import { isAddress as isAddr } from "../validate";
 import { ReviewHero, summarize } from "./review";
@@ -19,7 +20,7 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "quote_expires_in_s", "input_raw", "output_mint"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
@@ -35,8 +36,6 @@ const LABELS: Record<string, string> = {
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
   commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
   pons_rewards: "Pons reward recipients", reward_terms: "Permanent reward terms",
-  input: "You pay", output: "You receive (minimum)", output_asset: "Receive asset", estimated_output: "Estimated receive",
-  price_impact: "Price impact", slippage: "Slippage", route: "Route", approved_minimum_raw: "Approved minimum",
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -45,6 +44,14 @@ const KIND_LABEL: Record<string, string> = {
 
 
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
+  if (k === "initial_buy_fee" && v && typeof v === "object") {
+    const fee = v as { amount_raw: string; decimals: number; asset: string; note: string; destination: string };
+    return <div className="stack tight"><b>{formatRaw(fee.amount_raw, fee.decimals)} {fee.asset}</b><p>{fee.note}</p><Address address={fee.destination} network={network} /></div>;
+  }
+  if (k === "launch_fee_payment" && v && typeof v === "object") {
+    const terms = v as { exempt: boolean; reason?: string; amount?: string; asset?: string; payer?: string; destination?: string; payment_terms?: string };
+    return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small text-2">New Helm launches share 2.5% of creator rewards; review the launchpad’s reward terms below.</p></div>;
+  }
   const coin = chainOf(network).native;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
   if (k === "quote_bounds" && v && typeof v === "object") {
@@ -180,6 +187,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [phase, setPhase] = useState<Phase>("loading");
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
+  const [launchFeeApproval, setLaunchFeeApproval] = useState<string | undefined>();
   const [quoteApproval, setQuoteApproval] = useState<string | undefined>();
   const [totp, setTotp] = useState("");
   const [needs2fa, setNeeds2fa] = useState(false);
@@ -190,30 +198,12 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [route, setRoute] = useState<any>(null);
   const key = useRef(crypto.randomUUID());
 
-  const [quoteUntil, setQuoteUntil] = useState(0);
-  const [clock, setClock] = useState(Date.now());
-  const [notice, setNotice] = useState("");
-  // Preview (and re-preview): a confirmation is only ever sent for the preview currently on screen.
-  function load(reason = "") {
-    setNotice(reason);
-    return api(path, { body })
-      .then((r) => {
-        setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setNeeds2fa(Boolean(r.requires_2fa));
-        // Quotes bound to a minimum output expire server-side; count down from a little under the server's window.
-        const ttl = Number(r.preflight?.quote_expires_in_s ?? (r.quote_approval ? 120 : 0));
-        setQuoteUntil(ttl ? Date.now() + (ttl - 5) * 1000 : 0);
-        setPhase("review");
-      })
-      .catch((e) => { setError(errMsg(e)); setPhase("error"); });
-  }
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {
-    if (!quoteUntil || phase !== "review") return;
-    const t = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [quoteUntil, phase]);
-  const quoteLeft = quoteUntil ? Math.max(0, Math.ceil((quoteUntil - clock) / 1000)) : null;
-  const quoteExpired = quoteLeft === 0;
+    api(path, { body })
+      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setLaunchFeeApproval(r.launch_fee_approval); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
+      .catch((e) => { setError(errMsg(e)); setPhase("error"); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A bridge job ends when the origin transaction is settled; Relay's destination fill continues on its own.
   // Keep asking for the route status so the result shows the second leg (or its refund) instead of stopping early.
@@ -239,7 +229,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     setPhase("submitting");
     setError("");
     try {
-      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, quote_approval: quoteApproval, idempotency_key: key.current, totp: totp || undefined } });
+      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, quote_approval: quoteApproval, launch_fee_approval: launchFeeApproval, idempotency_key: key.current, totp: totp || undefined } });
       setJobId(r.job_id);
       setPhase("polling");
       // Every half second at first (most transactions land within a few seconds), then every 1.5 s. A dropped
@@ -256,14 +246,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       setPhase("done");
       onDone?.();
     } catch (e) {
-      const d = errMsg(e);
-      if (/^(preflight_changed|quote_expired_or_changed)/.test(d)) {
-        // Nothing was sent. Show the new preview instead of a dead end; the user confirms again deliberately.
-        setError(""); setTotp("");
-        await load("The preview changed since you opened it (prices, balances or the quote moved). Nothing was sent. Review the updated preview below and confirm again.");
-        return;
-      }
-      setError(d);
+      setError(errMsg(e));
       setPhase("review");
     }
   }
@@ -279,8 +262,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     phase === "loading" ? <button className="btn ghost" onClick={onClose}>Cancel</button> : (
       <>
         <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
-        {quoteExpired && !busy && <button className="btn secondary" onClick={() => { setPhase("loading"); void load("Refreshed with a new quote. Review it before confirming."); }}><Icon name="refresh" size={14} />Refresh quote</button>}
-        <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || quoteExpired || (needs2fa && totp.length !== 6)}>
+        <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || (needs2fa && totp.length !== 6)}>
           {busy ? <><Spinner />{phase === "polling" ? (kind === "deploy" && pre?.funding ? "Routing USDC, then deploying…" : "Waiting for confirmation…") : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
         </button>
       </>
@@ -295,11 +277,8 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
 
       {pre && phase !== "done" && phase !== "error" && (
         <>
-          {notice && <Callout tone="warn">{notice}</Callout>}
           {summary && <ReviewHero s={summary} />}
-          {quoteLeft != null && phase === "review" && (quoteExpired
-            ? <Callout tone="warn"><b>This quote expired.</b> Refresh it to see current terms; confirming needs a fresh quote.</Callout>
-            : <p className="muted small row" role="timer" aria-live="off" style={{ gap: 6 }}><Icon name="clock" size={13} />Quote held for {quoteLeft}s. The minimum output shown is locked until then.</p>)}
+          {pre.launch_fee_payment && <Value k="launch_fee_payment" v={pre.launch_fee_payment} network={network} />}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
           {summary && !blocked && (
             <div className="review-section">
