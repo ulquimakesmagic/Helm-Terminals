@@ -1,11 +1,6 @@
-"""Helm's flat launch fee (LAUNCH_FEE_USD, default $10; admin setting `launch_fee_cents`).
+"""Retired launch-fee compatibility helpers. All new launches are free.
 
-The preview states the fee in dollars, estimates it in the launch chain's coin, and signs a ceiling: at most the
-estimate plus 10%. Confirmation re-prices it from the live price and refuses if that is above the signed ceiling, so a
-price glitch can't take more than the user saw. Implausibly low prices are refused outright. The deploy's balance
-check includes the fee, and it is sent from the dev wallet to that chain's treasury only after the launch is live, so
-a failed launch pays nothing. If the price can't be read the launch is held back rather than charging a guess.
-A fee that can't be sent (or errors) is recorded as failed; it never undoes or blocks the launch.
+Historical records and native transfer helpers remain readable; quote/charge never bill a launch.
 """
 
 import math
@@ -104,30 +99,8 @@ def check_approval(token: str | None, user_id: str, launch_id: str, fee: LaunchF
 
 
 async def quote(db: AsyncSession, network: str, prices: dict | None = None) -> tuple[LaunchFee | None, str | None]:
-    """(fee, None), (None, None) when no fee applies, or (None, reason) when it can't be priced."""
-    await pc.refresh(db)
-    cents = min(max(pc.bps("launch_fee_cents"), 0), MAX_CENTS)
-    recipient = pc.treasury_for(network)
-    if cents <= 0 or not recipient or not fee_applies(network):
-        return None, None
-    coin, decimals = coin_and_decimals(network)
-    if coin in FIXED_USD:
-        price = FIXED_USD[coin]
-    else:
-        if prices is None:
-            from .portfolio import coin_prices
-
-            prices = await coin_prices()
-        price = prices.get(coin)
-    usd = cents / 100
-    if not price or not math.isfinite(price) or price <= 0:
-        return None, (f"{coin}'s price couldn't be read, so Helm's ${usd:g} launch fee can't be sized. "
-                      "Try again in a moment.")
-    if price < MIN_PLAUSIBLE_USD.get(coin, 0):
-        return None, (f"{coin}'s price feed reads ${price:g}, which looks wrong, so Helm's ${usd:g} launch fee isn't "
-                      "being sized from it. Try again shortly.")
-    raw = math.ceil(usd / price * 10**decimals)
-    return LaunchFee(usd, raw, coin, decimals, recipient, network), None
+    """Retired pricing path: launches are free regardless of legacy config or price feeds."""
+    return None, None
 
 
 def headroom(fee: LaunchFee | None) -> int:
@@ -138,26 +111,9 @@ def headroom(fee: LaunchFee | None) -> int:
 
 
 async def charge(session: AsyncSession, ex: Executor, job: Job, launch: Launch, dev: Wallet,
-                 fee: LaunchFee | None) -> SubmitResult | None:
-    """Send the fee after the launch is live (the caller commits the launch first), record the transaction and the
-    revenue, and note the outcome on the job. Never raises: any error is recorded as a failed fee, so it can't strand
-    the launch or roll back its state."""
-    if fee is None:
-        return None
-    try:
-        return await _charge(session, ex, job, launch, dev, fee)
-    except Exception as e:  # noqa: BLE001 - the launch already exists; record and move on
-        await session.rollback()
-        job = await session.get(Job, job.id) or job
-        session.add(RevenueEvent(
-            source="launch_fee", network=fee.network, asset=fee.coin, amount_raw=fee.raw, decimals=fee.decimals,
-            estimated=False, status="failed", destination=fee.recipient, launch_id=launch.id, job_id=job.id,
-            payer_user_id=launch.user_id, reference=None,
-            note=f"${fee.usd:g} launch fee not sent: {type(e).__name__}"[:200]))
-        job.params = {**(job.params or {}), "launch_fee": {"usd": fee.usd, "amount": fee.amount, "coin": fee.coin,
-                                                           "status": "failed", "error": type(e).__name__}}
-        await session.commit()
-        return None
+                 fee: LaunchFee | None, **kwargs) -> None:
+    """Retired collector: never sign or charge a launch payment, including old quotations."""
+    return None
 
 
 def not_charged(job: Job, fee: LaunchFee | None, reason: str) -> None:

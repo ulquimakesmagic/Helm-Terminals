@@ -87,7 +87,8 @@ class Settings(BaseSettings):
     evm_rpc_robinhood: str = ""
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
-    pons_rewards_factory: str = ""
+    pons_rewards_factory: str = ""  # Historical immutable 6% splitters only
+    pons_rewards_factory_v2: str = ""  # New, separately deployed 2.5% factory
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
     extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
@@ -139,7 +140,7 @@ class Settings(BaseSettings):
 
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
     # transaction and shown in every preview. 0 turns fees off.
-    platform_fee_bps: int = 100
+    platform_fee_bps: int = 250
     platform_fee_wallet: str = ""
     # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
     # commission to it). Optional.
@@ -149,10 +150,10 @@ class Settings(BaseSettings):
     clanker_platform_reward_bps: int = 0  # legacy; superseded by CREATOR_SHARE_BPS
     # Helm's share of a new launch's creator rewards where the launchpad supports a native split (Pump.fun, Bags,
     # Clanker), in bps (300 = 3%). An admin setting in the dashboard overrides this.
-    creator_share_bps: int = 0
+    creator_share_bps: int = 250
     # Flat fee per launch in US dollars, charged in the launch chain's coin at the live price after the token is
     # created (a failed launch pays nothing). 0 turns it off. An admin setting in the dashboard overrides this.
-    launch_fee_usd: float = 20.0
+    launch_fee_usd: float = 0.0
     # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
     # The owner account's email. Superadmin binds only when BOTH this email and the user ID above match

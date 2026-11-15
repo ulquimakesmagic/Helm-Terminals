@@ -13,7 +13,7 @@ const types = {".html":"text/html; charset=utf-8", ".js":"text/javascript; chars
 
 // Client routes the app renders. Anything else still gets the app shell (so it can show its not-found page and
 // navigation), but with HTTP 404 so crawlers and monitors see a real miss instead of a soft 200.
-const APP_ROUTES = [/^\/$/, /^\/(login|recover|terms|privacy|risk|launches|wallets|networks|tracker|activity|profile|settings|admin|automation)\/?$/,
+const APP_ROUTES = [/^\/$/, /^\/(login|recover|terms|privacy|risk|launches|wallets|networks|tracker|activity|profile|billing|settings|admin|automation)\/?$/,
   /^\/launches\/[A-Za-z0-9_-]{1,64}\/?$/, /^\/automation\/.*$/, /^\/u\/[A-Za-z0-9_.-]{1,40}\/?$/];
 export const isAppRoute = (path) => APP_ROUTES.some((r) => r.test(path));
 

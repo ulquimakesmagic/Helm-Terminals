@@ -150,7 +150,7 @@ async def test_trade_flow_buy_and_workspace_transparency(client, fake_rpc):
 
     body = {"side": "buy", "wallet_ids": [w["id"] for w in holders], "amount": 0.1, "mode": "parallel"}
     pre, r = await confirm(client, h, f"/launches/{lid}/trade", body)
-    assert pre["preflight"]["platform_fee"].startswith("1.00%")
+    assert pre["preflight"]["platform_fee"].startswith("2.50%")
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed" and len(job["transactions"]) == 2
 
@@ -203,12 +203,12 @@ async def test_sell_fee_is_priced_by_simulation_and_taken_in_the_same_transactio
     body = {"side": "sell", "wallet_ids": [holders[0]["id"]], "amount": 100, "stagger_ms": 0}
     sent_before = len(fake_rpc.sent)
     pre, r = await confirm(client, h, f"/launches/{lid}/trade", body)
-    assert pre["preflight"]["platform_fee"].startswith("1.00% of the SOL each sell receives")  # shown up front
+    assert pre["preflight"]["platform_fee"].startswith("2.50% of the SOL each sell receives")  # shown up front
     assert len(fake_rpc.sent) == sent_before + 1  # one transaction: the sale and its fee together
-    assert (PLATFORM, 10_000_000) in sol_transfers(fake_rpc.sent[-1])
+    assert (PLATFORM, 25_000_000) in sol_transfers(fake_rpc.sent[-1])
     async with get_sessionmaker()() as db:
         fee = (await db.execute(select(FeeRecord).where(FeeRecord.job_id == r.json()["job_id"]))).scalar_one()
-    assert (fee.mode, fee.status, fee.platform_lamports, fee.basis_lamports) == ("in_tx", "confirmed", 10_000_000, SOL)
+    assert (fee.mode, fee.status, fee.platform_lamports, fee.basis_lamports) == ("in_tx", "confirmed", 25_000_000, SOL)
 
 
 async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
@@ -226,16 +226,16 @@ async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
     hb = {"Authorization": f"Bearer {tok}"}
     lid, dev, holders = await live_launch(client, hb, fake_rpc, holders=1)
     s = get_settings()
-    s.platform_fee_bps, s.platform_fee_wallet = 100, PLATFORM  # 1%, of which 25% to the referrer
+    s.platform_fee_bps, s.platform_fee_wallet = 100, PLATFORM  # Legacy environment value cannot override the 2.5% / 30% policy
 
     body = {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0, "stagger_ms": 0}
     pre, r = await confirm(client, hb, f"/launches/{lid}/trade", body)
     assert "30% of this fee goes to the person who referred you" in pre["preflight"]["platform_fee"]
     transfers = sol_transfers(fake_rpc.sent[-1])
-    assert (PLATFORM, 7_000_000) in transfers and (payout, 3_000_000) in transfers
+    assert (PLATFORM, 17_500_000) in transfers and (payout, 7_500_000) in transfers
 
     summary = (await client.get("/referrals", headers=ha)).json()
-    assert summary["referred_users"] == 1 and summary["earned_sol"] == 0.003 and summary["owed_sol"] == 0
+    assert summary["referred_users"] == 1 and summary["earned_sol"] == 0.0075 and summary["owed_sol"] == 0.00375
 
 
 async def test_referral_share_is_owed_when_referrer_has_no_payout_address(client, fake_rpc):
@@ -250,8 +250,8 @@ async def test_referral_share_is_owed_when_referrer_has_no_payout_address(client
     s.platform_fee_bps, s.platform_fee_wallet = 100, PLATFORM
     await confirm(client, hb, f"/launches/{lid}/trade", {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0})
     fees = [t for t in sol_transfers(fake_rpc.sent[-1]) if t[1] > 1]  # skip the fake adapter's 1-lamport self-transfer
-    assert fees == [(PLATFORM, 10_000_000)]  # the referrer's share is held for them
-    assert (await client.get("/referrals", headers=ha)).json()["owed_sol"] == 0.003
+    assert fees == [(PLATFORM, 25_000_000)]  # the referrer's share is held for them
+    assert (await client.get("/referrals", headers=ha)).json()["owed_sol"] == 0.01125
 
 
 async def test_failed_trade_charges_no_fee(client, fake_rpc):
@@ -478,7 +478,8 @@ async def test_watch_and_tracker_accept_evm_addresses(client):
 
 async def test_launchpads_list_shows_letsbonk_live_and_bags_needing_a_key(client):
     pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
-    assert pads["letsbonk"]["status"] == "available" and pads["letsbonk"]["network"] == "solana"
+    assert pads["letsbonk"]["status"] == "setup_required" and pads["letsbonk"]["network"] == "solana"
+    assert not pads["letsbonk"]["capabilities"]["creator_reward_collection_ready"]
     assert pads["bags"]["status"] == "setup_required" and "BAGS_API_KEY" in pads["bags"]["reason"]
     h = await signup(client, "bagsless@example.com")
     r = await client.post("/launches", json={"launchpad": "bags", "name": "B", "symbol": "B"}, headers=h)
@@ -561,7 +562,8 @@ async def test_pair_token_launch_needs_bags_eligibility_and_a_supported_token(cl
 
         pre, d = await confirm(client, h, f"/launches/{r.json()['id']}/deploy", {})
         assert pre["preflight"]["paired_with"].startswith("NVDAx") and "no bonding curve" in pre["preflight"]["pool"]
-        assert fake.seen_options["quote"]["mint"] == NVDA  # the adapter was told what to pair with
+        assert d.status_code == 400 and "collection" in d.json()["detail"]
+        assert not hasattr(fake, "seen_options")  # never deploy an unimplemented reward split
     finally:
         s.bags_api_key = ""
         registry._cache.pop("bags", None)
@@ -672,5 +674,5 @@ async def test_health_reports_rpc_setup_per_chain(client):
     assert "evm_rpc" not in health and "signer" not in health and "env" not in health
     info = (await client.get("/public-info")).json()
     assert info["test_signer"] is True and set(info) == {"test_signer", "capabilities", "pricing"}
-    assert info["pricing"]["launch_usd"] == 20 and info["pricing"]["trade_bps"] == 100
+    assert info["pricing"]["launch_usd"] == 0 and info["pricing"]["trade_bps"] == 250
     assert "rpc" not in str(info).lower() and "url" not in str(info).lower()  # no configuration detail

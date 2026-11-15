@@ -214,11 +214,11 @@ async def test_fee_settings_are_fixed_by_policy_and_require_a_treasury(client, m
     hb, sb = await boss(client)
     for bps in (-1, 0, 50, 101, 201):
         assert (await client.put("/admin/settings/trade_fee_bps_evm_dex", json={"bps": bps, "confirm": await proof(sb)}, headers=hb)).status_code == 400
-    r = await client.put("/admin/settings/trade_fee_bps_evm_dex", json={"bps": 100, "confirm": await proof(sb)}, headers=hb)
+    r = await client.put("/admin/settings/trade_fee_bps_evm_dex", json={"bps": 250, "confirm": await proof(sb)}, headers=hb)
     assert r.status_code == 400 and "treasury" in r.json()["detail"]
     await client.put("/admin/treasury/evm", json={"address": EVM_TREASURY, "confirm": await proof(sb)}, headers=hb)
-    r = await client.put("/admin/settings/trade_fee_bps_evm_dex", json={"bps": 100, "confirm": await proof(sb)}, headers=hb)
-    assert r.status_code == 200 and pc.bps("trade_fee_bps_evm_dex") == 100
+    r = await client.put("/admin/settings/trade_fee_bps_evm_dex", json={"bps": 250, "confirm": await proof(sb)}, headers=hb)
+    assert r.status_code == 200 and pc.bps("trade_fee_bps_evm_dex") == 250
     for key in ("creator_share_bps", "route_fee_bps"):
         assert (await client.put(f"/admin/settings/{key}", json={"bps": 1, "confirm": await proof(sb)}, headers=hb)).status_code == 400
     settings = (await client.get("/admin/settings", headers=hb)).json()
@@ -232,9 +232,9 @@ async def test_pricing_overrides_legacy_environment_rates(client, monkeypatch):
     monkeypatch.setattr(settings, "clanker_platform_reward_bps", 1000)
     async with get_sessionmaker()() as db:
         await pc.refresh(db, force=True)
-    assert pc.bps("trade_fee_bps_solana") == pc.bps("trade_fee_bps_evm_dex") == 100
+    assert pc.bps("trade_fee_bps_solana") == pc.bps("trade_fee_bps_evm_dex") == 250
     assert pc.bps("route_fee_bps") == 0
-    assert all(pc.creator_share(pad)["bps"] == 0 for pad in pc.CREATOR_SHARE_LAUNCHPADS)
+    assert all(pc.creator_share(pad)["bps"] == 250 for pad in pc.CREATOR_SHARE_LAUNCHPADS)
 
 
 # --- revenue routing and the ledger -----------------------------------------------------------------------
@@ -245,7 +245,7 @@ async def test_trade_fee_goes_to_the_admin_treasury_and_only_helms_part_is_reven
     treasury = str(Keypair().pubkey())
     assert (await client.put("/admin/treasury/solana", json={"address": treasury, "confirm": await proof(sb)},
                              headers=hb)).status_code == 200
-    assert (await client.put("/admin/settings/trade_fee_bps_solana", json={"bps": 100, "confirm": await proof(sb)},
+    assert (await client.put("/admin/settings/trade_fee_bps_solana", json={"bps": 250, "confirm": await proof(sb)},
                              headers=hb)).status_code == 200
     # a referred trader: 30% of the fee is the referrer's, owed to them because they set no payout address
     ha = await signup(client, "kol@example.com")
@@ -256,27 +256,27 @@ async def test_trade_fee_goes_to_the_admin_treasury_and_only_helms_part_is_reven
     lid, dev, holders = await live_launch(client, hf, fake_rpc, holders=1)
     _, r = await confirm(client, hf, f"/launches/{lid}/trade", {"side": "buy", "wallet_ids": [holders[0]["id"]],
                                                                   "amount": 1.0})
-    assert (treasury, 10_000_000) in sol_transfers(fake_rpc.sent[-1])  # fee plus the referral share held for them
+    assert (treasury, 25_000_000) in sol_transfers(fake_rpc.sent[-1])  # fee plus the referral share held for them
     async with get_sessionmaker()() as db:
         ev = (await db.execute(select(RevenueEvent))).scalars().all()
-    assert len(ev) == 1
-    e = ev[0]
+    assert len(ev) == 3  # creator split configuration, initial buy and manual buy
+    e = next(row for row in ev if row.job_id == r.json()["job_id"])
     assert (e.source, e.status, e.asset, e.network, e.amount_raw, e.decimals, e.destination, e.launch_id) == (
-        "trade_fee", "received", "SOL", "solana", 7_000_000, 9, treasury, lid)
+        "trade_fee", "received", "SOL", "solana", 17_500_000, 9, treasury, lid)
     # the 1 SOL trade amount and the referrer's 3M lamports are never Helm's
     summary = (await client.get("/admin/revenue/summary", headers=hb)).json()
     sol = next(t for t in summary["totals"] if t["asset"] == "SOL")
-    assert sol["received"] == 7_000_000 and sol["claimable"] == 0 and sol["unreconciled"] == 7_000_000
-    assert summary["referral_liabilities"] == [{"network": "solana", "asset": "SOL", "amount_raw": "3000000",
-                                                 "decimals": 9, "entries": 1}]
+    assert sol["received"] == 26_250_000 and sol["claimable"] == 0 and sol["unreconciled"] == 26_250_000
+    assert summary["referral_liabilities"] == [{"network": "solana", "asset": "SOL", "amount_raw": "11250000",
+                                                 "decimals": 9, "entries": 2}]
     led = (await client.get("/admin/revenue/ledger", headers=hb)).json()
-    assert led["total"] == 1 and led["items"][0]["launch"]["symbol"] and led["items"][0]["reference"]
+    assert led["total"] == 3 and led["items"][0]["launch"]["symbol"] and led["items"][0]["reference"]
     r = await client.post("/admin/revenue/reconcile", json={"ids": [e.id], "note": "matched on solscan"}, headers=hb)
     assert r.json()["reconciled"] == 1
     sol = next(t for t in (await client.get("/admin/revenue/summary", headers=hb)).json()["totals"]
                if t["asset"] == "SOL")
     # Human review is an annotation; it cannot certify a treasury receipt.
-    assert sol["unreconciled"] == 7_000_000 and sol["received"] == 7_000_000
+    assert sol["unreconciled"] == 26_250_000 and sol["received"] == 26_250_000
 
 
 async def test_a_failed_trade_records_no_revenue(client, fake_rpc):
@@ -285,9 +285,9 @@ async def test_a_failed_trade_records_no_revenue(client, fake_rpc):
     s = get_settings()
     s.platform_fee_bps, s.platform_fee_wallet = 100, str(Keypair().pubkey())
     fake_rpc.sim_error = "slippage exceeded"
-    await confirm(client, h, f"/launches/{lid}/trade", {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0})
+    _, failed = await confirm(client, h, f"/launches/{lid}/trade", {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0})
     async with get_sessionmaker()() as db:
-        assert (await db.execute(select(RevenueEvent))).scalars().all() == []
+        assert (await db.execute(select(RevenueEvent).where(RevenueEvent.job_id == failed.json()["job_id"]))).scalars().all() == []
 
 
 def test_an_unconfirmed_fee_is_pending_not_received():
@@ -402,7 +402,7 @@ async def test_admin_cannot_enable_a_new_creator_reward_share(client):
     assert response.status_code == 400
     for pad in pc.CREATOR_SHARE_LAUNCHPADS:
         terms = _creator_share_terms(pad, {})
-        assert terms["bps"] == 0 and terms["creator_bps"] == 10000 and terms["recipient"] == ""
+        assert terms["bps"] == 250 and terms["creator_bps"] == 9750
 
 
 async def test_clanker_uses_the_share_the_creator_confirmed():
@@ -416,18 +416,18 @@ async def test_clanker_uses_the_share_the_creator_confirmed():
     assert notes["rewards"].startswith("95%") and notes["platform_share"].startswith("5%")
 
 
-async def test_new_pumpfun_launch_never_configures_a_creator_share(client, fake_rpc, monkeypatch):
-    from app.chains import registry
+async def test_new_pumpfun_launch_configures_exactly_one_25_percent_split(client, fake_rpc):
     from app.models import Transaction
-    async def forbidden(*args, **kwargs):
-        raise AssertionError("New launches must not configure a reward split")
-    monkeypatch.setattr(registry._cache["pumpfun"], "build_creator_share_tx", forbidden, raising=False)
     h = await signup(client)
     lid, _, _ = await live_launch(client, h, fake_rpc, holders=1)
-    assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "live"
+    launch = (await client.get(f"/launches/{lid}", headers=h)).json()
+    assert launch["status"] == "live"
     async with get_sessionmaker()() as db:
-        assert not (await db.execute(select(Transaction).where(Transaction.kind == "deploy_fee_share"))).first()
-        assert not (await db.execute(select(RevenueEvent).where(RevenueEvent.source == "creator_share"))).first()
+        steps = (await db.execute(select(Transaction).where(Transaction.kind == "deploy_fee_share"))).scalars().all()
+        assert len(steps) == 1 and steps[0].status == "confirmed"
+        events = (await db.execute(select(RevenueEvent).where(RevenueEvent.source == "creator_share"))).scalars().all()
+        assert len(events) == 1 and events[0].amount_raw is None
+        assert events[0].status != "received"  # configuration is not money received
 
 
 async def test_existing_launches_keep_their_terms(client, fake_rpc):
@@ -442,7 +442,7 @@ async def test_existing_launches_keep_their_terms(client, fake_rpc):
         await pc.refresh(db, force=True)
     async with get_sessionmaker()() as db:
         assert (await db.get(Launch, lid)).launchpad_params["helm_creator_share"] == legacy
-    assert pc.creator_share("pumpfun")["bps"] == 0
+    assert pc.creator_share("pumpfun")["bps"] == 250
 
 
 # --- users -----------------------------------------------------------------------------------------------
@@ -569,8 +569,8 @@ async def test_scheduled_plan_stops_when_the_confirmed_treasury_changes(client):
     class A:
         id = "auto-1"
     async with get_sessionmaker()() as db:
-        db.add(AutomationTerms(automation_id=A.id, trade_fee_bps_solana=100, trade_fee_bps_evm_dex=100,
-                              fee_terms={"bps": 100, "destination": treasury, "network": "solana"}))
+        db.add(AutomationTerms(automation_id=A.id, trade_fee_bps_solana=250, trade_fee_bps_evm_dex=250,
+                              fee_terms={"bps": 250, "destination": treasury, "network": "solana"}))
         await db.commit()
         assert await _fee_raised(db, A, "solana") is False
     await client.put("/admin/treasury/solana", json={"address": str(Keypair().pubkey()), "confirm": await proof(sb)}, headers=hb)
@@ -583,7 +583,7 @@ def test_no_share_when_the_treasury_is_the_dev_wallet(monkeypatch):
 
     monkeypatch.setattr(pc, "creator_share", lambda lp: {"bps": 500, "recipient": EVM_TREASURY, "supported": True,
                                                          "note": "5%"})
-    assert _creator_share_terms("clanker", {}, EVM_TREASURY.lower())["bps"] == 0
+    assert not _creator_share_terms("clanker", {}, EVM_TREASURY.lower())["supported"]
     assert _creator_share_terms("clanker", {}, "0x" + "ab" * 20)["bps"] == 500
 
 

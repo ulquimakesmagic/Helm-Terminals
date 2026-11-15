@@ -13,9 +13,12 @@ from .base import AdapterError
 from .evm import EvmRPCError, EvmRPCUnavailable
 
 ARTIFACTS = Path(__file__).parent / "contracts"
-FACTORY_ARTIFACT = json.loads((ARTIFACTS / "HelmPonsRewardsFactory.json").read_text())
-SPLITTER_ARTIFACT = json.loads((ARTIFACTS / "HelmPonsRewards.json").read_text())
+FACTORY_ARTIFACT = json.loads((ARTIFACTS / "HelmPonsRewardsFactory.json").read_text(encoding='utf-8'))
+SPLITTER_ARTIFACT = json.loads((ARTIFACTS / "HelmPonsRewards.json").read_text(encoding='utf-8'))
 FACTORY_CODE = bytes.fromhex(FACTORY_ARTIFACT["deployedBytecode"])
+FACTORY_V2 = json.loads((ARTIFACTS / "HelmPonsRewardsV2Factory.json").read_text(encoding="utf-8"))
+SPLITTER_V2 = json.loads((ARTIFACTS / "HelmPonsRewardsV2.json").read_text(encoding="utf-8"))
+FACTORY_CODE_V2 = bytes.fromhex(FACTORY_V2["deployedBytecode"])
 ESCROW = "0xd3afeb2a57f70ef218aa82451c51b2fb0416ac9e"
 PONS_FACTORY = "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e"
 # Sourcify verified on-chain runtime, checked 2026-10-02. Unexpected code fails closed.
@@ -28,31 +31,33 @@ def calldata(signature, types=(), values=()):
     return keccak(text=signature)[:4] + encode(types, values)
 
 
-def predicted(factory: str, creator: str, treasury: str, key: bytes) -> str:
-    init = bytes.fromhex(SPLITTER_ARTIFACT["bytecode"]) + encode(["address", "address"], [creator, treasury])
+def predicted(factory: str, creator: str, treasury: str, key: bytes, version: int = 1) -> str:
+    artifact = SPLITTER_V2 if version == 2 else SPLITTER_ARTIFACT
+    init = bytes.fromhex(artifact["bytecode"]) + encode(["address", "address"], [creator, treasury])
     return to_checksum_address(keccak(b"\xff" + bytes.fromhex(factory[2:]) + key + keccak(init))[-20:])
 
 
-def configuration(launch_id: str, creator: str, share: dict, factory: str) -> dict:
+def configuration(launch_id: str, creator: str, share: dict, factory: str, *, version: int = 1) -> dict:
     treasury = share.get("recipient", "")
-    if share.get("bps") != 600 or any(not is_address(a) or int(a, 16) == 0 for a in (factory, creator, treasury)):
-        raise AdapterError("Pons rewards require a verified factory, creator, treasury and exactly 6% Helm share")
+    expected_bps = {1: 600, 2: 250}.get(version)
+    if expected_bps is None or share.get("bps") != expected_bps or any(not is_address(a) or int(a, 16) == 0 for a in (factory, creator, treasury)):
+        raise AdapterError("Pons rewards require a verified factory, creator, treasury and the exact versioned Helm share")
     if creator.lower() == treasury.lower():
         raise AdapterError("Pons creator and treasury must be different")
     key = keccak(text=f"helm:pons:4663:{launch_id}")
-    return {"version": 1, "factory": to_checksum_address(factory), "creator": to_checksum_address(creator),
-            "treasury": to_checksum_address(treasury), "bps": 600, "launch_key": "0x" + key.hex(),
-            "splitter": predicted(factory, creator, treasury, key)}
+    return {"version": version, "factory": to_checksum_address(factory), "creator": to_checksum_address(creator),
+            "treasury": to_checksum_address(treasury), "bps": expected_bps, "launch_key": "0x" + key.hex(),
+            "splitter": predicted(factory, creator, treasury, key, version)}
 
 
 def validate(config: dict) -> None:
     try:
         addresses = [config[k] for k in ("factory", "creator", "treasury", "splitter")]
         key = bytes.fromhex(config["launch_key"].removeprefix("0x"))
-        valid = (config["version"] == 1 and config["bps"] == 600 and len(key) == 32
+        valid = (config["version"] in (1, 2) and config["bps"] == {1: 600, 2: 250}[config["version"]] and len(key) == 32
                  and all(is_address(a) and int(a, 16) != 0 for a in addresses)
                  and addresses[1].lower() != addresses[2].lower()
-                 and predicted(*addresses[:3], key).lower() == addresses[3].lower())
+                 and predicted(*addresses[:3], key, config["version"]).lower() == addresses[3].lower())
     except (KeyError, ValueError, TypeError):
         valid = False
     if not valid:
@@ -63,7 +68,7 @@ async def verify(rpc, config: dict) -> None:
     validate(config)
     if rpc.network != "robinhood":
         raise AdapterError("Pons rewards are only supported on Robinhood Chain")
-    for address, expected in ((config["factory"], keccak(FACTORY_CODE).hex()),
+    for address, expected in ((config["factory"], keccak(FACTORY_CODE_V2 if config["version"] == 2 else FACTORY_CODE).hex()),
                               (ESCROW, ESCROW_CODE_HASH), (PONS_FACTORY, PONS_CODE_HASH)):
         try:
             code = await rpc.call("eth_getCode", [address, "latest"])

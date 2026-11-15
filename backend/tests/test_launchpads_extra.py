@@ -306,11 +306,14 @@ class FakeArc:
     async def max_gas_cost(self, gas):
         return 10**16
 
-    async def send(self, address, ref, call):
+    async def send(self, address, ref, call, *, on_signed=None, intent=None):
         from app.services.evm_exec import EvmResult
 
         self.sent.append(call)
-        return EvmResult("0x" + "%064x" % len(self.sent), "confirmed")
+        signature = "0x" + "%064x" % len(self.sent)
+        if on_signed:
+            await on_signed(signature)
+        return EvmResult(signature, "confirmed")
 
 
 async def test_tolly_launch_with_dev_buy_then_swaps(client, pads, monkeypatch):

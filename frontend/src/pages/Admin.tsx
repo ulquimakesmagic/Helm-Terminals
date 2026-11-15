@@ -15,7 +15,7 @@ interface ConfigDiagnostics {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  launch_fee: "Launch fees", trade_fee: "Trading fees", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
+  launch_fee: "Historical launch fees", trade_fee: "Trading fees", dex_trade_fee: "Trading fees (EVM DEX)", route_fee: "Cross-chain route fees (Relay)",
   creator_share: "Creator-reward shares", partner: "Launchpad / partner revenue",
 };
 const NETWORKS = ["solana", "evm", "base", "bsc", "ethereum", "robinhood", "tron", "near", "arc"];
@@ -342,7 +342,7 @@ function Fees({ me }: { me: AdminMe }) {
   if (!data) return <Loading />;
   return (
     <div className="stack">
-      <Callout tone="warn" icon="alert">Helm charges $20 per launch and 1% per trade. Creator rewards stay with the creator. Admins and approved accounts have free launches; their trades still pay 1%. Historical immutable reward splits retain their original terms.</Callout>
+      <Callout tone="warn" icon="alert">Launches are free for everyone. Helm charges 2.5% on trades, including admin accounts. Helm receives 2.5% of creator rewards from new Helm launches. Historical immutable reward splits retain their original terms.</Callout>
       <Card title="Rates" icon="coins" flush>
         <TableWrap><table className="rtable">
           <caption className="sr-only">Fee settings</caption>
@@ -360,7 +360,7 @@ function Fees({ me }: { me: AdminMe }) {
       <Card title="Creator-reward share by launchpad" icon="rocket">
         <div className="stack tight">{Object.entries(data.creator_share_launchpads).map(([lp, c]) => (
           <div key={lp} className="row between small"><b>{lp}</b><span className="muted">{c.note}</span></div>))}
-          <span className="muted small">Helm takes no creator-reward share on any new launch. Third-party protocol economics remain visible in the launch review.</span></div>
+          <span className="muted small">New Helm launches share 2.5% of creator rewards. Collection readiness and missing integrations are shown per launchpad.</span></div>
       </Card>
       <Card title="Supported revenue paths" icon="layers" flush>
         <TableWrap><table className="rtable">
@@ -480,7 +480,6 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
   return (
     <Modal title={u ? (u.display_name || u.email) : "Account"} sub={u ? <span className="mono">{u.id}</span> : undefined} onClose={onClose} wide
       foot={me.can_change && u && u.role !== "superadmin" ? <>
-        {u.role === "user" && <button className="btn secondary" onClick={() => setAction(u.launch_fee?.account_exception ? "paid_launches" : "free_launches")}>{u.launch_fee?.account_exception ? "Remove free launches" : "Grant free launches"}</button>}
         {u.role === "viewer" ? <button className="btn ghost" onClick={() => setAction("revoke")}>Remove admin role</button> : <button className="btn ghost" onClick={() => setAction("viewer")}>Make viewer</button>}
         {u.status === "suspended" ? <button className="btn" onClick={() => setAction("restore")}>Restore access</button> : <button className="btn danger-ghost" onClick={() => setAction("suspend")}>Suspend…</button>}
       </> : undefined}>
@@ -492,7 +491,7 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
             <div><div className="muted">Last sign-in</div><span className="mono">{utc(u.last_login)}</span></div>
             <div><div className="muted">Role</div>{u.role}</div>
             <div><div className="muted">Status</div>{u.status}{u.status_reason && <div className="muted">{u.status_reason} · {utc(u.status_changed_at)}</div>}</div>
-            <div><div className="muted">Launch pricing</div>{u.launch_fee?.exempt ? `Free · ${u.launch_fee.reason}` : "$20 per launch"}<div className="small muted">Trading fee: 1%</div></div>
+            <div><div className="muted">Launch pricing</div>{u.launch_fee?.exempt ? `Free · ${u.launch_fee.reason}` : "Free launches"}<div className="small muted">Trading fee: 2.5%</div></div>
             <div><div className="muted">2FA</div>{u.two_factor ? "On" : "Off"}</div>
             <div><div className="muted">Referred with</div>{u.referred_by_code ?? "—"}</div>
             <div><div className="muted">Jobs</div>{Object.entries(u.jobs).map(([k, v]) => `${v} ${k}`).join(" · ") || "none"}</div>

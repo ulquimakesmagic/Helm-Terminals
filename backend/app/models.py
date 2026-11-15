@@ -315,9 +315,6 @@ def _declare_fk_dependencies() -> None:
             )
 
 
-_declare_fk_dependencies()
-
-
 class AuthFailure(Base):
     """A throttled authentication or registration attempt, keyed by the target/IP bucket. Rows older than the
     window are ignored and pruned opportunistically."""
@@ -539,3 +536,7 @@ class PlatformCharge(Base):
     terms: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# Run after all models exist so payment/automation rows also flush after their parents.
+_declare_fk_dependencies()

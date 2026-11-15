@@ -79,7 +79,7 @@ async def test_swap_preflight_then_confirmed_job(client, fake_rpc, fake_jupiter)
     assert r.status_code == 200, r.text
     summary = pf["preflight"]
     assert summary["input"].startswith("0.1 SOL") and "USDC" in summary["output"]
-    assert summary["route"] == "GoonFi V2" and summary["platform_fee"].startswith("1%")
+    assert summary["route"] == "GoonFi V2" and summary["platform_fee"].startswith("2.5%")
     j = r.json()
     status = (await client.get(f"/jobs/{j['job_id']}", headers=h)).json()["status"]
     assert status == "confirmed", j
@@ -131,7 +131,7 @@ async def test_evm_swap_routes_through_relay(client, fake_rpc, monkeypatch):
         p = pre["preflight"]
         assert p["kind"] == "swap" and p["network"] == "base" and p["chain"] == "Base"
         assert p["input"] == "20 USDC" and p["estimated_output"] == "0.03 ETH"
-        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0 and p["platform_fee"].startswith("1%")
+        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0 and p["platform_fee"].startswith("2.5%")
         same = await client.post("/wallets/swap", json={**body, "output_mint": BASE_USDC}, headers=h)
         assert same.status_code == 400 and "same token" in same.text
         bad = await client.post("/wallets/swap", json={**body, "input_mint": "0x1234"}, headers=h)

@@ -32,7 +32,7 @@ class RewardNode(PonsNode):
 
     async def call(self, method, params):
         if method == "eth_getCode":
-            return ("0x" + rewards.FACTORY_CODE.hex() if params[0].lower() == FACTORY.lower()
+            return ("0x" + (rewards.FACTORY_CODE_V2 if getattr(self, "factory_version", 1) == 2 else rewards.FACTORY_CODE).hex() if params[0].lower() == FACTORY.lower()
                     and not self.bad_code else "0x6000")
         if method == "eth_call" and params[0]["to"].lower() == FACTORY.lower():
             assert bytes.fromhex(params[0]["data"][2:]) == rewards.distribution_data(self.config)
@@ -104,8 +104,10 @@ def test_only_exact_successful_treasury_events_are_counted():
 
 
 @pytest.mark.parametrize("delayed", [False, True])
-async def test_new_launch_has_no_split_and_historical_claims_recover_after_restart(client, fake_rpc, setup_rewards, monkeypatch, delayed):
+async def test_new_25_split_and_historical_claims_recover_after_restart(client, fake_rpc, setup_rewards, monkeypatch, delayed):
     node = setup_rewards
+    node.factory_version = 2
+    monkeypatch.setattr(get_settings(), "pons_rewards_factory_v2", FACTORY)
     registry._cache["pons"] = PonsAdapter(node)
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"robinhood": node})
     async def no_sleep(_):
@@ -120,8 +122,9 @@ async def test_new_launch_has_no_split_and_historical_claims_recover_after_resta
         assert created.status_code == 201, created.text
         lid = created.json()["id"]
         pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-        assert "pons_rewards" not in pf["preflight"]
-        assert pf["preflight"]["helm_creator_share"]["bps"] == 0
+        assert pf["preflight"]["pons_rewards"]["version"] == 2
+        assert pf["preflight"]["helm_creator_share"]["bps"] == 250
+        node.config = pf["preflight"]["pons_rewards"]
         node.ready = not delayed
         sent = await client.post(f"/launches/{lid}/deploy", json={"confirm": True,
             "preflight_hash": pf["preflight_hash"], "idempotency_key": "deploy"}, headers=h)
@@ -134,7 +137,8 @@ async def test_new_launch_has_no_split_and_historical_claims_recover_after_resta
         node.ready = True
         r = await client.post(f"/launches/{lid}/recheck", json={}, headers=h)
         assert r.json()["status"] == "live" and r.json()["mint_address"], r.text
-        assert r.json()["pons_rewards"] is None
+        assert r.json()["pons_rewards"]["bps"] == 250
+        node.factory_version = 1
         # A historical imported launch retains its immutable, previously agreed splitter.
         c = rewards.configuration(lid, dev["address"], {"bps": 600, "recipient": TREASURY}, FACTORY)
         node.config = c
@@ -164,7 +168,7 @@ async def test_new_launch_has_no_split_and_historical_claims_recover_after_resta
         async with get_sessionmaker()() as db:
             rows = (await db.execute(select(RevenueEvent).where(RevenueEvent.launch_id == lid))).scalars().all()
             paid = [row for row in rows if row.status == "received"]
-            assert len(rows) == 2 and len(paid) == 1
+            assert len(rows) == 3 and len(paid) == 1  # new configuration, legacy configuration and exact payout
             assert int(paid[0].amount_raw) == 600 and not paid[0].estimated
             assert paid[0].destination.lower() == TREASURY.lower()
         assert node.sent[-1]["to"].lower() == FACTORY.lower() and node.sent[-1]["value"] == 0

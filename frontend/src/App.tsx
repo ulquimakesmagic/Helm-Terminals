@@ -95,7 +95,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="side-foot">
-          <Link to="/billing" className="side-pricing"><span>$20 launch · 1% trade</span><small>100% of creator rewards stay yours</small></Link>
+          <Link to="/billing" className="side-pricing"><span>Free launch · 2.5% trade</span><small>2.5% creator-reward share</small></Link>
           {me && !me.totp_enabled && seg !== "" && seg !== "settings" && (
             <div className="nudge">
               <strong><Icon name="shield" size={14} />2FA is off</strong>

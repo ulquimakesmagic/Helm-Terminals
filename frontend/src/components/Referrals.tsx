@@ -38,7 +38,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
 
   return (
     <Card title="Referrals" icon="gift"
-      sub={data && data.fee_pct > 0 ? `Earn ${data.share_pct}% of launch and trading fees from people you invite` : "Invite people to Helm Terminals"}
+      sub={data && data.fee_pct > 0 ? `Earn ${data.share_pct}% of collected Helm fees from people you invite` : "Invite people to Helm Terminals"}
       actions={
         <button className="btn sm secondary" onClick={() => api("/referrals", { method: "POST", body: {} })
           .then(() => { toast("good", "Referral code created"); onChange(); }).catch((e) => toast("bad", errMsg(e)))}>
@@ -49,7 +49,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
           <div className="grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 0, borderBottom: "1px solid var(--line)" }}>
             {[
               ["Referred", String(data.referred_users), ""],
-              ["Earned", fmt(data.earned_sol, 4), "SOL"],
+              ["Paid to wallet", fmt(data.earned_sol, 4), "SOL"],
               ["Owed to you", fmt(data.owed_sol, 4), "SOL"],
             ].map(([l, v, u], i) => (
               <div key={l} style={{ padding: "12px 18px", borderLeft: i ? "1px solid var(--line)" : undefined }}>
@@ -60,7 +60,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
           </div>
 
           <div className="stack tight" style={{ padding: "18px", borderBottom: "1px solid var(--line)" }}>
-            <b>30% of the fees your referrals pay</b><p className="small text-2">A $20 paid launch earns $6. A $1 trading fee earns $0.30. Free launches generate no fee or commission.</p>
+            <b>30% of the fees your referrals pay</b><p className="small text-2">A $100 trade pays a $2.50 Helm fee and earns its referrer $0.75. Free launches generate no fee or commission.</p>
             {data.earnings?.map(row => <div className="row between small" key={`${row.network}:${row.asset}`}><span>{chainOf(row.network).name} · {row.asset}</span><span className="mono">{formatRaw(row.paid_raw, row.decimals)} paid · {formatRaw(row.owed_raw, row.decimals)} owed</span></div>)}
             <p className="small muted">{data.settlement_note ?? "Confirmed payments only. Owed balances have not yet been paid to your wallet."}</p>
           </div>

@@ -18,6 +18,7 @@ const settings = {
   outputSelection: { '*': { '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object'] } }
 };
 const CONTRACTS = {
+  'HelmPonsRewardsV2.sol': ['HelmPonsRewardsV2', 'HelmPonsRewardsV2Factory'],
   'HelmPonsRewards.sol': ['HelmPonsRewards', 'HelmPonsRewardsFactory'],
   'HelmRewardsSplitter.sol': ['HelmRewardsSplitter', 'HelmRewardsSplitterFactory'],
 };

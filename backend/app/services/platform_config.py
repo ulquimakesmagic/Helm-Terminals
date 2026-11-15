@@ -21,22 +21,22 @@ CACHE_S = 30.0
 
 # Safe bounds for what an admin may set, in basis points.
 BOUNDS = {
-    "trade_fee_bps_solana": (100, 100),
-    "trade_fee_bps_evm_dex": (100, 100),
+    "trade_fee_bps_solana": (250, 250),
+    "trade_fee_bps_evm_dex": (250, 250),
     "route_fee_bps": (0, 0),
-    "creator_share_bps": (0, 0),
+    "creator_share_bps": (250, 250),
 }
 
 FEE_PATHS = [
-    {"id": "launch_fee", "label": "$20 launch fee", "setting": None,
-     "networks": ["solana", *EVM_CHAINS, "tron", "near", "arc"], "supported": True, "lands": "received",
-     "how": "Paid once per launch draft. Admin accounts and approved launch exemptions pay no launch fee. Confirmed payment is reused on retries."},
-    {"id": "trade_fee_solana", "label": "1% Solana trading fee", "setting": "trade_fee_bps_solana",
-     "networks": ["solana"], "supported": True, "lands": "received", "how": "1% of trade notional; referral share is 30% of the fee."},
-    {"id": "trade_fee_evm_dex", "label": "1% EVM trading fee", "setting": "trade_fee_bps_evm_dex",
-     "networks": list(EVM_CHAINS), "supported": True, "lands": "received", "how": "1% of trade notional, including bonding curves; referral share is 30% of the fee."},
-    {"id": "creator_rewards", "label": "Creator rewards: 100% to creator", "setting": "creator_share_bps",
-     "networks": [], "supported": True, "lands": None, "how": "Helm configures no creator-reward share or partner commission on new launches. Historical immutable splits retain their original beneficiaries."},
+    {"id": "launch_fee", "label": "Free launches", "setting": None,
+     "networks": ["solana", *EVM_CHAINS, "tron", "near", "arc"], "supported": True, "lands": None,
+     "how": "Launches are free for everyone. Network and third-party launchpad costs are separate."},
+    {"id": "trade_fee_solana", "label": "2.5% Solana trading fee", "setting": "trade_fee_bps_solana",
+     "networks": ["solana"], "supported": True, "lands": "received", "how": "2.5% of trade notional; referral share is 30% of the fee."},
+    {"id": "trade_fee_evm_dex", "label": "2.5% EVM trading fee", "setting": "trade_fee_bps_evm_dex",
+     "networks": list(EVM_CHAINS), "supported": True, "lands": "received", "how": "2.5% of trade notional, including bonding curves; referral share is 30% of the fee."},
+    {"id": "creator_rewards", "label": "2.5% creator-reward share", "setting": "creator_share_bps",
+     "networks": ["solana", "base", "robinhood"], "supported": True, "lands": "configured", "how": "2.5% of creator rewards on new Helm launches. Collection readiness is launchpad-specific; historical immutable splits retain their beneficiaries."},
 ]
 
 # Fixed in HelmPonsRewards / HelmRewardsSplitter (HELM_BPS = 600). Existing splitters' addresses derive from that
@@ -60,9 +60,9 @@ _snap = Snapshot()
 
 
 def _env_defaults() -> dict:
-    from .pricing import TRADE_BPS
+    from .pricing import TRADE_BPS, CREATOR_SHARE_BPS
     return {"trade_fee_bps_solana": TRADE_BPS, "trade_fee_bps_evm_dex": TRADE_BPS,
-            "route_fee_bps": 0, "creator_share_bps": 0}
+            "route_fee_bps": 0, "creator_share_bps": CREATOR_SHARE_BPS}
 
 
 async def refresh(db: AsyncSession, force: bool = False) -> Snapshot:
@@ -115,9 +115,18 @@ def treasury_for(network: str) -> str:
 
 
 def creator_share(launchpad: str) -> dict:
-    """New launches always retain 100% of creator rewards, regardless of legacy settings."""
-    return {"bps": 0, "recipient": "", "supported": True,
-            "note": "100% of creator rewards stay with the creator; Helm takes no share"}
+    """Policy and verified collection capability; never silently waive a missing split."""
+    from .pricing import CREATOR_SHARE_BPS
+    network = CREATOR_SHARE_LAUNCHPADS.get(launchpad)
+    recipient = treasury_for(network) if network else ""
+    native = launchpad in {"pumpfun", "bags", "clanker", "clanker-robinhood"}
+    if launchpad == "pons":
+        native = bool(get_settings().pons_rewards_factory_v2)
+    supported = native and bool(recipient)
+    return {"bps": CREATOR_SHARE_BPS, "recipient": recipient, "supported": supported,
+            "collection": "native_split" if supported else "integration_required",
+            "note": ("2.5% of creator rewards to Helm; 97.5% to the creator" if supported else
+                     "2.5% creator-reward policy; collection is not ready for this launchpad or treasury")}
 
 
 def reset_cache() -> None:

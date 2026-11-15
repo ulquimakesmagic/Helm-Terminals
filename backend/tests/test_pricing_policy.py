@@ -34,12 +34,13 @@ def test_published_policy_is_fixed_and_has_only_two_revenue_sources(monkeypatch)
     monkeypatch.setattr(settings, "platform_fee_bps", 500)
     monkeypatch.setattr(settings, "route_fee_bps", 100)
     monkeypatch.setattr(settings, "clanker_platform_reward_bps", 1000)
-    assert pc.bps("trade_fee_bps_solana") == pc.bps("trade_fee_bps_evm_dex") == 100
-    assert pc.bps("route_fee_bps") == pc.bps("creator_share_bps") == 0
-    assert public_pricing()["launch_usd"] == 20
+    assert pc.bps("trade_fee_bps_solana") == pc.bps("trade_fee_bps_evm_dex") == 250
+    assert pc.bps("route_fee_bps") == 0
+    assert pc.bps("creator_share_bps") == public_pricing()["creator_share_bps"] == 250
+    assert public_pricing()["launch_usd"] == 0
     assert public_pricing()["referral_share_bps"] == 3000
     for pad in pc.CREATOR_SHARE_LAUNCHPADS:
-        assert pc.creator_share(pad)["bps"] == 0
+        assert pc.creator_share(pad)["bps"] == 250
 
 
 @pytest.mark.parametrize("raw", [0, 1, 99, 100, 20_000_000, 10**27 + 7])
@@ -53,39 +54,32 @@ def test_referral_split_conserves_each_base_unit(raw):
 async def test_admin_and_explicit_exemption_apply_to_launches_only(client):
     user, wallet, launch, job = await objects()
     async with get_sessionmaker()() as db:
-        assert await charges.exemption(db, user) is None
+        assert await charges.exemption(db, user) == "Launches are free for every account"
         db.add(AdminRole(user_id=user.id, role="viewer", granted_by="test"))
         await db.commit()
-        assert await charges.exemption(db, user) == "Admin account"
-        assert pc.bps("trade_fee_bps_solana") == 100
+        assert await charges.exemption(db, user) == "Launches are free for every account"
+        assert pc.bps("trade_fee_bps_solana") == 250
         role = (await db.execute(select(AdminRole).where(AdminRole.user_id == user.id))).scalar_one()
         await db.delete(role)
         db.add(LaunchFeeExemption(user_id=user.id, enabled=True, reason="Approved launch promotion", changed_by=user.id))
         await db.commit()
-        assert await charges.exemption(db, user) == "Account launch-fee exemption"
+        assert await charges.exemption(db, user) == "Launches are free for every account"
         terms, approval, warnings = await charges.launch_quote(db, user, None, launch, wallet)
         assert terms["exempt"] and terms["usd"] == 0 and approval is None and not warnings
 
 
-async def test_stablecoin_quote_is_exact_and_bound_to_the_account_and_treasury(client, fake_rpc, monkeypatch):
+@pytest.mark.parametrize("network", ["solana", "base", "ethereum", "bsc", "robinhood", "tron", "near", "arc"])
+async def test_free_launch_quote_needs_no_stablecoin_price_or_treasury(client, network):
     user, wallet, launch, job = await objects()
-    treasury = str(Keypair().pubkey())
-    monkeypatch.setattr(get_settings(), "platform_fee_wallet", treasury)
-    fake_rpc.tokens[wallet.address] = 20_000_000
-    ex = SimpleNamespace(rpc=fake_rpc)
+    launch.network = wallet.network = network
     async with get_sessionmaker()() as db:
-        terms, approval, warnings = await charges.launch_quote(db, user, ex, launch, wallet)
-        assert terms["asset"] == "USDC" and terms["amount_raw"] == "20000000" and not warnings
-        confirmed, _, _ = await charges.launch_quote(db, user, ex, launch, wallet, approval)
-        assert confirmed == terms
-        monkeypatch.setattr(get_settings(), "platform_fee_wallet", str(Keypair().pubkey()))
-        pc.reset_cache()
-        with pytest.raises(HTTPException) as error:
-            await charges.launch_quote(db, user, ex, launch, wallet, approval)
-        assert error.value.status_code == 409
+        terms, approval, warnings = await charges.launch_quote(db, user, None, launch, wallet, "obsolete-paid-approval")
+        assert terms["usd"] == terms["standard_usd"] == 0 and terms["exempt"]
+        assert approval is None and warnings == []
+        assert await charges.pay_launch(db, None, job, launch)
 
 
-async def test_confirmed_launch_credit_is_not_charged_twice_and_accounts_for_referrals(client, monkeypatch):
+async def test_confirmed_trade_payment_is_not_charged_twice_and_accounts_for_referrals(client, monkeypatch):
     from app.models import ReferralLink
     user, wallet, launch, job = await objects()
     treasury = str(Keypair().pubkey())
@@ -103,8 +97,8 @@ async def test_confirmed_launch_credit_is_not_charged_twice_and_accounts_for_ref
         await db.commit()
         current = await db.get(Job, job.id)
         terms = dict(network="solana", asset="USDC", token="mint", decimals=6, amount_raw="20000000", destination=treasury)
-        first = await charges.collect(db, None, current, wallet, "launch", terms, f"launch:{launch.id}")
-        second = await charges.collect(db, None, current, wallet, "launch", terms, f"launch:{launch.id}")
+        first = await charges.collect(db, None, current, wallet, "trade", terms, f"launch:{launch.id}")
+        second = await charges.collect(db, None, current, wallet, "trade", terms, f"launch:{launch.id}")
         assert first.status == second.status == "confirmed" and len(calls) == 1
         row = (await db.execute(select(PlatformCharge))).scalar_one()
         assert (row.amount_raw, row.platform_raw, row.referral_raw) == (20_000_000, 14_000_000, 6_000_000)
@@ -112,7 +106,7 @@ async def test_confirmed_launch_credit_is_not_charged_twice_and_accounts_for_ref
         event = (await db.execute(select(RevenueEvent))).scalar_one()
         assert event.amount_raw == 14_000_000 and event.status == "received"
         terms, _, _ = await charges.launch_quote(db, user, None, launch, wallet)
-        assert terms["exempt"] and terms["reason"] == "Launch fee already paid for this draft"
+        assert terms["exempt"] and terms["reason"] == "Launches are free for every account"
 
 
 async def test_uncertain_payment_is_never_replayed(client, monkeypatch):
@@ -126,8 +120,8 @@ async def test_uncertain_payment_is_never_replayed(client, monkeypatch):
     terms = dict(network="solana", asset="SOL", token=None, decimals=9, amount_raw="1000000", destination=str(Keypair().pubkey()))
     async with get_sessionmaker()() as db:
         current = await db.get(Job, job.id)
-        assert (await charges.collect(db, None, current, wallet, "launch", terms, "same-launch")).status == "timeout"
-        assert (await charges.collect(db, None, current, wallet, "launch", terms, "same-launch")).status == "timeout"
+        assert (await charges.collect(db, None, current, wallet, "trade", terms, "same-launch")).status == "timeout"
+        assert (await charges.collect(db, None, current, wallet, "trade", terms, "same-launch")).status == "timeout"
         assert len(calls) == 1
         event = (await db.execute(select(RevenueEvent))).scalar_one()
         assert event.status == "pending"
@@ -142,23 +136,23 @@ async def test_large_raw_amounts_round_trip_without_float_conversion(client, mon
     monkeypatch.setattr(charges, "_send", send)
     terms = dict(network="solana", asset="TEST", token=None, decimals=27, amount_raw=str(raw), destination=str(Keypair().pubkey()))
     async with get_sessionmaker()() as db:
-        await charges.collect(db, None, await db.get(Job, job.id), wallet, "launch", terms, "large")
+        await charges.collect(db, None, await db.get(Job, job.id), wallet, "trade", terms, "large")
     async with get_sessionmaker()() as db:
         row = (await db.execute(select(PlatformCharge))).scalar_one()
         event = (await db.execute(select(RevenueEvent))).scalar_one()
         assert row.amount_raw == raw and event.amount_raw == raw
 
 
-async def test_expired_launch_approval_never_signs_or_creates_income(client, monkeypatch):
+async def test_obsolete_launch_payment_cannot_reach_signer(client, monkeypatch):
     user, wallet, launch, job = await objects()
     async def forbidden(*args):
-        raise AssertionError("Expired approval reached the signer")
+        raise AssertionError("A free launch must not request a payment signature")
     monkeypatch.setattr(charges, "_send", forbidden)
-    terms = dict(network="solana", asset="SOL", decimals=9, amount_raw="10",
+    terms = dict(network="solana", asset="SOL", decimals=9, amount_raw="100000000",
                  destination=str(Keypair().pubkey()), expires=1)
     async with get_sessionmaker()() as db:
-        result = await charges.collect(db, None, await db.get(Job, job.id), wallet, "launch", terms, "expired")
-        assert result.status == "failed" and "expired" in result.error
+        result = await charges.collect(db, None, await db.get(Job, job.id), wallet, "launch", terms, "obsolete")
+        assert result.status == "failed" and "free" in result.error
         assert not (await db.execute(select(PlatformCharge))).scalars().all()
         assert not (await db.execute(select(RevenueEvent))).scalars().all()
 
@@ -218,31 +212,25 @@ def test_approved_swap_floor_rejects_changed_assets_and_worse_execution(monkeypa
         qa.verify(token[:-1] + ("0" if token[-1] != "0" else "1"), "user", {"purpose": "swap"})
 
 
-async def test_launch_api_requires_reviewed_stable_payment_then_deploys_once(client, fake_rpc):
+async def test_launch_api_is_free_without_stablecoin_and_deploys_once(client, fake_rpc):
     from .conftest import signup
     from .test_api import make_wallets
-    h = await signup(client, "paid-launch@example.com", launch_exempt=False)
+    h = await signup(client, "free-launch@example.com", launch_exempt=False)
     wallet = (await make_wallets(client, h))[0]
-    fake_rpc.tokens[wallet["address"]] = 20_000_000
-    launch = (await client.post("/launches", headers=h, json={"name": "Paid", "symbol": "PAID",
+    launch = (await client.post("/launches", headers=h, json={"name": "Free", "symbol": "FREE",
         "dev_wallet_id": wallet["id"]})).json()
     path = f"/launches/{launch['id']}/deploy"
     preview = (await client.post(path, headers=h, json={})).json()
-    terms = preview["preflight"]["launch_fee_payment"]
-    assert terms["amount_raw"] == "20000000" and terms["asset"] == "USDC" and not terms["exempt"]
-    rejected = await client.post(path, headers=h, json={"confirm": True, "preflight_hash": preview["preflight_hash"],
-        "idempotency_key": "missing-payment-approval"})
-    assert rejected.status_code == 409 and not fake_rpc.sent
-    body = {"confirm": True, "preflight_hash": preview["preflight_hash"], "idempotency_key": "paid-launch",
-            "launch_fee_approval": preview["launch_fee_approval"]}
+    assert preview["preflight"]["launch_fee_payment"]["usd"] == 0
+    assert preview["launch_fee_approval"] is None and fake_rpc.tokens == {}
+    body = {"confirm": True, "preflight_hash": preview["preflight_hash"], "idempotency_key": "free-launch"}
     first = await client.post(path, headers=h, json=body)
     assert first.status_code == 200, first.text
-    assert len(fake_rpc.sent) == 2  # one exact USDC fee payment, then one deployment
+    assert len(fake_rpc.sent) == 2
     replay = await client.post(path, headers=h, json=body)
     assert replay.status_code == 200 and replay.json()["job_id"] == first.json()["job_id"]
     assert len(fake_rpc.sent) == 2
-    payments = (await client.get("/billing", headers=h)).json()["payments"]
-    assert len(payments) == 1 and payments[0]["amount_raw"] == "20000000" and payments[0]["status"] == "confirmed"
+    assert (await client.get("/billing", headers=h)).json()["payments"] == []
 
 
 async def test_launch_exemption_requires_owner_step_up_and_records_audit(client):
@@ -258,9 +246,9 @@ async def test_launch_exemption_requires_owner_step_up_and_records_audit(client)
     assert denied.status_code in {400,401,403}
     allowed = await client.put(path, headers=owner, json={**data, "confirm": await proof(secret)})
     assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["trade_fee_bps"] == 100
+    assert allowed.json()["trade_fee_bps"] == 250
     result = (await client.get("/billing", headers=h)).json()
-    assert result["launch_exempt"] and result["pricing"]["trade_bps"] == 100
+    assert result["launch_exempt"] and result["pricing"]["trade_bps"] == 250
     audit = (await client.get("/admin/audit", headers=owner)).json()["items"]
     assert any(row["action"] == "launch_fee.exemption" and row["target"] == target for row in audit)
 
@@ -278,7 +266,7 @@ async def test_initial_buy_fee_is_not_waived_and_recovery_never_signs(client, mo
         current, draft = await db.get(Job, job.id), await db.get(Launch, launch.id)
         draft.status = "live"
         current.params = {"launch_fee_payment": {"exempt": True}, "initial_buy_fee": {
-            "wallet_id": wallet.id, "amount_raw": "5000000", "basis_raw": "500000000", "asset": "SOL",
+            "wallet_id": wallet.id, "amount_raw": "12500000", "basis_raw": "500000000", "asset": "SOL",
             "decimals": 9, "network": "solana", "policy": charges.POLICY_VERSION,
             "destination": str(Keypair().pubkey())}, "execution": {"version": 1,
             "dispatch_complete": True, "required": [], "outcomes": [{"signature": "deployment", "status": "confirmed"}]}}
@@ -286,9 +274,9 @@ async def test_initial_buy_fee_is_not_waived_and_recovery_never_signs(client, mo
         first = await charges.initial_buy_fee(db, None, current, draft, wallet, recovery=recovery)
         second = await charges.initial_buy_fee(db, None, current, draft, wallet, recovery=True)
         assert first.status == second.status == ("failed" if recovery else "confirmed")
-        assert calls == ([] if recovery else [5_000_000])
+        assert calls == ([] if recovery else [12_500_000])
         row = (await db.execute(select(PlatformCharge))).scalar_one()
-        assert row.kind == "trade" and row.amount_raw == 5_000_000
+        assert row.kind == "trade" and row.amount_raw == 12_500_000
         assert row.status == ("failed" if recovery else "confirmed")
         assert current.status == ("partial" if recovery else "confirmed")
 

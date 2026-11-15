@@ -55,7 +55,7 @@ async def settle(charge_id: str, body: SpendConfirm, user: User = Depends(curren
     pf = build_preflight("fee_payment", {"charge_id": row.id, "network": row.network,
         "wallet": wallet.address, "asset": row.asset, "amount_raw": str(int(row.amount_raw)),
         "decimals": row.decimals, "destination": row.destination,
-        "platform_fee": "Settlement of the original 1% fee; no additional Helm charge"})
+        "platform_fee": "Settlement of the original reviewed trading fee; no additional Helm charge"})
     if not body.confirm:
         return pf
     job, created = await begin_spend(db, user, body, pf, "fee_payment", row.launch_id, pf["preflight"])

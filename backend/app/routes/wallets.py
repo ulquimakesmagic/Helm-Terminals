@@ -763,12 +763,12 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
     from ..services.charges import trade_terms
     fee_terms = await trade_terms(db, w.network)
     warnings = []
-    needed = amount_raw + amount_raw // 100
+    needed = amount_raw + amount_raw * 250 // 10_000
     if body.input_mint == "native":
         if await rpc.get_balance(w.address) < needed + 10_000_000:
-            warnings.append("Keep the swap amount, its 1% fee and SOL for network costs in this wallet.")
+            warnings.append("Keep the swap amount, its 2.5% fee and SOL for network costs in this wallet.")
     elif await rpc.get_token_balance(w.address, in_mint) < needed:
-        warnings.append("Keep the input amount plus its 1% fee in this wallet.")
+        warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
     if impact >= 0.1:
         warnings.append(f"price impact is {impact * 100:.1f}% — check the route before confirming")
     warnings += two_fa_warnings(user, "swap")
@@ -778,7 +778,7 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
         "output": f"at least {min_out:g} {out_meta['symbol']}",
         "estimated_output": f"{out_amount:g} {out_meta['symbol']}",
         "route": route, "price_impact": f"{impact * 100:.2f}%", "slippage": f"{body.slippage_pct:g}%",
-        "platform_fee": "1% of the input amount, paid in the input asset after the swap confirms",
+        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
         "trade_fee_terms": fee_terms,
     }, warnings)
     if not body.confirm:
@@ -872,9 +872,9 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
     try:
         gas = await fee_reserve(ex, net, 2, ROUTE_GAS)
         native_bal = await sender.rpc.get_balance(w.address) / WEI
-        need = gas + (body.amount * 1.01 if body.input_mint == "native" else 0)
-        if body.input_mint != "native" and await sender.rpc.erc20_balance(in_cur, w.address) < amount_raw + amount_raw // 100:
-            warnings.append("Keep the input amount plus its 1% fee in this wallet.")
+        need = gas + (body.amount * 1.025 if body.input_mint == "native" else 0)
+        if body.input_mint != "native" and await sender.rpc.erc20_balance(in_cur, w.address) < amount_raw + amount_raw * 250 // 10_000:
+            warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
         if native_bal < need:
             warnings.append(f"{w.label or w.address[:8]} needs about {need:.6f} {native_coin(net)} on "
                             f"{chain_name(net)} for network fees" + (" plus the amount" if body.input_mint == "native" else "") + ".")
@@ -892,7 +892,7 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                              if summary and summary.get("receive_estimate") is not None else None),
         "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%",
         "quote": summary, "provider": "Relay (relay.link)",
-        "platform_fee": "1% of the input amount, paid in the input asset after the swap confirms",
+        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
         "trade_fee_terms": fee_terms,
     }, warnings)
     if not body.confirm:

@@ -133,8 +133,12 @@ def list_launchpads() -> list[dict]:
         reason = needs_setup(lid)
         from ..services.capabilities import launchpad_capabilities
         status = "setup_required" if reason else "available"
+        capabilities = launchpad_capabilities(lid, a.network, status)
+        if not reason and not capabilities["creator_reward_collection_ready"]:
+            reason = capabilities["creator_reward_note"]
+            status = "setup_required"
         out.append({"id": lid, "network": a.network, "quote_assets": a.quote_assets,
-                    "status": status, "capabilities": launchpad_capabilities(lid, a.network, status), **({"reason": reason} if reason else {})})
+                    "status": status, "capabilities": capabilities, **({"reason": reason} if reason else {})})
     for lid, net in PLANNED:
         out.append({"id": lid, "network": net, "quote_assets": [], "status": "planned",
                     "capabilities": launchpad_capabilities(lid, net, "planned")})

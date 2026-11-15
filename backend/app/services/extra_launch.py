@@ -178,7 +178,7 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
         "amount_unit": f"{unit(l.network)} per wallet" if body.side == "buy" else
         ("% of each wallet's deposit" if l.launchpad == "meme-cooking" else "% of each wallet's tokens"),
         "wallets": [w.address for w, _ in plans], "slippage_pct": body.slippage_pct,
-        "platform_fee": "1% of the trade notional; 30% of the fee goes to your referrer when applicable",
+        "platform_fee": "2.5% of the trade notional; 30% of the fee goes to your referrer when applicable",
         "trade_fee_terms": fee_terms,
         "per_wallet": [p.summary for _, p in plans]}, warnings)
     pf["preflight"]["estimates"] = [p.display for _, p in plans]
@@ -199,8 +199,12 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
                 if outcome and all(r.status == "confirmed" for r in outcome):
                     from .charges import charge_trade
                     after = await xc.native_balance(ex, l.network, w.address)
-                    # Native proceeds are measured; protocol fees reduce the proceeds before Helm's 1%.
-                    basis = native_raw(l.network, body.amount) if body.side == "buy" else max(0, after - before)
+                    # Unrelated deposits must never inflate the fee. Until an exact
+                    # protocol receipt decoder exists, cap measured native gains at
+                    # this sale's quoted output and refuse an unverifiable basis.
+                    expected = plan.display.get("expected_out_native_raw")
+                    basis = (native_raw(l.network, body.amount) if body.side == "buy" else
+                             min(max(0, after - before), max(0, int(expected or 0))))
                     fee = await charge_trade(session, ex, j, w, basis)
                     if fee.status != "confirmed":
                         results.append(StepResult(fee.signature, fee.status, fee.error))

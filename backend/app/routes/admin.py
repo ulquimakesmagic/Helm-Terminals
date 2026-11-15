@@ -199,14 +199,15 @@ async def revenue_summary(start: str | None = None, end: str | None = None, netw
     liabilities = [{"network": net, "asset": "SOL" if net == "solana" else net.upper(),
                     "amount_raw": str(int(total or 0)), "decimals": 9 if net == "solana" else 18, "entries": n}
                    for net, total, n in owed_rows]
-    grouped = {}
+    grouped = {(row["network"], row["asset"], row["decimals"]): (int(row["amount_raw"]), row["entries"])
+               for row in liabilities}
     for charge in (await db.execute(select(PlatformCharge).where(PlatformCharge.status == "confirmed",
         PlatformCharge.referral_status == "owed", PlatformCharge.referral_raw > 0))).scalars():
         key = (charge.network, charge.asset, charge.decimals)
         raw, count = grouped.get(key, (0, 0))
         grouped[key] = (raw + int(charge.referral_raw), count + 1)
-    liabilities.extend({"network": net, "asset": asset, "decimals": dec, "amount_raw": str(raw), "entries": count}
-                       for (net, asset, dec), (raw, count) in grouped.items())
+    liabilities = [{"network": net, "asset": asset, "decimals": dec, "amount_raw": str(raw), "entries": count}
+                   for (net, asset, dec), (raw, count) in sorted(grouped.items())]
     return {
         "totals": sorted(buckets.values(), key=lambda b: (b["network"], b["asset"])),
         "by_source": [by_source.get(src, {"source": src, "entries": 0, "by_asset": []}) for src in SOURCES],
@@ -680,7 +681,7 @@ async def set_launch_exemption(user_id: str, body: LaunchExemptionChange, reques
     await audit(db, user, "launch_fee.exemption", user_id,
                 {"enabled": [old, body.enabled], "reason": [None, body.reason]}, request)
     await db.commit()
-    return {"user_id": user_id, "enabled": body.enabled, "trade_fee_bps": 100}
+    return {"user_id": user_id, "enabled": body.enabled, "trade_fee_bps": 250}
 
 
 async def _target(db: AsyncSession, actor: User, user_id: str) -> User:

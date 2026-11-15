@@ -8,22 +8,16 @@ migration, deployment, live wallet transaction or treasury payout was performed.
 
 | Item | Behavior |
 |---|---|
-| Launch | $20 in a supported chain stablecoin, otherwise an expiring native-coin USD quote |
-| Admin / approved exception | Launch fee waived; trading fee remains 1% |
-| Manual / scheduled trade / wallet swap | Fixed 1%; no additional Helm router fee |
-| Creator allocation | No new Helm recipient, splitter or commission |
+| Launch | Free for every account; no subscription or price-feed prerequisite |
+| Admin / approved exception | Launches are already free; trading fee remains 2.5% |
+| Manual / scheduled trade / wallet swap | Fixed 2.5%; no additional Helm router fee |
+| Creator allocation | 2.5% on new Helm launches; unsupported collection paths block new reward-bearing deployment |
 | Bridging / transfers | No Helm markup; third-party costs remain |
-| Referral | 30% of actual confirmed Helm fees; $6 on a paid $20 launch |
+| Referral | 30% of actual confirmed Helm fees; $0.75 from a $2.50 fee |
 
-Launch fee consent binds the account, draft, network, managed payer, recipient, amount and expiry. A confirmed
-payment is a credit for the same draft when deployment fails. Uncertain payments are reconciled by signature,
-never automatically repeated. Payment and referral amounts stay in exact integer base units. Referral liabilities
-are excluded from reported Helm income. Historical immutable on-chain reward allocations cannot be rewritten
-by changing this application and retain their original beneficiaries.
+Launch collectors are disabled, including retired helpers supplied historical quotations. Trading consent binds policy, network, managed payer, recipient and amounts. Uncertain payments reconcile by signature without automatically repeating them. Integer base units keep referral liabilities separate from Helm income. Historical immutable reward contracts retain their original rates and beneficiaries.
 
-Admin launch exceptions require the owner role, password, a fresh authenticator code and an audited reason.
-Normal users cannot grant themselves exceptions. Fee policy values cannot be changed through stale environment
-or database rate settings. Missing treasury configuration blocks the affected financial action.
+Old launch-exemption records no longer affect pricing because all launches are free. Fee policy values cannot be changed by stale environment/database rates. Missing treasury configuration blocks the affected financial action.
 
 Solana fees normally execute atomically with the trade. Standalone fees use the tracked payment ledger, including
 failed-fee settlement and a guard against placing further trades while a definitively failed fee remains owed.
@@ -32,10 +26,7 @@ and reject expired, changed or worse fresh quotes. Tracked EVM router steps reta
 
 ## Integration coverage
 
-The implemented adapters are Pump.fun, LetsBonk, Bags, Meteora DBC, Flap on BNB/Base/Robinhood, Clanker on
-Base/Robinhood, Pons, Four.meme, Uniswap V2, SunPump, Meme.Cooking and Tolly: 15 variants. Creation and trading
-use the common pricing policy. The API advertises claim, automation and configuration capabilities explicitly.
-An implemented adapter may still need an API key, enabled network, funding or provider access.
+Implemented adapters include Pump.fun, LetsBonk, Bags, Meteora DBC, Printr, Flap on BNB/Base/Robinhood, Clanker on Base/Robinhood, Pons, Four.meme, Uniswap V2, SunPump, Meme.Cooking and Tolly: 16 identifiers. Implementation is not mainnet certification. Capabilities reveal collection readiness separately. New reward-bearing deployments require verified 2.5% collection, while existing tokens remain manageable. Pump.fun/Bags SOL/Clanker use native splits. Pons V2 artifacts reserve 250 bps; historical 600-bps artifacts remain pinned. Claims do not collect a second Helm fee from already split rewards. Other reward paths remain blocked pending integration.
 
 The subsequently integrated upstream changes add Printr as a sixteenth implemented adapter and remove GasPump
 from the roadmap. Surge, Anoncoin, Stonkfun and Bankr remain planned. Elpida is also explicitly planned on its
@@ -67,11 +58,10 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 
 ## Verification and dependency findings
 
-- 21 pricing/migration tests passed, including exact referral conservation, launch consent, payment reuse,
-  expiry, failed-fee retry, reconciliation, account isolation and audited exception permissions.
-- Frontend: 13 tests passed; TypeScript and Vite production build passed.
+- Updated pricing/API regressions are running; no passing full-suite claim yet. Older pricing results below predate the latest policy.
+- Frontend: 19 tests passed; TypeScript and Vite production build passed for current pricing.
 - Real isolated PostgreSQL: 2 execution lease/nonce tests passed.
-- Legacy Pons contract execution: 6 tests passed; pinned-bytecode/source-drift check: 1 test passed.
+- Twenty Solidity execution tests pass across new Pons V2, historical Pons and historical generalized splitters: rounding, replay protection, rejecting beneficiaries and reentrancy.
 - The final migration-only rerun passes all 3 tests, including scientific-notation legacy SQLite values.
 - Full backend and contract results are recorded separately in the evidence logs after completion.
 - Python dependency audit: no known vulnerabilities after updating four packages. The lock includes transitive
@@ -84,8 +74,7 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 
 1. Review and apply migration `42c9a01f0004` to an isolated staging copy, verify backup restoration, then schedule
    the production migration with writers stopped. Production startup checks schema revision.
-2. Configure and fund each enabled network's treasury, stablecoin payer and gas reserves. Verify exact recipients
-   and amounts with small controlled staging transactions. Native fallback pricing must have a fresh USD source.
+2. Configure each enabled network's treasury and gas reserves. Deploy and verify the separate Pons V2 factory. Complete missing reward collection and receipt indexing before enabling new reward-bearing routes. No stablecoin launch payer or USD launch-price source is required.
 3. Complete per-adapter mainnet acceptance: creation, curve trades, graduation/DEX trades, claims, simulation
    refusal, expired quotes, RPC loss and restart recovery. Protocol payload validation is not yet a universal
    semantic decoder: signer/recipient checks and simulation alone do not prove every opaque provider instruction
@@ -93,7 +82,7 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 4. Validate sell-fee notional against protocol receipts/traces, including chain-specific gas, token transfer taxes
    and unrelated balance movements. Current native balance/simulation measurements are not a universal receipt
    decoder. Test nonstandard input tokens before enabling them for fee-bearing swaps.
-   Initial developer buys now have explicit 1% consent and post-confirmation collection, including exempt/admin
+   Initial developer buys now have explicit 2.5% consent and post-confirmation collection, including exempt/admin
    launches. Recovery records unsettled fees for explicit billing settlement without resuming signing. Focused
    tests exercise collection and recovery; per-adapter live acceptance remains necessary.
 5. Referral shares collected into treasuries are recorded as owed. This change does not provide an automatic
@@ -104,7 +93,7 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
    limits, trusted proxy configuration, production signer restrictions and disaster recovery. The in-process
    job orchestrator reconciles evidence but deliberately does not blindly resume interrupted signing work.
 
-The release should remain gated on these items; passing local tests does not certify that real funds are safe.
+The release remains gated on these items; passing local tests does not certify mainnet behavior. Railway Hobby snapshots are unavailable and no public database URL is configured; no production database writes occurred during backup attempts. The repository is now public and CI jobs start successfully; release-head results remain pending. The live apex still serves an older build; www maps to a missing Vercel deployment. See [Proxima infrastructure analysis](proxima-infrastructure-analysis.md) for the next features and dependencies.
 
 Regression status: the broad diagnostic reported failures and was stopped before integrating 33 upstream commits.
 It was not a passing full suite. After integration, the production build, 19 frontend tests and 24 focused

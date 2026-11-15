@@ -308,7 +308,7 @@ async def run_trade(
     results: list[SubmitResult] = []
     plan = plan or FeePlan(0, "")
     if not plan.active:
-        failure = SubmitResult(None, "failed", "A configured 1% trading-fee treasury is required")
+        failure = SubmitResult(None, "failed", "A configured 2.5% trading-fee treasury is required")
         for wallet in wallets:
             await _record(db, job, wallet, side, failure, None)
         _finish(job, [failure])
@@ -325,7 +325,7 @@ async def run_trade(
             basis = max(0, after - await ex.rpc.get_balance(w.address)) if after is not None else 0
         platform, referral = plan.split(basis)
         if basis <= 0:
-            raise AdapterError("The sell proceeds could not be verified for the 1% fee")
+            raise AdapterError("The sell proceeds could not be verified for the 2.5% fee")
         if platform + referral <= 0:
             return None, []
         status = "none"

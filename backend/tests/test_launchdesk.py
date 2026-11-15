@@ -409,6 +409,7 @@ async def test_fewer_orders_shrink_the_sell_total_and_no_order_grows(client, fak
     h = await signup(client)
     lid, _, ws = await live_launch(client, h, fake_rpc)
     fake_rpc.tokens[ws[0]["address"]] = 120 * 10**6
+    fake_rpc.next_delta = 1_000_000_000  # successful sell simulation returns SOL, rather than only spending gas
     body, pf, path = await make_plan(client, h, lid, ws[0]["id"], side="sell", budget=None, sell_amount=120,
                                      total_orders=12)
     aid = (await confirm_plan(client, h, path, body, pf, "shrink-plan")).json()["id"]
@@ -417,7 +418,7 @@ async def test_fewer_orders_shrink_the_sell_total_and_no_order_grows(client, fak
     ex = Executor(fake_rpc, get_signer())
     for _ in range(2):
         await due(aid)
-        assert await run_due_automation_once(ex)
+        assert await run_due_automation_once(ex), (await client.get(f"/automations/{aid}", headers=h)).text
     async with get_sessionmaker()() as db:
         amounts = [j.params["amount"] for j in (await db.execute(select(Job).where(Job.kind == "scheduled_sell")
                                                                  .order_by(Job.created_at))).scalars()]

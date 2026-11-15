@@ -136,12 +136,12 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
     return {
         "codes": [{"code": c.code, "uses": c.uses, "max_uses": c.max_uses} for c in codes],
         "referred_users": referred,
-        "earned_sol": by_status.get("paid", 0) / LAMPORTS_PER_SOL,
-        "owed_sol": by_status.get("owed", 0) / LAMPORTS_PER_SOL,
+        "earned_sol": earnings.get(("solana", "SOL", 9), {}).get("paid_raw", 0) / LAMPORTS_PER_SOL,
+        "owed_sol": earnings.get(("solana", "SOL", 9), {}).get("owed_raw", 0) / LAMPORTS_PER_SOL,
         "payout_address": payout.address if payout else None,
         "share_pct": 30,
         "fee_pct": fee_bps / 100,
-        "launch_fee_usd": 20, "launch_referral_usd": 6,
+        "launch_fee_usd": 0, "launch_referral_usd": 0,
         "earnings": [{"network": net, "asset": asset, "decimals": dec,
                       **{name: str(value) for name, value in bucket.items()}}
                      for (net, asset, dec), bucket in sorted(earnings.items())],

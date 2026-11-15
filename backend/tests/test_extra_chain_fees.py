@@ -19,7 +19,7 @@ TREASURY_T = "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"
 TREASURY_A = "0x" + "7a" * 20
 
 
-async def fees_on(monkeypatch, trx_price=0.25, trade_bps=100):
+async def fees_on(monkeypatch, trx_price=0.25, trade_bps=250):
     s = get_settings()
     monkeypatch.setattr(s, "launch_fee_usd", 10.0)
     monkeypatch.setattr(s, "platform_fee_bps", trade_bps)
@@ -49,7 +49,7 @@ async def events(source):
         return list((await db.execute(select(RevenueEvent).where(RevenueEvent.source == source))).scalars())
 
 
-async def test_sunpump_pays_the_launch_fee_in_trx_and_one_percent_on_trades(client, pads, monkeypatch):
+async def test_sunpump_launch_is_free_and_trades_pay_25_percent(client, pads, monkeypatch):
     async def nosleep(*_):
         return None
     monkeypatch.setattr(asyncio, "sleep", nosleep)
@@ -65,16 +65,15 @@ async def test_sunpump_pays_the_launch_fee_in_trx_and_one_percent_on_trades(clie
     body = {}
     pf = (await client.post(f"/launches/{lid}/deploy", json=body, headers=h)).json()
     p = pf["preflight"]
-    assert p["platform_fee"] == "$10, paid in TRX at the live price after the token is created", p
-    assert p["launch_fee_estimate"] == "about 40 TRX right now" and p["launch_fee_max"] == "at most 44 TRX"
+    assert p["launch_fee_payment"]["usd"] == 0 and pf["launch_fee_approval"] is None
+    assert p["initial_buy_fee"]["amount_raw"] == str(50 * ep.TRX * 250 // 10000)
     r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                          "quote_approval": pf["quote_approval"],
+                                                          "quote_approval": pf.get("quote_approval"),
                                                           "idempotency_key": "sp-fee"}, headers=h)
     assert r.status_code == 200, r.text
     assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "live"
-    assert trx_transfers(t, TREASURY_T) == [40 * ep.TRX]  # $10 / $0.25
-    (ev,) = await events("launch_fee")
-    assert ev.status == "received" and ev.network == "tron" and int(ev.amount_raw) == 40 * ep.TRX
+    assert trx_transfers(t, TREASURY_T) == [50 * ep.TRX * 250 // 10000]
+    assert await events("launch_fee") == []
 
     from app.services import extra_launch
 
@@ -89,14 +88,14 @@ async def test_sunpump_pays_the_launch_fee_in_trx_and_one_percent_on_trades(clie
     t.accounts[dev["address"]] = 500 * ep.TRX
     pf, r = await _go(client, h, f"/launches/{lid}/trade",
                       {"side": "buy", "wallet_ids": [dev["id"]], "amount": 200, "slippage_pct": 5}, "sp-buy")
-    assert pf["preflight"]["platform_fee"].startswith("1% of the TRX spent")
+    assert pf["preflight"]["platform_fee"].startswith("2.5% of the trade notional")
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed", job
-    assert trx_transfers(t, TREASURY_T)[-1] == 2 * ep.TRX  # 1% of 200 TRX
-    assert [e.status for e in await events("trade_fee")] == ["received"]
+    assert trx_transfers(t, TREASURY_T)[-1] == 5 * ep.TRX  # 2.5% of 200 TRX
+    assert [e.status for e in await events("trade_fee")] == ["received", "received"]
 
 
-async def test_a_trx_price_jump_after_the_preview_needs_a_new_review(client, pads, monkeypatch):
+async def test_free_launch_does_not_depend_on_a_trx_launch_fee_price(client, pads, monkeypatch):
     await fees_on(monkeypatch, trx_price=0.25)
     t = FakeSunPump()
     xc._clients["tron"] = t
@@ -110,12 +109,13 @@ async def test_a_trx_price_jump_after_the_preview_needs_a_new_review(client, pad
         return {"TRX": 0.10}  # 100 TRX now, far above the approved 44
     monkeypatch.setattr("app.services.portfolio.coin_prices", cheaper)
     r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                          "quote_approval": pf["quote_approval"],
+                                                          "quote_approval": pf.get("quote_approval"),
                                                           "idempotency_key": "sp-jump"}, headers=h)
-    assert r.status_code == 400 and "moved more than 10%" in r.json()["detail"] and t.broadcasts == []
+    assert r.status_code == 200, r.text
+    assert await events("launch_fee") == []
 
 
-async def test_tolly_charges_the_launch_fee_in_usdc_and_meme_cooking_charges_nothing(client, pads, monkeypatch):
+async def test_tolly_launch_is_free_but_its_initial_buy_pays_a_trading_fee(client, pads, monkeypatch):
     from app.services import extra_launch
     from app.services.executor import Executor
 
@@ -134,14 +134,15 @@ async def test_tolly_charges_the_launch_fee_in_usdc_and_meme_cooking_charges_not
     dev = (await client.post("/wallets", json={"network": "arc", "count": 1}, headers=h)).json()[0]
     lid = (await _launch(client, h, "tolly", dev, dev_buy_sol=100))["id"]
     pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-    assert pf["preflight"]["platform_fee"].startswith("$10, paid in USDC"), pf["preflight"]
+    assert pf["preflight"]["launch_fee_payment"]["usd"] == 0, pf["preflight"]
     r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                          "quote_approval": pf["quote_approval"],
+                                                          "quote_approval": pf.get("quote_approval"),
                                                           "idempotency_key": "tolly-fee"}, headers=h)
     assert r.status_code == 200, r.text
     fee_call = arc.sent[-1]
-    assert fee_call.to.lower() == TREASURY_A and fee_call.value == 10 * 10**18 and fee_call.data == b""
-    (ev,) = await events("launch_fee")
+    assert fee_call.to.lower() == TREASURY_A and fee_call.value == 100 * 10**18 * 250 // 10000 and fee_call.data == b""
+    assert await events("launch_fee") == []
+    (ev,) = await events("trade_fee")
     assert ev.network == "arc" and ev.asset == "USDC" and ev.status == "received"
 
     from app.services import launch_fee
@@ -163,12 +164,11 @@ async def test_a_failed_fee_never_undoes_the_launch(client, pads, monkeypatch):
     monkeypatch.setattr("app.services.launch_fee.send_native", boom)
     pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
     r = await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                          "quote_approval": pf["quote_approval"],
+                                                          "quote_approval": pf.get("quote_approval"),
                                                           "idempotency_key": "sp-boom"}, headers=h)
     assert r.status_code == 200, r.text
     assert (await client.get(f"/launches/{lid}", headers=h)).json()["status"] == "live"
-    (ev,) = await events("launch_fee")
-    assert ev.status == "failed"
+    assert await events("launch_fee") == []
 
 
 async def test_a_sell_fee_is_capped_at_the_sales_proceeds(client, pads, monkeypatch):
@@ -189,7 +189,7 @@ async def test_a_sell_fee_is_capped_at_the_sales_proceeds(client, pads, monkeypa
     lid = (await _launch(client, h, "sunpump", dev, dev_buy_sol=0))["id"]
     pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
     await client.post(f"/launches/{lid}/deploy", json={"confirm": True, "preflight_hash": pf["preflight_hash"],
-                                                      "quote_approval": pf["quote_approval"],
+                                                      "quote_approval": pf.get("quote_approval"),
                                                       "idempotency_key": "sp-sell-setup"}, headers=h)
     real_run = extra_launch.run_plan
 
@@ -204,4 +204,4 @@ async def test_a_sell_fee_is_capped_at_the_sales_proceeds(client, pads, monkeypa
                       {"side": "sell", "wallet_ids": [dev["id"]], "amount": 50, "slippage_pct": 5}, "sp-sell")
     expected = int(pf["preflight"]["estimates"][0]["expected_out_native_raw"])
     fees = trx_transfers(t, TREASURY_T)[n:]
-    assert all(f <= expected // 100 for f in fees)  # never 1% of the 10,000 TRX deposit
+    assert len(fees) == 1 and fees[0] <= expected * 250 // 10000  # unrelated deposit is never charged

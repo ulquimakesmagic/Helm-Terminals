@@ -63,16 +63,7 @@
       "overflow": {
         "viewport": 375,
         "width": 375,
-        "offenders": [
-          {
-            "tag": "BUTTON",
-            "cls": " security"
-          },
-          {
-            "tag": "SPAN",
-            "cls": "muted num"
-          }
-        ]
+        "offenders": []
       },
       "violations": []
     },
@@ -175,11 +166,11 @@
             "cls": ""
           },
           {
-            "tag": "TH",
+            "tag": "TBODY",
             "cls": ""
           },
           {
-            "tag": "TH",
+            "tag": "TR",
             "cls": ""
           }
         ]
@@ -281,40 +272,7 @@
       "overflow": {
         "viewport": 1024,
         "width": 1024,
-        "offenders": [
-          {
-            "tag": "TABLE",
-            "cls": "rtable"
-          },
-          {
-            "tag": "THEAD",
-            "cls": ""
-          },
-          {
-            "tag": "TR",
-            "cls": ""
-          },
-          {
-            "tag": "TH",
-            "cls": ""
-          },
-          {
-            "tag": "TH",
-            "cls": ""
-          },
-          {
-            "tag": "TH",
-            "cls": ""
-          },
-          {
-            "tag": "TH",
-            "cls": ""
-          },
-          {
-            "tag": "TBODY",
-            "cls": ""
-          }
-        ]
+        "offenders": []
       },
       "violations": []
     },
@@ -479,12 +437,7 @@
       "overflow": {
         "viewport": 375,
         "width": 375,
-        "offenders": [
-          {
-            "tag": "BUTTON",
-            "cls": " operations"
-          }
-        ]
+        "offenders": []
       },
       "violations": []
     },

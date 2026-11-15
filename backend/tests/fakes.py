@@ -121,5 +121,12 @@ class FakeAdapter:
     async def build_sell_tx(self, req):
         return await self._simple(req)
 
+    async def build_creator_share_tx(self, mint, creator, share):
+        assert share["bps"] == 250 and share["creator_bps"] == 9750
+        p = Pubkey.from_string(creator)
+        memo = Instruction(Pubkey.from_string("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+                           f"offline-share:{mint}:250".encode(), [])
+        return build_unsigned(p, [sol_transfer_ix(p, p, 1), memo], str(Hash.default()))
+
     async def build_claim_fees_tx(self, req):
         return await self._simple(req)

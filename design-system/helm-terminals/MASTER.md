@@ -15,7 +15,7 @@ Dark near-black surfaces, emerald primary actions, clear text hierarchy and thin
 Use the shared CSS variables in frontend/src/styles.css. Labels or icons accompany status colors. Avoid decorative dashboard numbers, fabricated live activity, gradients behind dense data, and competing primary buttons.
 
 ## Interaction
-Use one clear primary action per section. Financial operations preview their amount, network, wallet, recipient, costs and consequences before confirmation. Disable unavailable capabilities with an explanation. Preserve drafts, show recoverable errors, distinguish pending from confirmed, and never invite a blind retry of uncertain money movement. Show account exemptions and existing launch credits before payment.
+Use one clear primary action per section. Financial operations preview their amount, network, wallet, recipient, costs and consequences before confirmation. Disable unavailable capabilities with an explanation. Preserve drafts, show recoverable errors, distinguish pending from confirmed, and never invite a blind retry of uncertain money movement. Show free launch pricing, 2.5% trading fees and exact creator-reward terms before confirmation.
 
 ## Responsive and accessible behavior
 Support 375, 768, 1024 and 1440 CSS-pixel layouts. Stack actions and forms on narrow screens; use contained, labelled horizontal scrolling for wide tables. Touch targets reach 44 pixels. Keep focus visible, respect reduced motion, name inputs, use semantic headings and live status messages. Mobile navigation closes on Escape, contains keyboard focus, makes the background inert and restores focus.

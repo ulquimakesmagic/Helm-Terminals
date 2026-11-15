@@ -78,6 +78,7 @@ async def _fee_raised(db, automation, net: str) -> bool:
     agreed = getattr(terms, key) if terms else pc._env_defaults()[key]  # older plans: the env rate of the time
     await pc.refresh(db)
     return (pc.bps(key) > agreed or not terms or not terms.fee_terms
+            or terms.fee_terms.get("bps") != pc.bps(key)
             or terms.fee_terms.get("destination") != pc.treasury_for(net))
 
 
@@ -175,7 +176,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                 return True
             remaining = automation.total_orders - automation.runs_completed
             if automation.side == "buy":
-                fee_mult = 1.01
+                fee_mult = 1.025
                 per_wallet_required = automation.order_sol * remaining * fee_mult + await fee_reserve(ex, net, remaining)
                 for wallet in wallets:
                     if await native_balance(ex, net, wallet.address) < per_wallet_required:
@@ -251,7 +252,7 @@ async def run_due_automation_once(ex: Executor | None = None) -> bool:
                     "wallets": [w.address for w in wallets],
                     "amount": amount,
                     "network": launch.network,
-                    "trade_fee_terms": {"bps": 100, "destination": pc.treasury_for(launch.network), "network": launch.network},
+                    "trade_fee_terms": {"bps": 250, "destination": pc.treasury_for(launch.network), "network": launch.network},
                     "slippage_pct": automation.slippage_pct,
                 },
                 idempotency_key=f"automation:{automation.id}:{order_number}",

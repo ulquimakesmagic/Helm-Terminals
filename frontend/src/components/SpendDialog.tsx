@@ -50,7 +50,7 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
   }
   if (k === "launch_fee_payment" && v && typeof v === "object") {
     const terms = v as { exempt: boolean; reason?: string; amount?: string; asset?: string; payer?: string; destination?: string; payment_terms?: string };
-    return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small good">100% of creator rewards stay with you.</p></div>;
+    return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small text-2">New Helm launches share 2.5% of creator rewards; review the launchpad’s reward terms below.</p></div>;
   }
   const coin = chainOf(network).native;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
