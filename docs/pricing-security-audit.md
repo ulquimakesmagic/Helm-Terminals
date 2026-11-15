@@ -1,8 +1,9 @@
 # Pricing and experience audit — 15 November 2026
 
 This is a repository implementation and engineering review, using isolated databases, offline chain fixtures and
-headless browsers. It is not an independent smart-contract audit or proof of mainnet behavior. No production
-migration, deployment, live wallet transaction or treasury payout was performed.
+headless browsers. It is not an independent smart-contract audit or proof of mainnet behavior. The release
+includes a production schema migration and hosting deployment. No live wallet transaction or treasury payout
+was performed. See [release verification](release-verification-2026-11-15.md) for the deployed scope.
 
 ## Implemented policy
 
@@ -58,12 +59,12 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 
 ## Verification and dependency findings
 
-- Updated pricing/API regressions are running; no passing full-suite claim yet. Older pricing results below predate the latest policy.
+- Release-head CI run 43726775985 passed all seven jobs on 519b310: 547 backend tests passed, 2 skipped; separate PostgreSQL, contract execution/artifact and frontend checks passed.
 - Frontend: 19 tests passed; TypeScript and Vite production build passed for current pricing.
 - Real isolated PostgreSQL: 2 execution lease/nonce tests passed.
 - Twenty Solidity execution tests pass across new Pons V2, historical Pons and historical generalized splitters: rounding, replay protection, rejecting beneficiaries and reentrancy.
 - The final migration-only rerun passes all 3 tests, including scientific-notation legacy SQLite values.
-- Full backend and contract results are recorded separately in the evidence logs after completion.
+- CI separates real Solidity execution from the 547-test backend suite. All checks are required and passed; no failed job was waived.
 - Python dependency audit: no known vulnerabilities after updating four packages. The lock includes transitive
   dependencies; the audit used the complete lock without resolving floating versions.
 - Frontend Vite/source-map high-severity findings were fixed. Three low-severity findings remain in the
@@ -72,8 +73,10 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 
 ## Remaining release requirements
 
-1. Review and apply migration `42c9a01f0004` to an isolated staging copy, verify backup restoration, then schedule
-   the production migration with writers stopped. Production startup checks schema revision.
+1. Completed: encrypted production backup validated and restored locally; additive PostgreSQL migration
+   `42c9a01f0003` → `42c9a01f0004` preserved all existing original-column table hashes. The migration then
+   completed in Railway pre-deploy; API readiness verifies the current schema and execution lease. Temporary
+   database network access was removed and verified. Continue backup/restore drills as an operating requirement.
 2. Configure each enabled network's treasury and gas reserves. Deploy and verify the separate Pons V2 factory. Complete missing reward collection and receipt indexing before enabling new reward-bearing routes. No stablecoin launch payer or USD launch-price source is required.
 3. Complete per-adapter mainnet acceptance: creation, curve trades, graduation/DEX trades, claims, simulation
    refusal, expired quotes, RPC loss and restart recovery. Protocol payload validation is not yet a universal
@@ -93,9 +96,9 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
    limits, trusted proxy configuration, production signer restrictions and disaster recovery. The in-process
    job orchestrator reconciles evidence but deliberately does not blindly resume interrupted signing work.
 
-The release remains gated on these items; passing local tests does not certify mainnet behavior. Railway Hobby snapshots are unavailable and no public database URL is configured; no production database writes occurred during backup attempts. The repository is now public and CI jobs start successfully; release-head results remain pending. The live apex still serves an older build; www maps to a missing Vercel deployment. See [Proxima infrastructure analysis](proxima-infrastructure-analysis.md) for the next features and dependencies.
-
-Regression status: the broad diagnostic reported failures and was stopped before integrating 33 upstream commits.
-It was not a passing full suite. After integration, the production build, 19 frontend tests and 24 focused
-pricing/migration/Printr tests pass. Earlier browser evidence predates that upstream merge. Remaining backend
-failures and updated browser behavior require review against the integrated source.
+Hosting release and CI verification do not certify mainnet behavior. Unsupported reward-bearing creation
+paths remain blocked rather than enabling incomplete fee collection. Remaining mainnet gates are the verified
+Pons V2 factory, missing native reward receipt ingestion, treasury referral settlement, per-adapter real-chain
+acceptance and the operational/device checks above. See [release verification](release-verification-2026-11-15.md)
+for deployment evidence and [Proxima infrastructure analysis](proxima-infrastructure-analysis.md) for the next
+features and dependencies. Historical diagnostic failures were corrected; the current complete CI run passed.
