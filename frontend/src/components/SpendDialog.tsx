@@ -1,5 +1,6 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import { api, errMsg, fmt } from "../api";
+import { formatRaw } from "../amounts";
 import { chainOf, explorerUrl } from "../chains";
 import { isAddress as isAddr } from "../validate";
 import { ReviewHero, summarize } from "./review";
@@ -43,6 +44,10 @@ const KIND_LABEL: Record<string, string> = {
 
 
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
+  if (k === "initial_buy_fee" && v && typeof v === "object") {
+    const fee = v as { amount_raw: string; decimals: number; asset: string; note: string; destination: string };
+    return <div className="stack tight"><b>{formatRaw(fee.amount_raw, fee.decimals)} {fee.asset}</b><p>{fee.note}</p><Address address={fee.destination} network={network} /></div>;
+  }
   if (k === "launch_fee_payment" && v && typeof v === "object") {
     const terms = v as { exempt: boolean; reason?: string; amount?: string; asset?: string; payer?: string; destination?: string; payment_terms?: string };
     return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small good">100% of creator rewards stay with you.</p></div>;

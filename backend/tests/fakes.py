@@ -70,6 +70,22 @@ class FakeRPC:
             return None
         return await self.get_balance(address) + self.next_delta
 
+    async def wallet_effects(self, tx, wallet, watch_mints=()):
+        """Offline effects for router-bound tests; adversarial cases can provide an override."""
+        from app.services.solana_guard import WalletEffects
+        if self.sim_error:
+            return WalletEffects(0, 0, str(SYSTEM_PROGRAM), {}, {}, error=self.sim_error)
+        if getattr(self, "effects_override", None) is not None:
+            return self.effects_override(tx, wallet)
+        before = await self.get_balance(wallet)
+        return WalletEffects(before, before + self.next_delta, str(SYSTEM_PROGRAM), {}, {})
+
+    async def account_owner(self, address):
+        return getattr(self, "owners", {}).get(address)
+
+    async def account_exists(self, address):
+        return address in getattr(self, "existing_accounts", set())
+
     async def send(self, tx):
         self.sent.append(tx)
         payer = str(VersionedTransaction.from_bytes(tx).message.account_keys[0])

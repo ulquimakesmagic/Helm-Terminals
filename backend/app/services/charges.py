@@ -131,6 +131,17 @@ async def attach_launch_fee(pf, db, user, ex, launch, wallet, body):
     summary = {k: v for k, v in pf["preflight"].items() if k not in {"kind", "warnings"}}
     summary.update(launch_fee_payment=terms, helm_fees="Launch fee waived" if terms["exempt"] else "$20 launch fee; no creator-reward share",
                    platform_fee="Launch fee waived" if terms["exempt"] else "$20 launch fee")
+    if launch.dev_buy_sol > 0:
+        agreed = await trade_terms(db, launch.network)
+        symbol, decimals = native_asset(launch.network)
+        basis = int(Decimal(str(launch.dev_buy_sol)) * 10 ** decimals)
+        summary.update(trade_fee_terms=agreed, initial_buy_fee={"wallet_id": wallet.id,
+            "basis_raw": str(basis), "amount_raw": str(basis * TRADE_BPS // 10_000),
+            "asset": symbol, "decimals": decimals, "destination": agreed["destination"],
+            "policy": POLICY_VERSION, "network": launch.network,
+            "note": "1% of the initial developer buy, due only when deployment and that buy confirm. Launch exemptions do not waive trading fees."})
+        summary["helm_fees"] += "; 1% of the initial developer buy"
+        summary["platform_fee"] += "; 1% initial-buy trading fee"
     result = build_preflight("deploy", summary, [*pf["preflight"].get("warnings", []), *warnings])
     result["launch_fee_approval"] = approval
     return result
@@ -148,6 +159,11 @@ async def _send(ex, wallet, terms, persist):
         ixs = ([create_ata_idempotent_ix(owner, target, Pubkey.from_string(token), program),
                 token_transfer_checked_ix(owner, target, Pubkey.from_string(token), raw, terms["decimals"], program)]
                if token else [sol_transfer_ix(owner, target, raw)])
+        if terms.get("payment_reference"):
+            from solders.instruction import Instruction
+            # Distinct payments in one block must not share a deterministic Solana signature.
+            ixs.append(Instruction(Pubkey.from_string("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+                                   f"Helm payment {terms['payment_reference']}".encode(), []))
         unsigned = build_unsigned(owner, ixs, await ex.rpc.get_latest_blockhash())
         return await ex.submit(unsigned, {wallet.address: wallet.signer_ref or ""}, on_signed=persist)
     if network == "tron":
@@ -241,7 +257,7 @@ async def collect(db, ex, job, wallet, kind, terms, reference_key):
                     note="Exact platform payment; referral liability excluded from Helm revenue"))
             await pending.commit()
     try:
-        result = await _send(ex, wallet, terms, persist)
+        result = await _send(ex, wallet, {**terms, "payment_reference": charge_id}, persist)
     except Exception as exc:
         await db.refresh(row)
         result = SubmitResult(row.signature, "timeout" if row.signature else "failed", f"Payment could not be completed ({type(exc).__name__})")
@@ -308,6 +324,49 @@ async def trade_terms(db, network):
         raise HTTPException(503, "The 1% trading-fee treasury is not configured for this network")
     return {"bps": TRADE_BPS, "destination": destination, "referral_share_bps": REFERRAL_BPS,
             "network": network, "policy": POLICY_VERSION}
+
+
+async def initial_buy_fee(db, ex, job, launch, wallet, *, recovery=False):
+    """Settle the reviewed initial buy after a live deployment; recovery only records debt, never signs."""
+    terms = (job.params or {}).get("initial_buy_fee")
+    if not terms or launch.status != "live" or terms.get("policy") != POLICY_VERSION:
+        return None
+    if (wallet.id != terms.get("wallet_id") or wallet.user_id != job.user_id
+            or wallet.kind != "managed" or wallet.network != launch.network):
+        raise ValueError("Initial-buy fee source no longer matches the reviewed managed wallet")
+    if int(terms["amount_raw"]) == 0:
+        return None
+    from .executor import SubmitResult, _finish
+    reference = f"trade:{job.id}:{wallet.id}"
+    existing = (await db.execute(select(PlatformCharge).where(PlatformCharge.reference_key == reference))).scalar_one_or_none()
+    if existing:
+        result = SubmitResult(existing.signature, "confirmed" if existing.status == "confirmed" else
+                              "failed" if existing.status == "failed" else "timeout")
+    elif recovery:
+        # After a crash there is no permission to replay deployment or silently resume signing.
+        # Make the explicitly reviewed fee settleable through the normal billing review instead.
+        link = (await db.execute(select(ReferralLink).where(ReferralLink.referred_user_id == job.user_id))).scalar_one_or_none()
+        platform, referral = split_fee(int(terms["amount_raw"]), bool(link and link.referrer_user_id != job.user_id))
+        db.add(PlatformCharge(reference_key=reference, job_id=job.id, launch_id=launch.id,
+            wallet_id=wallet.id, payer_user_id=job.user_id, kind="trade", network=wallet.network,
+            asset=terms["asset"], token=None, decimals=terms["decimals"], amount_raw=int(terms["amount_raw"]),
+            platform_raw=platform, referral_raw=referral, referrer_user_id=link.referrer_user_id if referral else None,
+            referral_status="owed" if referral else "none", status="failed", destination=terms["destination"], terms=terms))
+        result = SubmitResult(None, "failed", "Initial developer-buy fee needs settlement in Fees & payments")
+    else:
+        journal = (job.params or {}).get("execution") or {}
+        job.params = {**job.params, "execution": {**journal, "dispatch_complete": False}}
+        # Use the exact frozen terms: treasury changes cannot redirect an approved initial-buy payment.
+        result = await collect(db, ex, job, wallet, "trade", terms, reference)
+    previous = (job.params.get("execution") or {}).get("outcomes") or []
+    outcomes = [SubmitResult(row.get("signature"), row["status"]) for row in previous]
+    _finish(job, [*outcomes, result])
+    job.params = {**job.params, "initial_buy_fee_handled": True}
+    if result.status != "confirmed":
+        job.params = {**job.params, "fee_outstanding": True,
+                      "error": result.error or "Initial developer-buy fee requires reconciliation or settlement"}
+    await db.commit()
+    return result
 
 
 async def reconcile(db, ex, charge):

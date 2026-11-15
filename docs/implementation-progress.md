@@ -30,3 +30,9 @@ codex/pricing-ux-audit. This preserves Printr, legal pages, the same-origin API 
 while retaining the requested $20/1%/zero creator-share policy. The integrated production build and 19 frontend
 tests pass; 24 focused pricing, migration and Printr tests pass. The earlier broad backend diagnostic was stopped
 before replacing its source tree; it reported failures and was not a passing full run.
+
+Follow-up: initial developer buys now pay the reviewed 1% trading fee after confirmation, including admin and
+launch-exempt accounts. A late/recovered deployment records a settleable fee without automatically signing.
+Distinct Solana payments carry unique public references to avoid duplicate transaction signatures in one block.
+The pricing/API pass reports 52 tests passed, and the focused collection/recovery/reference pass reports 3 passed.
+Upstream route-provider guards and optional simulated Solana spend limits are retained in the executor.

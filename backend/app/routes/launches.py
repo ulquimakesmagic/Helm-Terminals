@@ -551,8 +551,8 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
     if not body.confirm:
         return pf
-    if warnings:
-        raise HTTPException(400, warnings[0])
+    if pf["preflight"]["warnings"]:
+        raise HTTPException(400, pf["preflight"]["warnings"][0])
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
         prior_status = l.status
@@ -599,6 +599,8 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                 if share_ready:
                     launch.status = "live"
                     await _note_creator_share(session, launch, j, share)
+                    from ..services.charges import initial_buy_fee
+                    await initial_buy_fee(session, ex, j, launch, dev)
                 else:
                     # The token exists, so a second deploy would be dangerous. Keep it in the non-retryable
                     # deploying state until /recheck confirms or safely retries the one-time sharing config.
@@ -1301,7 +1303,7 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         except Exception:
             raise HTTPException(503, "The launchpad fee could not be verified. Refresh before confirming a launch.") from None
     bal = await sender.rpc.get_balance(dev.address)
-    need_raw = dev_buy + launch_fee + gas
+    need_raw = dev_buy + dev_buy // 100 + launch_fee + gas
     warnings = []
     funding = None
     if bal < need_raw:
@@ -1351,8 +1353,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
     if not body.confirm:
         return pf
-    if warnings:
-        raise HTTPException(400, warnings[0])
+    if pf["preflight"]["warnings"]:
+        raise HTTPException(400, pf["preflight"]["warnings"][0])
     job, created = await begin_spend(db, user, body, pf, "deploy", l.id, pf["preflight"])
     if created:
         prior_status = l.status
@@ -1416,6 +1418,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 launch.status, launch.mint_address, launch.deployed_at = "live", token, utcnow()
                 await _note_creator_share(session, launch, j, share)
                 await _note_flap_partner(session, launch)
+                from ..services.charges import initial_buy_fee
+                await initial_buy_fee(session, ex, j, launch, dev)
             elif len(plan.steps) == 1 and res.status == "timeout" and res.signature:
                 # The one create transaction was sent but not confirmed in time: it may still land. Stay "deploying"
                 # (which can't be deployed again) and let /recheck read its receipt, so a retry never makes a second token.

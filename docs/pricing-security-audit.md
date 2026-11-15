@@ -93,8 +93,9 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 4. Validate sell-fee notional against protocol receipts/traces, including chain-specific gas, token transfer taxes
    and unrelated balance movements. Current native balance/simulation measurements are not a universal receipt
    decoder. Test nonstandard input tokens before enabling them for fee-bearing swaps.
-   Initial developer buys embedded inside launch transactions also need explicit 1% fee consent, collection and
-   delayed-deployment recovery coverage; manual/scheduled trade collection does not establish that coverage.
+   Initial developer buys now have explicit 1% consent and post-confirmation collection, including exempt/admin
+   launches. Recovery records unsettled fees for explicit billing settlement without resuming signing. Focused
+   tests exercise collection and recovery; per-adapter live acceptance remains necessary.
 5. Referral shares collected into treasuries are recorded as owed. This change does not provide an automatic
    multi-network treasury payout worker or an operator receipt-backed settlement workflow. Solana atomic direct
    referral transfers are marked paid only when their transaction confirms. Establish treasury settlement before

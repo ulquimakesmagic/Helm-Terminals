@@ -263,3 +263,44 @@ async def test_launch_exemption_requires_owner_step_up_and_records_audit(client)
     assert result["launch_exempt"] and result["pricing"]["trade_bps"] == 100
     audit = (await client.get("/admin/audit", headers=owner)).json()["items"]
     assert any(row["action"] == "launch_fee.exemption" and row["target"] == target for row in audit)
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+async def test_initial_buy_fee_is_not_waived_and_recovery_never_signs(client, monkeypatch, recovery):
+    user, wallet, launch, job = await objects()
+    calls = []
+    async def send(ex, source, terms, persist):
+        calls.append(int(terms["amount_raw"]))
+        await persist("initial-buy-fee-signature")
+        return SubmitResult("initial-buy-fee-signature", "confirmed")
+    monkeypatch.setattr(charges, "_send", send)
+    async with get_sessionmaker()() as db:
+        current, draft = await db.get(Job, job.id), await db.get(Launch, launch.id)
+        draft.status = "live"
+        current.params = {"launch_fee_payment": {"exempt": True}, "initial_buy_fee": {
+            "wallet_id": wallet.id, "amount_raw": "5000000", "basis_raw": "500000000", "asset": "SOL",
+            "decimals": 9, "network": "solana", "policy": charges.POLICY_VERSION,
+            "destination": str(Keypair().pubkey())}, "execution": {"version": 1,
+            "dispatch_complete": True, "required": [], "outcomes": [{"signature": "deployment", "status": "confirmed"}]}}
+        await db.commit()
+        first = await charges.initial_buy_fee(db, None, current, draft, wallet, recovery=recovery)
+        second = await charges.initial_buy_fee(db, None, current, draft, wallet, recovery=True)
+        assert first.status == second.status == ("failed" if recovery else "confirmed")
+        assert calls == ([] if recovery else [5_000_000])
+        row = (await db.execute(select(PlatformCharge))).scalar_one()
+        assert row.kind == "trade" and row.amount_raw == 5_000_000
+        assert row.status == ("failed" if recovery else "confirmed")
+        assert current.status == ("partial" if recovery else "confirmed")
+
+
+async def test_solana_fee_references_distinguish_identical_payments_in_one_block(client, fake_rpc):
+    _, wallet, _, _ = await objects()
+    sent = []
+    async def submit(raw, refs, on_signed):
+        sent.append(raw)
+        return SubmitResult(None, "confirmed")
+    ex = SimpleNamespace(rpc=fake_rpc, submit=submit)
+    terms = {"amount_raw": "1000", "destination": str(Keypair().pubkey()), "decimals": 9}
+    for reference in ["first-charge", "second-charge"]:
+        await charges._send(ex, wallet, {**terms, "payment_reference": reference}, None)
+    assert len(sent) == 2 and sent[0] != sent[1]

@@ -127,6 +127,9 @@ async def deploy(l: Launch, body, user, db, ex, dev: Wallet, adapter) -> dict:
             if launch_step and launch_step.signature:
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "deploy_tx": launch_step.signature}
             _job_status(j, results)
+            if launch.status == "live":
+                from .charges import initial_buy_fee
+                await initial_buy_fee(session, ex, j, launch, dev)
             await session.commit()
 
         await run_job(job.id, work)

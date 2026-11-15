@@ -75,6 +75,23 @@ def check_relay_bounds(quote: dict, bounds: dict, destination_asset: str, destin
     if (bounds.get("asset") != destination_asset or bounds.get("network") != destination_network
             or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
         raise AdapterError("The new quote is below the approved minimum; review a new preview")
+    if bounds.get("provider") and current["provider"] != bounds["provider"]:
+        raise AdapterError("The route provider changed since the preview; review a new preview")
+    # Bounds issued without a fee (older previews, launch funding plans) approve none.
+    if int(current["native_fee_raw"]) > int(bounds.get("native_fee_raw") or 0):
+        raise AdapterError("The provider's fee went up since the preview; review a new preview")
+    if current.get("helm_fee_bps") is not None and current["helm_fee_bps"] > int(bounds.get("helm_fee_bps") or 0):
+        raise AdapterError("Helm's route fee changed since the preview; review a new preview")
+
+
+def check_relay_recipient(quote: dict, recipient: str, network: str) -> None:
+    """When Relay states who receives the fill, it must be the destination wallet the user chose (audit HT-02)."""
+    stated = ((quote or {}).get("details") or {}).get("recipient")
+    if stated is None:
+        return
+    same = stated == recipient if network == "solana" else str(stated).lower() == recipient.lower()
+    if not same:
+        raise AdapterError("The quote pays a different recipient than the selected wallet; nothing was signed")
 
 
 def jupiter_bounds(quote: dict, input_mint: str, output_mint: str, amount: int) -> dict:

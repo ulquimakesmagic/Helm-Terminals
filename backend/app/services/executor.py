@@ -50,13 +50,22 @@ class Executor:
 
         if self._relay is not None and getattr(self, "_relay_key", None) is None:
             return self._relay
-        key = (pc.bps("route_fee_bps"), pc.treasury_for("evm"))
-        if self._relay is None or self._relay_key != key:
-            from ..chains.relay import Relay
-            from ..config import get_settings
+        from ..config import get_settings
 
-            s = get_settings()
-            self._relay = Relay(s.relay_api_url, s.relay_api_key, fee_bps=key[0], fee_recipient=key[1])
+        s = get_settings()
+        key = (pc.bps("route_fee_bps"), pc.treasury_for("evm"), pc.treasury_for("solana"), s.route_providers)
+        if self._relay is None or self._relay_key != key:
+            from ..chains.debridge import DeBridge
+            from ..chains.relay import Relay
+            from ..chains.route_providers import RouteProviders
+
+            built = {
+                "relay": lambda: Relay(s.relay_api_url, s.relay_api_key, fee_bps=key[0], fee_recipient=key[1]),
+                "debridge": lambda: DeBridge(s.debridge_api_url, s.debridge_access_token, fee_bps=key[0],
+                                             fee_recipients={"evm": key[1], "solana": key[2]}),
+            }
+            wanted = [n.strip() for n in (s.route_providers or "").split(",") if n.strip() in built]
+            self._relay = RouteProviders([built[n]() for n in dict.fromkeys(wanted or ["relay"])])
             self._relay_key = key
         return self._relay
 
@@ -88,6 +97,7 @@ class Executor:
     async def submit(
         self, raw: bytes, refs: dict[str, str], extra: list[Keypair] | None = None, submit_via=None,
         fast_poll_s: float = 0.25, on_signed: Callable[[str], Awaitable[None]] | None = None,
+        limits=None,
     ) -> SubmitResult:
         """Sign, simulate, send, confirm. `submit_via` hands the signed transaction to a launchpad's own submit
         endpoint instead of our RPC (it may add a signature Helm doesn't hold, such as the mint's); the
@@ -97,6 +107,10 @@ class Executor:
         held = set(refs) | {str(k.pubkey()) for k in extra or []}
         if reason := check_solana_signers(raw, held, allow_missing=submit_via is not None):
             return SubmitResult(None, "failed", f"refused before signing: {reason}")
+        if limits is not None:
+            from .solana_guard import enforce
+            if reason := await enforce(self.rpc, raw, limits):
+                return SubmitResult(None, "failed", f"refused before signing: {reason}")
         try:
             signed = await sign_versioned(raw, self.signer, refs, extra or [], allow_missing=submit_via is not None)
         except SigningError as e:
@@ -215,12 +229,12 @@ async def _persist_pending_transaction(
 
 async def submit_tracked(
     ex: Executor, job: Job, wallet: Wallet | None, kind: str, raw: bytes, refs: dict[str, str],
-    extra: list[Keypair] | None = None, submit_via=None,
+    extra: list[Keypair] | None = None, submit_via=None, limits=None,
 ) -> SubmitResult:
     async def persist(signature: str) -> None:
         await _persist_pending_transaction(job, wallet, kind, signature)
 
-    return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist)
+    return await ex.submit(raw, refs, extra, submit_via=submit_via, on_signed=persist, limits=limits)
 
 
 async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call,
