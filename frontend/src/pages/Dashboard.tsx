@@ -248,7 +248,7 @@ export default function Dashboard() {
 
           <Card title="Recorded SOL flow" icon="trend" sub="Solana SOL only · confirmed Helm transactions · not multichain cash flow or portfolio P&L"
             actions={<Seg value={period} onChange={setPeriod} options={PERIODS} />}
-            foot={<>{data?.note}{data && data.usd_priced === false && " Some days couldn't be priced and count as $0."}</>}>
+            foot={<>{data?.note}{data && data.usd_priced === false && " Some days couldn't be priced, so no USD total is shown; SOL amounts are unaffected."}</>}>
             {error && !data ? <LoadError what="Net flow" error={error} onRetry={load} /> : !data ? <Skeleton h={220} /> : data.series.length === 0 ? (
               <Empty icon="trend" title="No confirmed transactions in this period" text="Deploys, trades and transfers show up here once confirmed." />
             ) : data.series.some((p: any) => p.cumulative_usd == null || p.daily_usd == null) ? <Callout tone="warn">Some daily SOL prices are unavailable. The USD flow chart will return when the missing valuations are available.</Callout> : <AreaChart points={data.series.map((p: any) => ({ date: p.date, total: p.cumulative_usd, day: p.daily_usd }))} height={220} />}

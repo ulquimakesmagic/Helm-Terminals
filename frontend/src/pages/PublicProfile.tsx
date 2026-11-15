@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { setMeta } from "../meta";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, errMsg, hasToken } from "../api";
 import { chainOf } from "../chains";
@@ -25,7 +26,7 @@ export default function PublicProfile() {
   useEffect(() => {
     setD(null); setMissing(false); setError("");
     api<PublicData>(`/u/${encodeURIComponent(handle)}`)
-      .then((x) => { setD(x); document.title = `${x.display_name} (@${x.handle}) · Helm Terminals`; })
+      .then((x) => { setD(x); setMeta({ title: `${x.display_name} (@${x.handle}) · Helm Terminals`, description: `${x.display_name}'s public launch page on Helm Terminals.`, path: `/u/${x.handle}` }); })
       .catch((e) => ((e as ApiError).status === 404 ? setMissing(true) : setError(errMsg(e))));
   }, [handle]);
 

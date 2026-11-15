@@ -392,7 +392,7 @@ export default function Launches() {
             <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c as ChainId)}><ChainMark network={c} size={16} />{chainOf(c).name}</button>
           ))}
         </div>
-        <div style={{ width: 280, maxWidth: "100%" }}><SearchInput placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div style={{ width: 280, maxWidth: "100%" }}><SearchInput aria-label="Search launches by name, ticker or token address" placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
 
       {loadErr && !launches ? <div className="card"><LoadError what="Launches" error={loadErr} onRetry={load} /></div> : !launches ? <div className="card"><Loading rows={4} /></div> : shown.length === 0 && (q || filter !== "all") ? (

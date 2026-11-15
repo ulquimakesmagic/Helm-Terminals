@@ -57,9 +57,22 @@ def fake_jupiter(monkeypatch):
     return made
 
 
+def deliver(fake_rpc, mint, amount, lamports_out=100_005_000):
+    """Model a well-behaved swap in simulation: the wallet pays SOL and receives `amount` of `mint`."""
+    from app.services.solana_guard import TokenState, WalletEffects
+
+    def effects(tx, wallet):
+        before = 5 * 10**9
+        ata = "Ata" + wallet[:20]
+        return WalletEffects(before, before - lamports_out, "11111111111111111111111111111111", {},
+                             {ata: TokenState(ata, mint, amount, wallet)})
+    fake_rpc.effects_override = effects
+
+
 async def test_swap_preflight_then_confirmed_job(client, fake_rpc, fake_jupiter):
     h = await signup(client, "swap@example.com", main=False)
     w = (await make_wallets(client, h, 1))[0]
+    deliver(fake_rpc, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", 12164823)
     body = {"wallet_id": w["id"], "input_mint": "native", "output_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
             "amount": 0.1, "slippage_pct": 0.5}
     pf, r = await confirm(client, h, "/wallets/swap", body)

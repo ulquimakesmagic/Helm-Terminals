@@ -4,6 +4,7 @@ import { padName, padsByChain } from "../chains";
 import { ChainMark, PadMark } from "../components/marks";
 import { Brand, ChainStrip, PublicHeader, RISK_NOTE, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
 import { Icon, IconName, Spinner } from "../components/ui";
+import { setMeta } from "../meta";
 
 const FEATURES: { icon: IconName; title: string; copy: string; detail: string }[] = [
   { icon: "rocket", title: "A launch desk that stays with you", copy: "Prepare a token, choose a launchpad, and review its costs. Come back to the same workspace to operate it after launch.", detail: "Draft · review · deploy · manage" },
@@ -18,7 +19,7 @@ export default function Landing() {
   const { pads, padsLoaded, health } = usePublicInfo();
   const groups = padsByChain(pads);
   const register = `/login?mode=register${refCode ? `&ref=${encodeURIComponent(refCode)}` : ""}`;
-  useEffect(() => { document.title = "Helm Terminals · Your launch. Your rewards."; }, []);
+  useEffect(() => { setMeta({ title: "Helm Terminals | Your launch. Your rewards.", index: true }); }, []);
   return <div className="pub landing-v2">
     <a href="#pub-main" className="skip-link">Skip to content</a>
     <PublicHeader refCode={refCode} />

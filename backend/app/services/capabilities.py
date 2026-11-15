@@ -5,7 +5,7 @@ Available means implemented/configured, not independently certified against live
 
 CLAIMS = {"pumpfun": "in-app", "bags": "in-app", "meteora-dbc": "in-app",
           "clanker": "in-app", "clanker-robinhood": "in-app", "pons": "in-app",
-          "letsbonk": "external", "meme-cooking": "auction"}
+          "letsbonk": "external", "printr": "external", "meme-cooking": "auction"}
 
 
 def launchpad_capabilities(identifier, network, status):

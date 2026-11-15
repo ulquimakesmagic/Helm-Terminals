@@ -88,10 +88,6 @@ class Settings(BaseSettings):
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
     pons_rewards_factory: str = ""
-    # Jupiter swaps on Solana: the lite endpoint serves quotes and swaps without a key (rate-limited);
-    # set JUPITER_API_URL=https://api.jup.ag and an API key for production volume.
-    jupiter_api_url: str = ""
-    jupiter_api_key: str = ""
     # TRON, NEAR and Arc (see app/chains/networks.py). Off unless listed; mainnets also need the opt-in below.
     extra_networks: str = "tron,near,arc,ton"  # mainnets only; "" = off
     allow_mainnet_extra_networks: bool = True  # false keeps every mainnet off whatever EXTRA_NETWORKS lists
@@ -109,7 +105,9 @@ class Settings(BaseSettings):
     # Jupiter API key(s) (free at https://developers.jup.ag/portal), comma-separated to rotate. Enables Meteora DBC
     # launches through Jupiter Studio. Without one, Meteora DBC shows as "needs setup".
     jupiter_api_key: str = ""
-    jupiter_api_url: str = "https://api.jup.ag"
+    # Blank: https://api.jup.ag when a key is set (Meteora DBC always needs one), otherwise Jupiter's keyless lite
+    # endpoint for swaps (rate-limited). Declared once: an earlier duplicate silently overrode this (audit HT-08).
+    jupiter_api_url: str = ""
     # DEX trading on EVM chains (graduated launchpad tokens, Uniswap V2 launches) goes through KyberSwap's aggregator.
     kyber_api_url: str = "https://aggregator-api.kyberswap.com"
     kyber_client_id: str = "HelmTerminals"
@@ -118,6 +116,15 @@ class Settings(BaseSettings):
     # (claim it at relay.link). Always shown in the route preview; 0 or no EVM fee wallet turns it off.
     relay_api_url: str = "https://api.relay.link"
     relay_api_key: str = ""
+    # Cross-chain route providers, in the order they are tried: "relay", "debridge". The first that can quote a
+    # route is used and pinned for confirmation. deBridge is off by default: Helm can't yet cancel an unfilled DLN
+    # order or decode the order it signs (see docs/releases/2026-10-09-usdc-withdraw-and-route-providers.md).
+    route_providers: str = "relay"
+    debridge_api_url: str = "https://dln.debridge.finance"
+    # Printr launches (Solana). The public preview API needs no key; PRINTR_API_KEY is an optional partner key.
+    printr_api_url: str = "https://api-preview.printr.money"
+    printr_api_key: str = ""
+    debridge_access_token: str = ""  # optional
     route_fee_bps: int = Field(default=0, ge=0, le=300)
     route_poll_seconds: float = 3.0
     route_wait_seconds: float = 180.0
@@ -130,7 +137,6 @@ class Settings(BaseSettings):
     bags_partner_wallet: str = ""
     bags_partner_config: str = ""
 
-    # Optional platform fee on sells. 0 disables it. Always shown in the preflight.
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
     # transaction and shown in every preview. 0 turns fees off.
     platform_fee_bps: int = 100
@@ -140,7 +146,13 @@ class Settings(BaseSettings):
     platform_fee_wallet_evm: str = ""
     # Share of a Clanker token's LP rewards paid to PLATFORM_FEE_WALLET_EVM, in bps (1000 = 10%, max 2000).
     # 0 = all rewards to the creator. Always shown in the deploy preview.
-    clanker_platform_reward_bps: int = 0
+    clanker_platform_reward_bps: int = 0  # legacy; superseded by CREATOR_SHARE_BPS
+    # Helm's share of a new launch's creator rewards where the launchpad supports a native split (Pump.fun, Bags,
+    # Clanker), in bps (300 = 3%). An admin setting in the dashboard overrides this.
+    creator_share_bps: int = 0
+    # Flat fee per launch in US dollars, charged in the launch chain's coin at the live price after the token is
+    # created (a failed launch pays nothing). 0 turns it off. An admin setting in the dashboard overrides this.
+    launch_fee_usd: float = 20.0
     # Required for superadmin access: the owner account's user ID. Email alone never grants this role.
     superadmin_user_id: str = ""
     # The owner account's email. Superadmin binds only when BOTH this email and the user ID above match

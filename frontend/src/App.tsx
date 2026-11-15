@@ -4,9 +4,13 @@ import { api, hasToken, setToken } from "./api";
 import { Icon, IconName, Loading, Logo } from "./components/ui";
 import { SessionProvider, useSession } from "./session";
 import Auth from "./pages/Auth";
-import Recovery from "./pages/Recovery";
+const Recovery = lazy(() => import("./pages/Recovery"));
 import Landing from "./pages/Landing";
-import Dashboard from "./pages/Dashboard";
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+import NotFound from "./pages/NotFound";
+import { setMeta } from "./meta";
+import { AppFooter } from "./components/public";
+const Legal = lazy(() => import("./pages/Legal"));
 // The landing, sign-in and dashboard pages load with the app; every other page is fetched when first opened,
 // so the first screen doesn't wait for the admin console, the trading workspace or the QR code library.
 const AutomationMoved = lazy(() => import("./pages/AutomationMoved"));
@@ -69,6 +73,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   }, [open]);
 
   const seg = loc.pathname.split("/")[1] ?? "";
+  useEffect(() => { setMeta({ title: `${TITLES[seg] ?? "Helm"} · Helm Terminals`, index: false }); }, [seg]);
   return (
     <div className={`app ${open ? "open" : ""}`}>
       <a href="#main" className="skip-link">Skip to content</a>
@@ -137,7 +142,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </span>
         </header>
         <main className="content" id="main" tabIndex={-1}><Suspense fallback={<div className="card"><Loading rows={4} /></div>}>{children}</Suspense></main>
-        <nav className="mobile-dock" aria-label="Quick navigation">
+        <AppFooter /><nav className="mobile-dock" aria-label="Quick navigation">
           {[["/", "Home", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/activity", "Activity", "activity"]].map(([to, label, icon]) => <NavLink key={to} to={to} end={to === "/"}><Icon name={icon as IconName} size={19} /><span>{label}</span></NavLink>)}
         </nav>
       </div>
@@ -153,13 +158,24 @@ function forgetWalletSessions() {
   } catch { /* storage blocked */ }
 }
 
+/** Signed-out visitors go to sign-in and come back to the page they asked for (a reload signs out: memory-only tokens). */
 function Private({ children }: { children: React.ReactNode }) {
-  return hasToken() ? <Shell>{children}</Shell> : <Navigate to="/login" replace />;
+  const loc = useLocation();
+  if (hasToken()) return <Shell>{children}</Shell>;
+  const next = encodeURIComponent(loc.pathname + loc.search);
+  return <Navigate to={`/login?mode=login&next=${next}`} replace />;
 }
+
+
 
 /** "/" is the dashboard when signed in and the public landing page otherwise. Decided on each render, not once. */
 function Home() {
-  return hasToken() ? <Shell><Dashboard /></Shell> : <Landing />;
+  return hasToken() ? <Shell><Dashboard /></Shell> : <Landing />;  // Shell supplies the Suspense boundary
+}
+
+/** Unknown paths: the not-found page inside the app when signed in, the public one otherwise. Decided per render. */
+function CatchAll() {
+  return hasToken() ? <Shell><NotFound signedIn /></Shell> : <NotFound />;
 }
 
 /** The sign-in page is only for signed-out visitors. */
@@ -172,7 +188,7 @@ export default function App() {
     <SessionProvider>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
-        <Route path="/recover" element={<Recovery />} />
+        <Route path="/recover" element={<Suspense fallback={null}><Recovery /></Suspense>} />
         <Route path="/" element={<Home />} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
@@ -187,7 +203,10 @@ export default function App() {
         <Route path="/billing" element={<Private><Billing /></Private>} />
         <Route path="/admin" element={<Private><Admin /></Private>} />
         <Route path="/u/:handle" element={<Suspense fallback={null}><PublicProfile /></Suspense>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/terms" element={<Suspense fallback={null}><Legal doc="terms" /></Suspense>} />
+        <Route path="/privacy" element={<Suspense fallback={null}><Legal doc="privacy" /></Suspense>} />
+        <Route path="/risk" element={<Suspense fallback={null}><Legal doc="risk" /></Suspense>} />
+        <Route path="*" element={<CatchAll />} />
       </Routes>
     </SessionProvider>
   );

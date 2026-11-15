@@ -1,0 +1,887 @@
+{
+ "landing@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "login@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Forgot password or lost your a",
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "register@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "recover@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "terms@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "privacy@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "risk@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "not-found@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "dashboard@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "launches@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search name, ticker or mint"
+  ]
+ },
+ "workspace@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Launches"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "wallets@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Select all"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "networks@320": {
+  "overflow": false,
+  "wide": [
+   "SPAN",
+   "A"
+  ],
+  "small_targets": [
+   "developers.tron.network/docs/n",
+   "developers.tron.network/docs/a",
+   "developers.tron.network/docs/r",
+   "docs.near.org/api/rpc",
+   "nomicon.io/DataStructures/Acco",
+   "nomicon.io/RuntimeSpec/Transac",
+   "nomicon.io/RuntimeSpec/Actions",
+   "docs.near.org/integrations/imp",
+   "docs.near.org/protocol/transac",
+   "docs.near.org/protocol/storage",
+   "docs.near.org/primitives/ft",
+   "docs.near.org/tools/near-conne"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "tracker@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search"
+  ]
+ },
+ "activity@320": {
+  "overflow": false,
+  "wide": [
+   " wallets",
+   "muted num",
+   " security"
+  ],
+  "small_targets": [
+   "Open launch"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "profile@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Full log"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "settings@320": {
+  "overflow": true,
+  "wide": [
+   "card ",
+   "card-head",
+   "row",
+   "badge warn",
+   "card-body ",
+   "stack",
+   "muted small",
+   "card-title"
+  ],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "admin-denied@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "private-not-found@320": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "landing@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "login@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Forgot password or lost your a",
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "register@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "recover@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "terms@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "privacy@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "risk@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "not-found@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "dashboard@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "launches@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search name, ticker or mint"
+  ]
+ },
+ "workspace@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Launches"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "wallets@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Select all"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "networks@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "developers.tron.network/docs/n",
+   "developers.tron.network/docs/a",
+   "developers.tron.network/docs/r",
+   "developers.tron.network/docs/p",
+   "developers.tron.network/docs/s",
+   "developers.tron.network/docs/t",
+   "developers.tron.network/refere",
+   "docs.near.org/api/rpc",
+   "nomicon.io/DataStructures/Acco",
+   "nomicon.io/RuntimeSpec/Transac",
+   "nomicon.io/RuntimeSpec/Actions",
+   "docs.near.org/integrations/imp"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "tracker@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search"
+  ]
+ },
+ "activity@390": {
+  "overflow": false,
+  "wide": [
+   " security",
+   "muted num"
+  ],
+  "small_targets": [
+   "Open launch"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "profile@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Full log"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "settings@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "admin-denied@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "private-not-found@390": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "landing@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "login@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Forgot password or lost your a",
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "register@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "recover@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "terms@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "privacy@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "risk@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "not-found@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "dashboard@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "launches@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search name, ticker or mint"
+  ]
+ },
+ "workspace@768": {
+  "overflow": false,
+  "wide": [
+   "BUTTON"
+  ],
+  "small_targets": [
+   "Launches",
+   "INPUT",
+   "Select all 4",
+   "Select all wallets"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "wallets@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Select all"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "networks@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "developers.tron.network/docs/n",
+   "developers.tron.network/docs/a",
+   "developers.tron.network/docs/t",
+   "developers.tron.network/docs/p",
+   "developers.tron.network/docs/s",
+   "developers.tron.network/refere",
+   "docs.near.org/api/rpc",
+   "nomicon.io/DataStructures/Acco",
+   "nomicon.io/RuntimeSpec/Transac",
+   "nomicon.io/RuntimeSpec/Actions",
+   "docs.near.org/integrations/imp",
+   "docs.near.org/protocol/transac"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "tracker@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search"
+  ]
+ },
+ "activity@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Open launch"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "profile@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Full log"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "settings@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "admin-denied@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "private-not-found@768": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "landing@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "login@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Forgot password or lost your a",
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "register@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "recover@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "terms@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "privacy@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "risk@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "not-found@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "dashboard@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "launches@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search name, ticker or mint"
+  ]
+ },
+ "workspace@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Launches",
+   "INPUT",
+   "Select all 4",
+   "Select all wallets"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "wallets@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Select all"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "networks@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "developers.tron.network/docs/n",
+   "developers.tron.network/docs/a",
+   "developers.tron.network/docs/r",
+   "developers.tron.network/docs/p",
+   "developers.tron.network/docs/s",
+   "developers.tron.network/refere",
+   "developers.tron.network/docs/t",
+   "docs.near.org/api/rpc",
+   "nomicon.io/DataStructures/Acco",
+   "nomicon.io/RuntimeSpec/Transac",
+   "nomicon.io/RuntimeSpec/Actions",
+   "docs.near.org/integrations/imp"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "tracker@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search"
+  ]
+ },
+ "activity@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Open launch"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "profile@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Full log"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "settings@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "admin-denied@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "private-not-found@1440": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "landing@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "login@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Forgot password or lost your a",
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "register@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "See what Helm does"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "recover@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "terms@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "privacy@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "risk@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "not-found@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Coverage",
+   "What it does",
+   "Safeguards"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "dashboard@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "launches@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search name, ticker or mint"
+  ]
+ },
+ "workspace@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Launches",
+   "INPUT",
+   "Select all 4",
+   "Select all wallets"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "wallets@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Select all"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "networks@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "developers.tron.network/docs/n",
+   "developers.tron.network/docs/a",
+   "developers.tron.network/docs/t",
+   "developers.tron.network/docs/r",
+   "developers.tron.network/docs/p",
+   "developers.tron.network/docs/s",
+   "developers.tron.network/refere",
+   "docs.near.org/api/rpc",
+   "nomicon.io/DataStructures/Acco",
+   "nomicon.io/RuntimeSpec/Transac",
+   "nomicon.io/RuntimeSpec/Actions",
+   "docs.near.org/integrations/imp"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "tracker@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": [
+   "Search"
+  ]
+ },
+ "activity@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Open launch"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "profile@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [
+   "Full log"
+  ],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "settings@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "admin-denied@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ },
+ "private-not-found@1920": {
+  "overflow": false,
+  "wide": [],
+  "small_targets": [],
+  "no_alt": [],
+  "unlabeled": []
+ }
+}

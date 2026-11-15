@@ -120,6 +120,48 @@ async def _release_single_replica_lock(conn) -> None:
 
 
 DEFAULT_SECRET = "dev-secret-change-me"
+# Largest request body the API reads: a 2 MB token image as base64 plus its form fields (audit HT-07).
+MAX_BODY_BYTES = 3_500_000
+
+
+class BodyLimit:
+    """Refuse request bodies over `limit` bytes before they are buffered, whether or not Content-Length is sent.
+
+    The API runs as a single replica that also executes jobs, so one oversized upload must not exhaust its memory."""
+
+    def __init__(self, app, limit: int) -> None:
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        if declared is not None:
+            try:
+                too_big = int(declared) > self.limit
+            except ValueError:
+                too_big = True
+            if too_big:
+                return await JSONResponse(status_code=413, content={"detail": "request body too large"})(scope, receive, send)
+        seen = 0
+
+        async def limited():
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.limit:
+                    raise _TooLarge()
+            return message
+
+        try:
+            await self.app(scope, limited, send)
+        except _TooLarge:
+            await JSONResponse(status_code=413, content={"detail": "request body too large"})(scope, receive, send)
+
+
+class _TooLarge(Exception):
+    pass
 
 
 def check_production_config(s) -> None:
@@ -144,7 +186,11 @@ def check_production_config(s) -> None:
 def create_app() -> FastAPI:
     s = get_settings()
     from .routes import billing
-    app = FastAPI(title="Helm Terminals", version="0.1.0", lifespan=lifespan)
+    docs = s.env != "production"  # the interactive schema is a development aid, not a public page (audit HT-10)
+    app = FastAPI(title="Helm Terminals", version="0.1.0", lifespan=lifespan,
+                  docs_url="/docs" if docs else None, redoc_url="/redoc" if docs else None,
+                  openapi_url="/openapi.json" if docs else None)
+    app.add_middleware(BodyLimit, limit=MAX_BODY_BYTES)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in s.cors_origins.split(",") if o.strip()],

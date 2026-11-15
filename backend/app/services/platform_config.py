@@ -6,6 +6,7 @@ for CACHE_S, and refreshed immediately after an admin change. Fee-bearing action
 fail closed when their network's treasury is missing.
 """
 
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -37,6 +38,10 @@ FEE_PATHS = [
     {"id": "creator_rewards", "label": "Creator rewards: 100% to creator", "setting": "creator_share_bps",
      "networks": [], "supported": True, "lands": None, "how": "Helm configures no creator-reward share or partner commission on new launches. Historical immutable splits retain their original beneficiaries."},
 ]
+
+# Fixed in HelmPonsRewards / HelmRewardsSplitter (HELM_BPS = 600). Existing splitters' addresses derive from that
+# bytecode, so a different rate needs a new contract version and factory, not a settings change.
+PONS_SHARE_BPS = 600
 
 CREATOR_SHARE_LAUNCHPADS = {
     "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood",

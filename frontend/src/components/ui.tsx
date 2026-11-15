@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BASE, short } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import { ChainMark } from "./marks";
@@ -56,6 +57,7 @@ const P: Record<string, ReactNode> = {
   image: <><rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" /></>,
   globe: <><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></>,
   edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,
+  clock: <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,
   mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" /></>,
 };
@@ -364,9 +366,21 @@ export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
       const auto = el.querySelector<HTMLElement>("[autofocus]");
       (auto ?? el).focus();
     }
-    return () => { opener?.focus?.(); };
+    // The page behind is inert (not focusable, hidden from assistive tech) and doesn't scroll while the dialog is
+    // open. Nested dialogs keep a count so closing the inner one doesn't release the outer one's lock.
+    const root = document.getElementById("root");
+    const depth = Number(document.body.dataset.modals ?? 0) + 1;
+    document.body.dataset.modals = String(depth);
+    root?.setAttribute("inert", "");
+    document.body.style.overflow = "hidden";
+    return () => {
+      const left = Number(document.body.dataset.modals ?? 1) - 1;
+      document.body.dataset.modals = String(left);
+      if (left <= 0) { root?.removeAttribute("inert"); document.body.style.overflow = ""; }
+      opener?.focus?.();
+    };
   }, []);
-  return (
+  return createPortal(
     <div className={`modal-bg ${closing ? "out" : ""}`} onMouseDown={lock ? undefined : close}>
       <div ref={ref} tabIndex={-1} className={`modal ${wide ? "wide" : ""} ${closing ? "out" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-head">
@@ -379,7 +393,8 @@ export function Modal({ title, sub, onClose, children, foot, wide, lock }: {
         <div className="modal-body">{children}</div>
         {foot && <div className="modal-foot">{foot}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -398,14 +413,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="toasts" aria-live="polite">
+      {createPortal(<div className="toasts" aria-live="polite">
         {items.map((t) => (
           <div key={t.id} className={`toast ${t.tone}`}>
             <Icon name={t.tone === "good" ? "checkcircle" : t.tone === "bad" ? "xcircle" : "info"} size={16} />
             <div className="grow">{t.text}</div>
           </div>
         ))}
-      </div>
+      </div>, document.body)}
     </ToastCtx.Provider>
   );
 }

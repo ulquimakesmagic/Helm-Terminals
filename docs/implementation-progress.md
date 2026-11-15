@@ -24,3 +24,9 @@ findings are fixed; three low-severity transitive TON Connect findings remain pe
 The requested skill fork is https://github.com/ulquimakesmagic/ui-ux-pro-max-skill and is installed locally.
 Design rules are persisted in `../design-system/helm-terminals/MASTER.md`.
 See `pricing-security-audit.md` for scope, evidence, remaining limitations and release gates.
+
+Upstream integration: merged origin/main at a149eae after pushing checkpoint 3f34a2b to
+codex/pricing-ux-audit. This preserves Printr, legal pages, the same-origin API proxy and routing infrastructure,
+while retaining the requested $20/1%/zero creator-share policy. The integrated production build and 19 frontend
+tests pass; 24 focused pricing, migration and Printr tests pass. The earlier broad backend diagnostic was stopped
+before replacing its source tree; it reported failures and was not a passing full run.

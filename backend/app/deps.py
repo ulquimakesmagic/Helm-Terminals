@@ -203,7 +203,20 @@ async def begin_spend(
               channel=getattr(user, "channel", "web"))
     db.add(job)
     await log_activity(db, user.id, f"{kind}.confirmed", "job", job.id, {"preflight_hash": body.preflight_hash})
-    await db.commit()
+    from sqlalchemy.exc import IntegrityError
+
+    user_id, key = user.id, body.idempotency_key
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent confirmation with the same key won the insert: return its job, never run twice (HT-11).
+        await db.rollback()
+        await db.refresh(user)  # rollback expired every loaded row; reload before anyone reads it again
+        existing = (await db.execute(select(Job).where(
+            Job.user_id == user_id, Job.idempotency_key == key))).scalar_one_or_none()
+        if existing is None:
+            raise
+        return existing, False
     return job, True
 
 

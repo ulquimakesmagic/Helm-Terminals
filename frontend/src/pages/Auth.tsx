@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
-import { Brand, ChainStrip, RISK_NOTE, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
+import { Brand, ChainStrip, PublicFooter, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
 import { Callout, Field, Icon, Spinner } from "../components/ui";
 import { useSession } from "../session";
+import { safeNext } from "../nav";
+import { setMeta } from "../meta";
 
 type Mode = "login" | "register";
 const MIN_PASSWORD = 10; // matches the API's registration rule
@@ -37,7 +39,7 @@ export default function Auth() {
   const heading = useRef<HTMLHeadingElement>(null);
   const wide = typeof window !== "undefined" && window.matchMedia?.("(min-width: 900px)").matches;
 
-  useEffect(() => { document.title = `${mode === "register" ? "Create account" : "Sign in"} · Helm Terminals`; }, [mode]);
+  useEffect(() => { setMeta({ title: `${mode === "register" ? "Create account" : "Sign in"} · Helm Terminals`, path: "/login", index: false }); }, [mode]);
 
   // Email, password and referral code carry over when switching modes; only the error and 2FA step reset.
   function setMode(m: Mode) {
@@ -69,7 +71,7 @@ export default function Auth() {
       const r = await api("/auth/login", { body: { email, password, totp: totp || undefined } });
       setToken(r.token);
       refresh();
-      nav("/", { replace: true });
+      nav(safeNext(params.get("next")), { replace: true });
     } catch (err) {
       const d = errMsg(err);
       if (d === "totp_required") {
@@ -124,6 +126,7 @@ export default function Auth() {
             <p className="text-2">{sub}</p>
           </div>
           {mode === "login" && <Link className="small" to="/recover">Forgot password or lost your authenticator?</Link>}
+          {safeNext(params.get("next")) !== "/" && <Callout icon="lock">Sign in to continue to <span className="mono">{safeNext(params.get("next"))}</span>. Sessions live in this tab's memory, so a reload asks you to sign in again.</Callout>}
           <p className="small muted">Your session stays in this tab's memory. Reloading the page or opening a new tab requires signing in again.</p>
 
           <form id="auth-form" className="stack" style={{ gap: 14 }} onSubmit={submit} noValidate
@@ -215,9 +218,7 @@ export default function Auth() {
         </aside>
       </main>
 
-      <footer className="pub-footer slim">
-        <div className="pub-wrap"><p className="muted small">{RISK_NOTE}</p></div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

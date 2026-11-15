@@ -51,7 +51,8 @@ async def test_merge_duplicates_and_isolation(client):
     w = (await client.post("/wallets", json={"count": 1}, headers=h)).json()[0]
     await client.post("/wallets/move", json={"wallet_ids": [w["id"]], "folder_id": extra_id}, headers=h)
     r = (await client.post("/folders/merge-duplicates", headers=h)).json()
-    assert r["removed"] == 10 and r["wallets_moved"] == 1
+    # The folder that already holds the wallet is kept, whatever order the rows come back in (audit HT-12).
+    assert r["removed"] == 10 and r["wallets_moved"] == 0
     folders = (await client.get("/folders", headers=h)).json()
     assert len(folders) == 1 and folders[0]["wallet_count"] == 1
     # other users can't touch these folders or wallets

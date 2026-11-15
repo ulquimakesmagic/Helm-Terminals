@@ -35,7 +35,8 @@ class Jupiter:
             self._http = None
 
     def _url(self, path: str) -> str:
-        base = (get_settings().jupiter_api_url or "https://lite-api.jup.ag").rstrip("/")
+        s = get_settings()
+        base = (s.jupiter_api_url or ("https://api.jup.ag" if s.jupiter_api_key else "https://lite-api.jup.ag")).rstrip("/")
         return f"{base}{path}"
 
     def _headers(self) -> dict:

@@ -1,17 +1,15 @@
 """Portfolio across every chain: each chain's coin and dollar stablecoin in your managed wallets, valued in USD.
 
-Balances are read live (a few at a time, so large wallet lists don't flood the RPCs) and cached briefly per user.
-Coin prices come from DefiLlama's public price API; if it's unreachable, amounts still show without USD values.
+Balances are read live from each chain's RPC (a few at a time, so large wallet lists don't flood the RPCs) and cached
+briefly per user. Coin prices come from Codex, Helm's only market-data source, using each coin's wrapped token on its
+home network. A coin Codex cannot price (NEAR and TON are not Codex networks) shows its amount without a USD value.
 Stablecoins are counted at $1.
 """
 
 import asyncio
-import json
 import math
 import time
 from datetime import datetime, timezone
-
-import httpx
 
 from ..models import Wallet
 from ..chains.networks import EXTRA_NETWORKS, extra_enabled
@@ -19,94 +17,62 @@ from . import extra_chains
 from .chain_balances import STABLES, chain_name, native_balance, native_coin, rpc_detail, token_balance_raw, token_decimals
 
 CHAINS = ["solana", "base", "bsc", "robinhood", "ethereum", *EXTRA_NETWORKS]
-PRICE_IDS = {"SOL": "coingecko:solana", "ETH": "coingecko:ethereum", "BNB": "coingecko:binancecoin",
-             "TRX": "coingecko:tron", "NEAR": "coingecko:near", "TON": "coingecko:the-open-network"}
-PRICE_URL = "https://coins.llama.fi/prices/current/"
+# Wrapped native token per coin on a Codex network (canonical contracts). ETH on Base and Robinhood Chain uses
+# Ethereum's WETH price; Arc's native coin is USDC and is counted as a stablecoin.
+PRICE_TOKENS = {"SOL": ("solana", "So11111111111111111111111111111111111111112"),
+                "ETH": ("ethereum", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+                "BNB": ("bsc", "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"),
+                "TRX": ("tron", "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR")}
 MAX_WALLETS = 300
 CHAIN_TIMEOUT_S = 20
 
-_price_cache: tuple[float, dict[str, float]] = (0.0, {})
 _cache: dict[str, tuple[float, tuple, dict]] = {}
 _inflight: dict[tuple, asyncio.Task] = {}
 _decimals: dict[tuple[str, str], int] = {}
 
 
-async def coin_prices(client: httpx.AsyncClient | None = None) -> dict[str, float]:
-    global _price_cache
-    if time.monotonic() - _price_cache[0] < 60:
-        return _price_cache[1]
-    own = client is None
-    client = client or httpx.AsyncClient(timeout=8)
+async def coin_prices(market=None) -> dict[str, float]:
+    """Current USD price per coin symbol from Codex. Missing or unusable quotes are left out, never reused."""
+    from .market import get_market
+
+    market = market or get_market()
     try:
-        r = await client.get(PRICE_URL + ",".join(PRICE_IDS.values()))
-        r.raise_for_status()
-        coins = r.json().get("coins", {})
-        prices = {}
-        for sym, cid in PRICE_IDS.items():
-            quote = coins.get(cid) or {}
-            try:
-                price = float(quote["price"])
-                age = time.time() - float(quote["timestamp"])
-                if math.isfinite(price) and price > 0 and -60 <= age <= 300:
-                    prices[sym] = price
-            except (KeyError, TypeError, ValueError):
-                continue
-    except Exception:
-        prices = {}
-    finally:
-        if own:
-            await client.aclose()
-    _price_cache = (time.monotonic(), prices)
-    return prices  # never relabel an indefinitely old cached quote as a fresh portfolio value
-
-
-HIST_URL = "https://coins.llama.fi/batchHistorical"
-_day_prices: dict[tuple[str, str], float] = {}  # (coin, YYYY-MM-DD) -> USD; past days never change
-
-
-async def _fetch_history(coin: str, cid: str, days: list[str], client: httpx.AsyncClient | None) -> dict[str, float]:
-    stamps = {int(datetime.fromisoformat(d).replace(hour=12, tzinfo=timezone.utc).timestamp()): d for d in days}
-    got: dict[str, float] = {}
-    own = client is None
-    client = client or httpx.AsyncClient(timeout=10)
-    try:
-        keys = list(stamps)
-        for i in range(0, len(keys), 100):  # keep the query string a sane length
-            r = await client.get(HIST_URL, params={"coins": json.dumps({cid: keys[i:i + 100]}), "searchWidth": "43200"})
-            for pt in ((r.json().get("coins") or {}).get(cid) or {}).get("prices") or []:
-                day = datetime.fromtimestamp(int(pt["timestamp"]), timezone.utc).date().isoformat()
-                if day in days:
-                    _day_prices[(coin, day)] = got[day] = float(pt["price"])
-    except Exception:
-        pass
-    finally:
-        if own:
-            await client.aclose()
-    return got
-
-
-async def daily_prices(coin: str, days: list[str], client: httpx.AsyncClient | None = None) -> dict[str, float]:
-    """USD price of `coin` (SOL, ETH, BNB) on each day (noon UTC), from DefiLlama. Days it can't price are left out;
-    today uses the live price."""
-    cid = PRICE_IDS.get(coin)
-    if not cid or not days:
+        found = await market.prices([(n, a, None) for n, a in PRICE_TOKENS.values()])
+    except Exception:  # noqa: BLE001 - a market outage leaves values unpriced, it never breaks the portfolio
         return {}
+    out = {}
+    for sym, (n, a) in PRICE_TOKENS.items():
+        price = found.get((n, a, None))
+        if price is not None and math.isfinite(price) and price > 0:
+            out[sym] = price
+    return out
+
+
+async def daily_prices(coin: str, days: list[str], market=None) -> dict[str, float]:
+    """USD price of `coin` at noon UTC on each day, from Codex. Days Codex can't price are left out: a missing
+    day is reported as missing, never filled from another day (audit HT-06). Today uses the live price."""
+    from .market import get_market
+
+    token = PRICE_TOKENS.get(coin)
+    if not token or not days:
+        return {}
+    market = market or get_market()
     today = datetime.now(timezone.utc).date().isoformat()
-    out = {d: _day_prices[(coin, d)] for d in days if (coin, d) in _day_prices}
-    missing = [d for d in days if d not in out and d != today]
-    if missing:
-        out.update(await _fetch_history(coin, cid, missing, client))
+    stamps = {d: int(datetime.fromisoformat(d).replace(hour=12, tzinfo=timezone.utc).timestamp())
+              for d in days if d != today}
+    out: dict[str, float] = {}
+    if stamps:
+        try:
+            found = await market.prices([(token[0], token[1], ts) for ts in stamps.values()])
+        except Exception:  # noqa: BLE001
+            found = {}
+        for d, ts in stamps.items():
+            if (price := found.get((token[0], token[1], ts))) is not None:
+                out[d] = price
     if today in days:
-        live = (await coin_prices()).get(coin)
+        live = (await coin_prices(market)).get(coin)
         if live is not None:
             out[today] = live
-    # Anything still unpriced (API down, a gap) uses the nearest priced day, else today's price.
-    live = out.get(today) or (await coin_prices()).get(coin)
-    for d in days:
-        if d not in out:
-            near = min((k for k in out), key=lambda k: abs(datetime.fromisoformat(k) - datetime.fromisoformat(d)), default=None)
-            if near is not None or live is not None:
-                out[d] = out[near] if near is not None else live
     return out
 
 

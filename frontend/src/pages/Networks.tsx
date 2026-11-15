@@ -59,7 +59,7 @@ export default function Networks() {
           <tbody>{data.extra.map((n) => (
             <tr key={n.id}>
               <td className="span"><span className="row nowrap" style={{ gap: 6 }}><ChainMark network={n.id} size={20} label /><b>{n.name}</b>
-                <span className="badge warn">mainnet · real money</span></span>
+</span>
                 <div className="muted small">{n.native} · {n.decimals} decimals{n.chain_id ? ` · chain id ${n.chain_id}` : ""}{n.network_id ? ` · TON Connect network ${n.network_id}` : ""}</div></td>
               {Object.keys(CAP_LABEL).map((k) => <td key={k} data-label={CAP_LABEL[k]}><Cap text={n.capabilities[k]} /></td>)}
               <td data-label="Status">{n.enabled ? <span className="badge good">Enabled</span> : <span className="badge">Off on this server</span>}</td>
@@ -72,11 +72,11 @@ export default function Networks() {
           <div key={n.id} className="stack tight">
             <b>{n.name}</b>{n.notes && <span className="muted small">{n.notes}</span>}
             {Object.entries(n.capabilities).map(([k, v]) => <span key={k} className="small"><span className="muted">{CAP_LABEL[k]}:</span> {v}</span>)}
-            <span className="small muted">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
+            <span className="small muted net-sources">Sources: {n.sources.map((s, i) => <span key={s}>{i ? " · " : ""}<a href={s} target="_blank" rel="noreferrer noopener">{s.replace(/^https:\/\//, "").split("/").slice(0, 3).join("/")}</a></span>)}</span>
           </div>))}</div>
       </details>
       {enabled.length === 0 ? <Empty icon="globe" title="None of these networks are enabled here" text="The server operator lists them in EXTRA_NETWORKS (and ALLOW_MAINNET_EXTRA_NETWORKS must not be false)." /> : (
-        <Card title="Use a network" icon="globe" sub="Pick one explicitly. These are mainnets: transfers move real money.">
+        <Card title="Use a network" icon="globe" sub="Pick one explicitly.">
           <div className="chips">{enabled.map((n) => (
             <button key={n.id} type="button" className={`chip ${current?.id === n.id ? "on" : ""}`} onClick={() => setSearch({ network: n.id })}>
               <ChainMark network={n.id} size={16} />{n.name}
@@ -104,7 +104,6 @@ function NetworkPanel({ net }: { net: Net }) {
   };
   return (
     <div className="stack">
-      <Callout tone="warn" icon="alert">{net.name} is a mainnet: transfers move real money.</Callout>
       <Card title={`${net.name} wallets`} icon="wallet" flush
         actions={net.family === "ton" ? undefined : <button className="btn sm" onClick={create} disabled={busy}>{busy ? <Spinner /> : <Icon name="plus" size={13} />}New {net.name} wallet</button>}>
         {net.family === "ton" && <div style={{ padding: "12px 16px" }}><Suspense fallback={<Loading rows={1} />}><TonConnectBox net={net} onLinked={load} /></Suspense></div>}

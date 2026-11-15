@@ -16,6 +16,7 @@ async def confirm(client, h, path, body, **extra):
     pre = await client.post(path, json=body, headers=h)
     assert pre.status_code == 200, pre.text
     data = pre.json()
+    approval = {"quote_approval": data["quote_approval"]} if data.get("quote_approval") else {}
     r = await client.post(path, json={**body, "confirm": True, "preflight_hash": data["preflight_hash"],
                                       "idempotency_key": extra.pop("key", "k-" + path),
                                       "quote_approval": data.get("quote_approval"),

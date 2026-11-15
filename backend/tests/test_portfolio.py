@@ -104,10 +104,12 @@ async def test_net_flow_is_valued_in_usd_at_each_days_price(client, fake_rpc, mo
     today = utcnow()
     yday = today - timedelta(days=1)
 
-    async def history(coin, cid, days, client):
-        return {d: 100.0 for d in days}  # yesterday at $100; today uses the live $150
+    from app.services import market as mk
 
-    monkeypatch.setattr(pf_mod, "_fetch_history", history)
+    async def history(self, inputs):
+        return {i: 100.0 for i in inputs}  # yesterday at $100 from Codex; today uses the live $150
+
+    monkeypatch.setattr(mk.Market, "prices", history)
     async with get_sessionmaker()() as db:
         uid = (await db.execute(select(User.id))).scalars().first()
         job = Job(user_id=uid, kind="trade_buy", params={}, idempotency_key="nf1", status="confirmed")
@@ -255,22 +257,24 @@ async def test_slow_token_read_preserves_native_balance_and_does_not_hold_up_oth
     assert cancelled.is_set() and not p["complete"]
 
 
-async def test_price_provider_failure_does_not_reuse_old_quotes(monkeypatch):
-    import httpx
-    import time
+async def test_price_provider_failure_leaves_coins_unpriced(monkeypatch):
+    class Down:
+        async def prices(self, inputs):
+            raise RuntimeError("codex down")
 
-    monkeypatch.setattr(pf_mod, "_price_cache", (time.monotonic() - 61, {"NEAR": 99}))
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(429))) as client:
-        assert await load_coin_prices(client) == {}
+    monkeypatch.undo()  # use the real coin_prices, not the suite's fixed prices
+    assert await load_coin_prices(Down()) == {}
 
 
-async def test_only_fresh_valid_price_quotes_are_used(monkeypatch):
-    import httpx
-    import time
+async def test_only_positive_codex_prices_are_used_and_near_ton_stay_unpriced(monkeypatch):
+    from app.services.portfolio import PRICE_TOKENS
 
-    coins = {"coingecko:near": {"price": 5, "timestamp": time.time()},
-             "coingecko:tron": {"price": 0.25, "timestamp": time.time() - 3600},
-             "coingecko:the-open-network": {"price": -1, "timestamp": time.time()}}
-    monkeypatch.setattr(pf_mod, "_price_cache", (0, {}))
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"coins": coins}))) as client:
-        assert await load_coin_prices(client) == {"NEAR": 5}
+    class Codex:
+        async def prices(self, inputs):
+            values = {"SOL": 150.0, "ETH": -1.0, "BNB": float("nan")}
+            return {(n, a, ts): values[sym] for sym, (n, a) in PRICE_TOKENS.items() for (n2, a2, ts) in inputs
+                    if (n2, a2) == (n, a) and sym in values}
+
+    monkeypatch.undo()
+    assert await load_coin_prices(Codex()) == {"SOL": 150.0}
+    assert "NEAR" not in PRICE_TOKENS and "TON" not in PRICE_TOKENS  # not Codex networks: shown without USD

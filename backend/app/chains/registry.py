@@ -8,6 +8,7 @@ from .clanker import ClankerAdapter
 from .fourmeme import FourMemeAdapter
 from .meteora_dbc import MeteoraDbcAdapter
 from .pons import PonsAdapter
+from .printr import PrintrAdapter
 from .uniswap_v2 import UniswapV2Adapter
 from .base import LaunchpadAdapter
 from .letsbonk import LetsBonkAdapter
@@ -56,7 +57,13 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                "four-meme": lambda: FourMemeAdapter(shared_evm("bsc")),
                "meteora-dbc": lambda: MeteoraDbcAdapter(get_settings().jupiter_api_key,
                                                         shared_rpc(get_settings().solana_rpc_url),
-                                                        get_settings().jupiter_api_url),
+                                                        get_settings().jupiter_api_url or "https://api.jup.ag"),
+               "printr": lambda: PrintrAdapter(
+                   get_settings().printr_api_url, get_settings().printr_api_key,
+                   shared_rpc(get_settings().solana_rpc_url),
+                   MeteoraDbcAdapter(get_settings().jupiter_api_key, shared_rpc(get_settings().solana_rpc_url),
+                                     get_settings().jupiter_api_url or "https://api.jup.ag")
+                   if get_settings().jupiter_api_key else None),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood"),
                # TRON, NEAR and Arc (see chains/extra_pads.py and services/extra_launch.py)
                "sunpump": SunPump, "tolly": Tolly,
@@ -101,10 +108,8 @@ def needs_setup(launchpad_id: str) -> str | None:
 
 # Roadmap from the spec (section 8). Shown in the UI as "planned" so the scope is visible, not hidden.
 PLANNED = [
-    ("printr", "solana"),
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("bankr", "base"),
-    ("gaspump", "ton"),  # buy/sell are documented (SDK); token creation isn't public yet
     # Elpida is a development prototype. Enable only after deployed program/contract verification.
     ("elpida-solana", "solana"), ("elpida-ethereum", "ethereum"), ("elpida-base", "base"),
     ("elpida-bsc", "bsc"), ("elpida-robinhood", "robinhood"),

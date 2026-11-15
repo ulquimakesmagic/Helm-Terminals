@@ -37,8 +37,9 @@ Base/Robinhood, Pons, Four.meme, Uniswap V2, SunPump, Meme.Cooking and Tolly: 15
 use the common pricing policy. The API advertises claim, automation and configuration capabilities explicitly.
 An implemented adapter may still need an API key, enabled network, funding or provider access.
 
-Printr, Surge, Anoncoin, Stonkfun, Bankr and GasPump remain roadmap entries. They are not fully integrated by
-this change. Elpida is also explicitly planned on its five target chains, pending mainnet verification. See
+The subsequently integrated upstream changes add Printr as a sixteenth implemented adapter and remove GasPump
+from the roadmap. Surge, Anoncoin, Stonkfun and Bankr remain planned. Elpida is also explicitly planned on its
+five target chains, pending mainnet verification. See
 [Elpida integration requirements](elpida-integration.md). Availability in the directory means implemented and
 configured; it does not mean a mainnet acceptance test passed.
 
@@ -104,6 +105,7 @@ the final admin JSON reports no overflow, accessibility violations or runtime er
 
 The release should remain gated on these items; passing local tests does not certify that real funds are safe.
 
-Regression status: the full backend run has reported a failure and remains in progress. Do not interpret the
-passing focused checks as a passing full suite. The public-info response assertion was updated for the new
-pricing field; remaining failures require review against the final source.
+Regression status: the broad diagnostic reported failures and was stopped before integrating 33 upstream commits.
+It was not a passing full suite. After integration, the production build, 19 frontend tests and 24 focused
+pricing/migration/Printr tests pass. Earlier browser evidence predates that upstream merge. Remaining backend
+failures and updated browser behavior require review against the integrated source.

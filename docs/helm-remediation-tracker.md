@@ -1,5 +1,7 @@
 # Helm audit remediation tracker
 
+> Superseded for current status by `docs/audits/helm-remediation-tracker-2026-10-06.md` (6 Oct 2026). The table below is the 4 Oct snapshot.
+
 Baseline: `main` at `2b8928d`. Scope: `docs/helm-professional-audit.md`, findings AUD-01–16 and sections 6–11. Application changes, safe local checks and reports are authorized; no commit, push, deployment, production configuration changes or live financial transactions.
 
 Statuses distinguish local implementation from production verification. No finding is closed by a passing unrelated test or by hiding a warning.

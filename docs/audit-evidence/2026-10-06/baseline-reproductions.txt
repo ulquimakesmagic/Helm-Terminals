@@ -1,0 +1,5 @@
+tests/test_audit_repro_2026_10.py::test_r1_solana_drain_passes_signer_only_guard PASSED [ 25%]
+tests/test_audit_repro_2026_10.py::test_r2_evm_plain_transfer_to_eoa_passes_guard PASSED [ 50%]
+tests/test_audit_repro_2026_10.py::test_r3_moving_jupiter_quote_makes_swap_unconfirmable PASSED [ 75%]
+tests/test_audit_repro_2026_10.py::test_r4_execution_requote_ignores_reviewed_floor PASSED [100%]
+============================== 4 passed in 1.15s ===============================

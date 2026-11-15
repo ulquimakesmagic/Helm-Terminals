@@ -302,7 +302,7 @@ function Treasury({ me }: { me: AdminMe }) {
         <Modal title={`Treasury: ${NET_LABEL[edit.network]}`} sub="Receive-only address; paste a multisig or hardware-wallet address" onClose={() => setEdit(null)}
           foot={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button><button className="btn" onClick={() => setConfirm(true)}>Continue</button></>}>
           <div className="stack">
-            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={edit.network === "solana" ? "Solana address" : "0x…"} autoFocus /></label>
+            <label className="field"><span>Address</span><input className="mono" value={edit.address} onChange={(e) => setEdit({ ...edit, address: e.target.value })} placeholder={(edit.network === "solana" ? "Solana address" : "Network treasury address")} autoFocus /></label>
             <label className="field"><span>Label (optional)</span><input value={edit.label} maxLength={80} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /></label>
             <span className="muted small">Leave the address empty to remove the dashboard entry (the environment value, if any, applies again). Never paste a private key or seed phrase anywhere in Helm.</span>
           </div>
@@ -324,9 +324,12 @@ function Treasury({ me }: { me: AdminMe }) {
 interface SettingRow { key: string; bps: number; source: string; updated_at?: string; min: number; max: number; treasury_network: string | null; treasury: string | null; paths: { id: string; label: string; supported: boolean }[] }
 interface FeePath { id: string; label: string; networks: string[]; supported: boolean; lands: string | null; how: string }
 const SETTING_LABEL: Record<string, string> = {
-  trade_fee_bps_solana: "Trading fee: Solana launchpads", trade_fee_bps_evm_dex: "Trading fee: EVM trades routed through a DEX",
+  trade_fee_bps_solana: "Trading fee: Solana launchpads", trade_fee_bps_evm_dex: "Trading fee: EVM trades routed through a DEX", trade_fee_bps_extra: "Trading fee: SunPump (TRON) and Tolly (Arc)",
   route_fee_bps: "Cross-chain route fee (Relay)", creator_share_bps: "Share of new launches' creator rewards",
+  launch_fee_cents: "Launch fee (flat, per launch)",
 };
+/** launch_fee_cents is a dollar amount in cents; every other setting is a rate in basis points. */
+const isDollars = (key: string) => key === "launch_fee_cents";
 
 function Fees({ me }: { me: AdminMe }) {
   const toast = useToast();
@@ -374,11 +377,13 @@ function Fees({ me }: { me: AdminMe }) {
       </Card>
       {edit && (
         <StepUpDialog title={SETTING_LABEL[edit.key] ?? edit.key}
-          detail={<label className="field"><span>New rate in basis points (100 = 1%)</span>
-            <input inputMode="numeric" value={edit.bps} onChange={(e) => setEdit({ ...edit, bps: e.target.value.replace(/\D/g, "") })} /></label>}
+          detail={<label className="field"><span>{isDollars(edit.key) ? "New fee in US dollars (0 turns it off)" : "New rate in basis points (100 = 1%)"}</span>
+            <input inputMode={isDollars(edit.key) ? "decimal" : "numeric"} value={edit.bps}
+              onChange={(e) => setEdit({ ...edit, bps: isDollars(edit.key) ? e.target.value.replace(/[^\d.]/g, "") : e.target.value.replace(/\D/g, "") })} /></label>}
           onCancel={() => setEdit(null)}
           onConfirm={async (proof) => {
-            await api(`/admin/settings/${edit.key}`, { method: "PUT", body: { bps: Number(edit.bps), confirm: proof } });
+            const value = isDollars(edit.key) ? Math.round(Number(edit.bps) * 100) : Number(edit.bps);
+            await api(`/admin/settings/${edit.key}`, { method: "PUT", body: { bps: value, confirm: proof } });
             toast("good", "Rate saved"); setEdit(null); load();
           }} />
       )}
