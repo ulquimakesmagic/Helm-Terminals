@@ -24,7 +24,7 @@ async def test_profile_update_validation_and_unique_handle(client):
     h1 = await signup(client, "one@example.com")
     h2 = await signup(client, "two@example.com")
     r = await client.patch("/profile", json={"is_public": True}, headers=h1)
-    assert r.status_code == 400 and "handle" in r.json()["detail"]
+    assert r.status_code == 400 and "private" in r.json()["detail"]
     for bad in ("ab", "Has Space", "admin"):
         assert (await client.patch("/profile", json={"handle": bad}, headers=h1)).status_code == 400
     r = await client.patch("/profile", json={"handle": "@MemeGoat", "x_handle": "@thememegoat", "bio": " gm ",
@@ -34,24 +34,6 @@ async def test_profile_update_validation_and_unique_handle(client):
     assert p["handle"] == "memegoat" and p["x_handle"] == "thememegoat" and p["bio"] == "gm"
     assert (await client.patch("/profile", json={"website": "http://x.io"}, headers=h1)).status_code == 400
     assert (await client.patch("/profile", json={"handle": "memegoat"}, headers=h2)).status_code == 409
-
-
-async def test_public_page_is_opt_in_and_hides_private_data(client, fake_rpc):
-    h = await signup(client, "pub@example.com")
-    await live_launch(client, h, fake_rpc)
-    await client.patch("/profile", json={"handle": "builder"}, headers=h)
-    assert (await client.get("/u/builder")).status_code == 404  # not public yet
-    r = await client.patch("/profile", json={"is_public": True}, headers=h)
-    assert r.json()["public_path"] == "/u/builder"
-    r = await client.get("/u/BUILDER")
-    assert r.status_code == 200
-    d = r.json()
-    assert d["stats"]["deployed"] == 1 and d["launches"][0]["mint_address"]
-    text = str(d).lower()
-    assert "pub@example.com" not in text and "wallet" not in text and "sol_flow" not in text
-    # clearing the handle takes the page down
-    await client.patch("/profile", json={"handle": ""}, headers=h)
-    assert (await client.get("/u/builder")).status_code == 404
 
 
 async def test_profile_edit_is_web_only(client):

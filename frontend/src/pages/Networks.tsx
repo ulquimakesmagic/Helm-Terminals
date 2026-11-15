@@ -51,8 +51,8 @@ export default function Networks() {
   const current = enabled.find((n) => n.id === pick) ?? null;
   return (
     <>
-      <PageHeader title="Networks" sub="What Helm supports on TRON, NEAR, Arc and TON. Wallets, balances and transfers only: no launches, swaps or market data there yet." />
-      <Card title="Capability matrix" icon="layers" flush sub={data.note}>
+      <PageHeader title="Network status" sub="Check supported actions and manage network-specific wallet connections." />
+      <Card title="Capability matrix" icon="layers" flush sub="Availability depends on the network and action. Open a network for details.">
         <TableWrap><table className="rtable">
           <caption className="sr-only">What Helm supports on each network</caption>
           <thead><tr><th>Network</th>{Object.values(CAP_LABEL).map((l) => <th key={l}>{l}</th>)}<th>Status</th></tr></thead>

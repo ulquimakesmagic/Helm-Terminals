@@ -1,9 +1,4 @@
-"""Profile: how a user presents themselves, plus a summary of their own track record.
-
-`GET /profile` is private (the signed-in user's own account, stats and activity).
-`GET /u/{handle}` is a public creator page, and exists only when the user turns it on. It lists the tokens they
-deployed through Helm (these are public on-chain anyway) and never shows wallets, balances, P&L or email.
-"""
+"""Private account identity and the authenticated owner's performance."""
 
 import re
 from datetime import timedelta
@@ -50,7 +45,7 @@ async def get_profile(db: AsyncSession, user: User) -> Profile:
 def _profile_out(p: Profile) -> dict:
     return {"display_name": p.display_name, "handle": p.handle, "bio": p.bio, "x_handle": p.x_handle,
             "telegram_handle": p.telegram_handle, "website": p.website, "avatar_hue": p.avatar_hue,
-            "is_public": p.is_public, "public_path": f"/u/{p.handle}" if p.is_public and p.handle else None}
+            "is_public": False, "public_path": None}
 
 
 def _launch_out(l: Launch) -> dict:
@@ -157,7 +152,7 @@ async def profile(user: User = Depends(current_user), db: AsyncSession = Depends
         {"id": "first_launch", "label": "First launch", "hint": "Deployed a token", "done": any(l.deployed_at for l in own)},
         {"id": "multichain", "label": "Multichain", "hint": "Launched on 2 or more chains", "done": len(live_networks) >= 2},
         {"id": "referrer", "label": "Brought a friend", "hint": "Someone joined with your link", "done": referral["referred_users"] > 0},
-        {"id": "public", "label": "Went public", "hint": "Public creator page on", "done": p.is_public and bool(p.handle)},
+        {"id": "public", "label": "Went public", "hint": "Public creator page on", "done": bool(p.display_name) and bool(p.handle)},
     ]
 
     return {
@@ -254,11 +249,9 @@ async def update_profile(body: ProfileUpdate, user: User = Depends(web_user), db
     if body.avatar_hue is not None:
         p.avatar_hue = body.avatar_hue
         changed.append("avatar")
-    if body.is_public is not None:
-        if body.is_public and not p.handle:
-            raise HTTPException(400, "pick a handle before making your profile public")
-        p.is_public = body.is_public
-        changed.append("is_public")
+    if body.is_public:
+        raise HTTPException(400, "Helm profiles are private")
+    p.is_public = False
 
     if changed:
         await log_activity(db, user.id, "profile.updated", payload={"fields": changed,
@@ -269,25 +262,3 @@ async def update_profile(body: ProfileUpdate, user: User = Depends(web_user), db
         await db.rollback()
         raise HTTPException(409, "that handle is taken")
     return _profile_out(p)
-
-
-@router.get("/u/{handle}")
-async def public_profile(handle: str, db: AsyncSession = Depends(get_db)):
-    """Public creator page. No auth. Only for profiles that opted in; never shows wallets, balances or email."""
-    p = (await db.execute(select(Profile).where(Profile.handle == handle.strip().lower()))).scalar_one_or_none()
-    if not p or not p.is_public:
-        raise HTTPException(404, "profile not found")
-    user = await db.get(User, p.user_id)
-    launches = (await db.execute(
-        select(Launch).where(Launch.user_id == p.user_id, Launch.imported.is_(False), Launch.mint_address.is_not(None),
-                             Launch.deployed_at.is_not(None))
-        .order_by(Launch.deployed_at.desc()).limit(100)
-    )).scalars().all()
-    return {
-        "display_name": p.display_name, "handle": p.handle, "bio": p.bio, "x_handle": p.x_handle,
-        "telegram_handle": p.telegram_handle, "website": p.website, "avatar_hue": p.avatar_hue,
-        "joined": user.created_at.strftime("%Y-%m") if user else None,
-        "stats": {"deployed": len(launches), "live": sum(1 for l in launches if l.status == "live"),
-                  "networks": sorted({l.network for l in launches}), "launchpads": _launchpad_breakdown(launches)},
-        "launches": [{k: v for k, v in _launch_out(l).items() if k not in ("id", "created_at")} for l in launches],
-    }

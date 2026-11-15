@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { fmt, short } from "../api";
 import { chainOf, isExtraChain, padName } from "../chains";
+import { formatRaw } from "../amounts";
 
 /**
  * Turns a server preflight into the few facts a person must check before confirming: the headline amount, the
@@ -206,7 +207,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
     case "disperse": {
       const to = list(pre.to);
       return {
-        label: "Disperse", value: fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {pre.from?.label ?? "your wallet"} to {to.length} of your wallets · {pre.split === "custom" ? "custom amounts" : "even split"}</>,
+        label: "Disperse", value: pre.total_raw != null ? formatRaw(String(pre.total_raw), pre.decimals) : fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {pre.from?.label ?? "your wallet"} to {to.length} of your wallets · {pre.split === "custom" ? "custom amounts" : "even split"}</>,
         cells: [["Recipients", String(to.length)], ["Transactions", String(pre.transactions ?? to.length)], ...gasCell, ["Platform fee", fee(pre.platform_fee)]],
         next: [
           "Transfers are sent in order; if one fails, the rest stop so nothing is left half-known.",
@@ -217,7 +218,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
     case "consolidate": {
       const from = list(pre.from);
       return {
-        label: "Consolidate", value: fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {from.length} wallet{from.length === 1 ? "" : "s"} into {pre.to?.label ?? "your wallet"}</>,
+        label: "Consolidate", value: pre.total_raw != null ? formatRaw(String(pre.total_raw), pre.decimals) : fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {from.length} wallet{from.length === 1 ? "" : "s"} into {pre.to?.label ?? "your wallet"}</>,
         cells: [["Source wallets", String(from.length)], ["Share of each", `${fmt(num(pre.percent) ?? 0, 2)}%`], ...gasCell, ["Platform fee", fee(pre.platform_fee)]],
         next: ["Each source wallet signs its own transfer. One failing doesn't stop the others.", "Wallets with nothing to move are skipped."],
       };

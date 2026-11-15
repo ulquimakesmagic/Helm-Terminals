@@ -341,12 +341,18 @@ async def attach_wallets(launch_id: str, body: AttachWallets, user: User = Depen
     l = await _owned_launch(db, user, launch_id)
     if body.role not in ("dev", "holder"):
         raise HTTPException(400, "role must be dev or holder")
-    for wid in body.wallet_ids:
-        await owned_wallet(db, user, wid, managed=False)
+    count = 0
+    for wid in dict.fromkeys(body.wallet_ids):
+        wallet = await owned_wallet(db, user, wid)
+        if wallet.network != l.network:
+            raise HTTPException(400, "Attached wallets must be on the launch's chain")
+        if body.role == "dev" and wid != l.dev_wallet_id:
+            raise HTTPException(400, "Only the launch's developer wallet can have the dev role")
         if await db.get(LaunchWallet, (l.id, wid)) is None:
             db.add(LaunchWallet(launch_id=l.id, wallet_id=wid, role=body.role))
+            count += 1
     await db.commit()
-    return {"attached": len(body.wallet_ids)}
+    return {"attached": count}
 
 
 @router.post("/launches/{launch_id}/archive")

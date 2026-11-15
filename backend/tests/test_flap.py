@@ -12,7 +12,7 @@ from app.chains import registry
 from app.chains.base import CreateRequest, EvmTradeRequest
 from app.chains.evm import EvmRPCError
 from app.chains.flap import (
-    FLAP_CHAINS, NEW_TOKEN_V6_TYPES, ZERO, FlapAdapter, create2_address, grind_salt, proxy_init_code_hash, selector,
+    FLAP_CHAINS, NEW_TOKEN_V6_TYPES, NEW_TOKEN_V7_TYPES, NEW_TOKEN_V7, STANDARD_V3_BSC, ZERO, FlapAdapter, create2_address, grind_salt, proxy_init_code_hash, selector,
 )
 from app.deps import get_executor
 from app.main import app
@@ -52,6 +52,13 @@ class FlapNode(FakeEvm):
         data = bytes.fromhex(tx["data"][2:])
         sel = data[:4]
         self.calls.append(sel.hex())
+        if sel == selector(NEW_TOKEN_V7):
+            p, = abi_decode(NEW_TOKEN_V7_TYPES, data[4:])
+            if self.disabled_standard:
+                raise EvmRPCError("execution reverted", "0xac5f6092")
+            assert p[5] == 3 and p[17] == 7 and p[18][0][0:2] == (2, 10_000)
+            addr = create2_address(self.cfg["portal"], p[4], proxy_init_code_hash(STANDARD_V3_BSC))
+            return "0x" + abi_encode(["address"], [addr]).hex()
         if sel == selector("newTokenV6(" + NEW_TOKEN_V6_TYPES[0] + ")"):
             (p,) = abi_decode(NEW_TOKEN_V6_TYPES, data[4:])
             taxed = p[25] == 6
@@ -111,9 +118,11 @@ async def test_prepare_create_standard_token_dry_runs_and_encodes():
     assert plan.token.lower().endswith("8888") and len(plan.steps) == 1
     step = plan.steps[0]
     assert step.to == FLAP_CHAINS["bsc"]["portal"] and step.value == ETH // 100
-    (p,) = abi_decode(NEW_TOKEN_V6_TYPES, step.data[4:])
+    (p,) = abi_decode(NEW_TOKEN_V7_TYPES, step.data[4:])
     assert p[0] == "Helm Cat" and p[2] == "bafyTESTCID" and p[7] == ETH // 100
-    assert p[8].lower() == "0x" + "ab" * 20 and p[25] == 2 and p[14] == p[15] == 0 and p[24] == ZERO
+    assert p[5] == 3 and p[17] == 7 and p[12] == p[13] == 0 and p[16] == ZERO
+    assert p[18][0] == (2, 10_000, ZERO, ZERO, 10_000 * 10**18)
+    assert "holders" in plan.notes["token_type"]
     # the upload is a GraphQL multipart request carrying the metadata and the image
     body = seen[0]
     assert b'"variables.file"' in body and b"MetadataInput" in body and PNG in body and b"https://x.com/h" in body

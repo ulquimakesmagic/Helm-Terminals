@@ -99,7 +99,7 @@ async def test_evm_custom_disperse_and_launch_token_consolidate(client, fake_rpc
 
 
 async def test_launch_token_disperse_attaches_wallets_for_transparency(client, fake_rpc):
-    from .test_automation import live_launch
+    from .launch_fixture import live_launch
 
     h = await signup(client)
     launch_id, dev, _ = await live_launch(client, h, fake_rpc, holders=1)

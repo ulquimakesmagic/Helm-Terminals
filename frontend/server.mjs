@@ -13,8 +13,8 @@ const types = {".html":"text/html; charset=utf-8", ".js":"text/javascript; chars
 
 // Client routes the app renders. Anything else still gets the app shell (so it can show its not-found page and
 // navigation), but with HTTP 404 so crawlers and monitors see a real miss instead of a soft 200.
-const APP_ROUTES = [/^\/$/, /^\/(login|recover|terms|privacy|risk|launches|wallets|networks|tracker|activity|profile|billing|settings|admin|automation)\/?$/,
-  /^\/launches\/[A-Za-z0-9_-]{1,64}\/?$/, /^\/automation\/.*$/, /^\/u\/[A-Za-z0-9_.-]{1,40}\/?$/];
+const APP_ROUTES = [/^\/$/, /^\/(login|recover|terms|privacy|risk|launches|wallets|networks|tracker|activity|profile|billing|settings|admin)\/?$/,
+  /^\/launches\/[A-Za-z0-9_-]{1,64}\/?$/];
 export const isAppRoute = (path) => APP_ROUTES.some((r) => r.test(path));
 
 // Same-origin API proxy. When API_UPSTREAM is set (for example https://api.helmterminals.xyz or Railway's private
@@ -41,7 +41,8 @@ function proxyApi(req, res, upstream) {
   try { target = new URL(upstream.origin + path); } catch { res.writeHead(400); res.end(); return; }
   if (target.origin !== upstream.origin || path.includes("\\") || path.includes("\0")) { res.writeHead(400); res.end(); return; }
   const declared = Number(req.headers["content-length"] ?? 0);
-  if (declared > MAX_API_BODY) { res.writeHead(413); res.end(); return; }
+  const maxBody = path === "/profile/performance/media" && req.method === "PUT" ? 10 * 1024 * 1024 : MAX_API_BODY;
+  if (declared > maxBody) { res.writeHead(413); res.end(); return; }
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) if (!HOP_BY_HOP.has(k)) headers[k] = v;
   headers.host = upstream.host;
@@ -60,7 +61,7 @@ function proxyApi(req, res, upstream) {
   });
   out.on("timeout", () => out.destroy(new Error("upstream timeout")));
   out.on("error", () => { if (!res.headersSent) { res.writeHead(502, {"Content-Type": "application/json"}); res.end('{"detail":"The Helm Terminals API did not answer."}'); } else res.destroy(); });
-  req.on("data", (chunk) => { received += chunk.length; if (received > MAX_API_BODY) { out.destroy(); if (!res.headersSent) { res.writeHead(413); res.end(); } req.destroy(); } });
+  req.on("data", (chunk) => { received += chunk.length; if (received > maxBody) { out.destroy(); if (!res.headersSent) { res.writeHead(413); res.end(); } req.destroy(); } });
   req.on("aborted", () => out.destroy());
   req.pipe(out);
 }

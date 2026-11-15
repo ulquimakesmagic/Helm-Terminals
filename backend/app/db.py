@@ -74,7 +74,7 @@ async def create_all() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-SCHEMA_REVISION = "42c9a01f0004"
+SCHEMA_REVISION = "42c9a01f0006"
 
 
 async def require_schema() -> None:

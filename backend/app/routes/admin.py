@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..chains.evm import EVM_CHAINS
 from ..db import get_db
 from ..deps import get_executor, valid_address
-from ..models import (AccountStatus, AdminAudit, AdminRole, Automation, FeeRecord, Job, Launch, PlatformSetting, Profile,
+from ..models import (AccountStatus, AdminAudit, AdminRole, FeeRecord, Job, Launch, PlatformSetting, Profile,
                       ReferralLink, RevenueEvent, Session, TreasuryAddress, User, Wallet, utcnow)
 from ..services import platform_config as pc
 from ..services.admin import StepUp, any_admin, audit, role_of, step_up, superadmin
@@ -535,10 +535,8 @@ def _user_columns():
     wallets = select(func.count(Wallet.id)).where(Wallet.user_id == User.id).correlate(User).scalar_subquery()
     trades = (select(func.count(Job.id)).where(Job.user_id == User.id, Job.kind.like("trade%"))
               .correlate(User).scalar_subquery())
-    automations = (select(func.count(Automation.id)).where(Automation.user_id == User.id)
-                   .correlate(User).scalar_subquery())
     return {"last_login": last_login, "last_activity": last_activity, "launches": launches, "wallets": wallets,
-            "trades": trades, "automations": automations}
+            "trades": trades}
 
 
 @router.get("/users")
@@ -575,14 +573,14 @@ async def users(request: Request, q: str | None = Query(None, max_length=120), s
     stmt = stmt.order_by(key.desc() if order == "desc" else key.asc(), User.id)
     rows = (await db.execute(stmt.offset((page - 1) * size).limit(size))).all()
     items = []
-    for u, display, st, reason, changed, role, ref_code, last_login, last_act, n_launch, n_wal, n_trade, n_auto in rows:
+    for u, display, st, reason, changed, role, ref_code, last_login, last_act, n_launch, n_wal, n_trade in rows:
         items.append({
             "id": u.id, "email": u.email if full else mask_email(u.email),
             "display_name": display or u.email.split("@")[0][:40] if full else (display or ""),
             "registered_at": iso(u.created_at), "role": role or "user", "status": st or "active",
             "last_login": iso(last_login), "last_activity": iso(last_act),
             "plan": None,  # Helm has no plans or subscriptions
-            "referred_by_code": ref_code, "launches": n_launch, "trades": n_trade, "automations": n_auto,
+            "referred_by_code": ref_code, "launches": n_launch, "trades": n_trade,
             "wallets": n_wal, "two_factor": u.totp_enabled,
             "flags": ([{"flag": "suspended", "reason": reason, "at": iso(changed)}] if st == "suspended" else []),
         })

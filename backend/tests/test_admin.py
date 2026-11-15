@@ -560,24 +560,6 @@ async def test_a_step_up_code_is_spent_even_when_the_change_is_refused(client):
     assert "stepup.denied" in [e["action"] for e in (await client.get("/admin/audit", headers=hb)).json()["items"]]
 
 
-async def test_scheduled_plan_stops_when_the_confirmed_treasury_changes(client):
-    from app.models import AutomationTerms
-    from app.services.automation_runner import _fee_raised
-    hb, sb = await boss(client)
-    treasury = str(Keypair().pubkey())
-    await client.put("/admin/treasury/solana", json={"address": treasury, "confirm": await proof(sb)}, headers=hb)
-    class A:
-        id = "auto-1"
-    async with get_sessionmaker()() as db:
-        db.add(AutomationTerms(automation_id=A.id, trade_fee_bps_solana=250, trade_fee_bps_evm_dex=250,
-                              fee_terms={"bps": 250, "destination": treasury, "network": "solana"}))
-        await db.commit()
-        assert await _fee_raised(db, A, "solana") is False
-    await client.put("/admin/treasury/solana", json={"address": str(Keypair().pubkey()), "confirm": await proof(sb)}, headers=hb)
-    async with get_sessionmaker()() as db:
-        assert await _fee_raised(db, A, "solana") is True
-
-
 def test_no_share_when_the_treasury_is_the_dev_wallet(monkeypatch):
     from app.routes.launches import _creator_share_terms
 

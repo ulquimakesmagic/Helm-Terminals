@@ -113,10 +113,17 @@ async def list_wallets(with_balances: bool = False, user: User = Depends(current
 
                 async with sem:
                     try:
-                        raw = await xc.native_balance(ex, w.network, w.address)
+                        async with asyncio.timeout(20):
+                            raw = await xc.native_balance(ex, w.network, w.address)
                         out["balance_native"] = xc.human(raw, EXTRA_NETWORKS[w.network].decimals)
-                    except Exception:
+                        out["balance_status"] = "ok"
+                    except Exception as exc:
+                        from ..services.chain_balances import rpc_detail
                         out["balance_native"] = None
+                        out["balance_status"] = "unavailable"
+                        out["balance_error"] = rpc_detail(exc)
+            else:
+                out.update(balance_native=None, balance_status="disabled", balance_error="This network is disabled")
             return out
         if w.kind != "managed" and w.network not in ("solana", *EVM_CHAINS):
             return _wallet_out(w, mains=mains)

@@ -15,16 +15,16 @@ const CUSTOM = "__custom__";
  * Disperse (one wallet → many of yours) or consolidate (many of yours → one), for the chain's coin, its dollar
  * stablecoin, a launch token or any token address. Hands the request to the spend dialog for preview + confirm.
  */
-export default function Distribute({ mode: initial, network, wallets, selected, onClose, onReview }: {
-  mode: "disperse" | "consolidate"; network: string; wallets: Wal[]; selected: string[];
+export default function Distribute({ mode: initial, network, wallets, selected, initialAsset, onClose, onReview }: {
+  mode: "disperse" | "consolidate"; network: string; wallets: Wal[]; selected: string[]; initialAsset?: string;
   onClose: () => void; onReview: (r: SpendRequest) => void;
 }) {
   const chain = chainOf(network);
   const stable = stableOf(network);
   const [mode, setMode] = useState(initial);
   const [launches, setLaunches] = useState<Launch[]>([]);
-  const [asset, setAsset] = useState("native");
-  const [customToken, setCustomToken] = useState("");
+  const [asset, setAsset] = useState(initialAsset ? "__custom__" : "native");
+  const [customToken, setCustomToken] = useState(initialAsset ?? "");
   const [hub, setHub] = useState(""); // disperse: source; consolidate: destination
   const [split, setSplit] = useState<"total" | "percent" | "custom">("total");
   const [total, setTotal] = useState("");

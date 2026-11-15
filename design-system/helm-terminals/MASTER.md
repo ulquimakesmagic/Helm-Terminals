@@ -21,10 +21,12 @@ Use one clear primary action per section. Financial operations preview their amo
 Support 375, 768, 1024 and 1440 CSS-pixel layouts. Stack actions and forms on narrow screens; use contained, labelled horizontal scrolling for wide tables. Touch targets reach 44 pixels. Keep focus visible, respect reduced motion, name inputs, use semantic headings and live status messages. Mobile navigation closes on Escape, contains keyboard focus, makes the background inert and restores focus.
 
 ## Pages
-Landing: large editorial heading, labelled example terminal, short workflow, transparent pricing and truthful coverage.
+Landing: editorial headline, interactive Test Launch / $TEST demonstration, restrained entrance animation, concise workflow and truthful coverage. No pricing navigation, tables or fee-focused marketing. Transaction reviews retain all disclosures.
 Application: persistent navigation, mobile quick navigation, consistent cards, amounts and review dialogs.
-Billing: $20 launch, 1% trade, creator allocation retained; exact base-unit payment history and recoverable fee settlement.
+Settings: network status, private performance-card preferences and transaction records. No standalone billing page. Launches remain free; trading and new creator allocations remain 2.5%. Historical records and recoverable settlement remain available.
 Admin: immutable pricing, password/TOTP step-up for exceptions, audited reasons, separate received income and referral liabilities.
 Referrals: 30% examples, balances by network/asset, explicit owed status and per-network payout addresses.
 
 Page-specific guidance in pages/ takes precedence where it provides additional detail. Browser evidence is under docs/audit-evidence/pricing-ui; automated accessibility scans complement manual visual and keyboard review.
+
+Trading automation is permanently retired. No unattended trading controls, APIs or worker may be introduced. Profiles are private; nicknames identify exported cards without public account pages. Media backgrounds are owner-only, bounded and encrypted at rest. Sidebar navigation scrolls independently and keeps the account footer reachable on short screens.

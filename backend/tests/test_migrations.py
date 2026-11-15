@@ -34,7 +34,7 @@ def test_alembic_bootstraps_a_fresh_database(tmp_path):
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "users" in tables and "transactions" in tables and "alembic_version" in tables
         version = db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert version == "42c9a01f0004"
+        assert version == "42c9a01f0006"
 
 
 def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
@@ -58,7 +58,7 @@ def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
     with sqlite3.connect(path) as db:
         row = db.execute("SELECT key FROM auth_failures WHERE id='keep-me'").fetchone()
         assert row == ("redacted-test-key",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0004"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0006"
 
 
 def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
@@ -81,5 +81,42 @@ def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT status FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending",)
     with sqlite3.connect(backup) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0004"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0006"
+
+
+def test_retirement_cancels_pending_work_preserves_submitted_receipts_and_never_reactivates(tmp_path):
+    from datetime import datetime
+    from sqlalchemy.orm import Session
+    from app.models import Automation, AutomationLaunchSlot, Job, Launch, Profile, Transaction, User
+    path=tmp_path/'retirement.db'
+    url=f'sqlite+aiosqlite:///{path.as_posix()}'
+    run_alembic(url,'upgrade','42c9a01f0004')
+    engine=create_engine(f'sqlite:///{path.as_posix()}')
+    with Session(engine) as session:
+        user=User(email='retirement-fixture@example.com',password_hash='fixture-hash-not-a-real-login')
+        session.add(user);session.flush()
+        launch=Launch(user_id=user.id,name='Historical launch',symbol='HIST')
+        session.add(launch);session.flush()
+        queued=Job(user_id=user.id,launch_id=launch.id,kind='scheduled_buy',status='pending')
+        submitted=Job(user_id=user.id,launch_id=launch.id,kind='scheduled_sell',status='submitted')
+        manual=Job(user_id=user.id,launch_id=launch.id,kind='trade_buy',status='pending')
+        session.add_all([queued,submitted,manual]);session.flush()
+        record=Transaction(job_id=submitted.id,kind='sell',signature='historical-submitted-signature',status='unconfirmed')
+        plan=Automation(user_id=user.id,launch_id=launch.id,status='scheduled',next_run_at=datetime(2030,1,1),
+                        idempotency_key='retired-plan',preflight_hash='a'*64,last_job_id=submitted.id)
+        session.add_all([record,plan,Profile(user_id=user.id,is_public=True)]);session.flush()
+        session.add(AutomationLaunchSlot(launch_id=launch.id,automation_id=plan.id))
+        session.commit();ids=queued.id,submitted.id,manual.id
+    engine.dispose()
+    run_alembic(url,'upgrade','head')
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT status FROM automations').fetchone()==('cancelled',)
+        assert db.execute('SELECT COUNT(*) FROM automation_launch_slots').fetchone()==(0,)
+        assert db.execute('SELECT signature,status FROM transactions').fetchone()==('historical-submitted-signature','unconfirmed')
+        assert [db.execute('SELECT status FROM jobs WHERE id=?',(identifier,)).fetchone()[0] for identifier in ids]==['failed','submitted','pending']
+        assert db.execute('SELECT is_public FROM profiles').fetchone()==(0,)
+    run_alembic(url,'downgrade','42c9a01f0004')
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT status FROM automations').fetchone()==('cancelled',)
+        assert db.execute('SELECT is_public FROM profiles').fetchone()==(0,)
 

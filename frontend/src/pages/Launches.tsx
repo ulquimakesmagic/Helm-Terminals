@@ -1,3 +1,4 @@
+import ChainSelect from "../components/ChainSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errMsg, short } from "../api";
@@ -5,7 +6,7 @@ import { ALL_CHAIN_ORDER, CHAIN_ORDER, CHAINS, ChainId, chainOf, Pad, padName } 
 import { launchpadExperience } from "../launchpadExperience";
 import { groupedFields, launchpadForm, validateLaunchFields } from "../launchpadForms";
 import { LaunchpadDirectory } from "../components/Launchpads";
-import { ChainLabel, ChainMark, PadLabel, PadMark } from "../components/marks";
+import { ChainLabel, PadLabel, PadMark } from "../components/marks";
 import {
   Address, Callout, Card, Empty, Field, Icon, Loading, LoadError, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime,
 } from "../components/ui";
@@ -373,25 +374,20 @@ export default function Launches() {
 
   return (
     <>
-      <PageHeader title="Launches" sub="Create tokens on any supported chain and launchpad, copy an existing token's details for a relaunch, and open a workspace to trade and manage each one."
+      <PageHeader title="Launches" sub="Your tokens, from first draft to live operation. Pick up where you left off, or start something new."
         actions={<>
           <button className="btn secondary" onClick={() => setModal("import")}><Icon name="download" size={15} />Import / clone</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />New launch</button>
         </>} />
 
-      <div className="row between">
+      <div className="launch-filter-bar">
         <Seg value={filter} onChange={setFilter} options={[
           ["all", <>All <span className="muted num">{counts.all}</span></>],
           ["live", <>Live <span className="muted num">{counts.live}</span></>],
           ["draft", <>Drafts <span className="muted num">{counts.draft}</span></>],
           ["archived", <>Archived <span className="muted num">{counts.archived}</span></>],
         ]} />
-        <div className="chips" style={{ flex: "1 1 360px", minWidth: 0 }} role="group" aria-label="Filter by chain">
-          <button className={`chip ${chainF === "all" ? "on" : ""}`} aria-pressed={chainF === "all"} onClick={() => setChainF("all")}>All chains</button>
-          {ALL_CHAIN_ORDER.filter((c) => (CHAIN_ORDER as string[]).includes(c) || pads.some((p) => p.network === c)).map((c) => (
-            <button key={c} className={`chip ${chainF === c ? "on" : ""}`} aria-pressed={chainF === c} onClick={() => setChainF(c as ChainId)}><ChainMark network={c} size={16} />{chainOf(c).name}</button>
-          ))}
-        </div>
+        <ChainSelect value={chainF} onChange={v => setChainF(v as "all" | ChainId)} networks={ALL_CHAIN_ORDER.filter(c => (CHAIN_ORDER as string[]).includes(c) || pads.some(p => p.network === c))} />
         <div style={{ width: 280, maxWidth: "100%" }}><SearchInput aria-label="Search launches by name, ticker or token address" placeholder="Search name, ticker or mint" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       </div>
 
@@ -434,9 +430,9 @@ export default function Launches() {
       )}
 
       {pads.length > 0 && (
-        <Card title="Launchpads" icon="globe" sub={`${pads.length} launchpads across ${new Set(pads.map((p) => p.network)).size} chains · ${pads.filter((p) => p.status === "available").length} live today, the rest rolling out`}>
+        <details className="launchpad-discovery"><summary>Explore launchpads<span className="muted small">Availability and supported networks</span></summary><Card title="Launchpads" icon="globe" sub={`${pads.length} launchpads across ${new Set(pads.map((p) => p.network)).size} chains · ${pads.filter((p) => p.status === "available").length} live today, the rest rolling out`}>
           <LaunchpadDirectory pads={pads} />
-        </Card>
+        </Card></details>
       )}
 
       {modal === "create" && <CreateLaunch pads={pads} wallets={wallets} onClose={() => setModal(null)} />}
