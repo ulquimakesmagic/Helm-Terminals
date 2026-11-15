@@ -392,7 +392,7 @@ function Fees({ me }: { me: AdminMe }) {
 }
 
 /* ------------------------------------------------------------------ users */
-interface UserRow { id: string; email: string; display_name: string; registered_at: string; role: string; status: string; last_login: string | null; last_activity: string | null; plan: null; referred_by_code: string | null; launches: number; trades: number; automations: number; wallets: number; two_factor: boolean; flags: { flag: string; reason: string; at: string }[] }
+interface UserRow { id: string; email: string; display_name: string; registered_at: string; role: string; status: string; last_login: string | null; last_activity: string | null; plan: null; referred_by_code: string | null; launches: number; trades: number; wallets: number; two_factor: boolean; flags: { flag: string; reason: string; at: string }[] }
 
 function Users({ me }: { me: AdminMe }) {
   const [q, setQ] = useState("");
@@ -438,7 +438,7 @@ function Users({ me }: { me: AdminMe }) {
         {err && !data ? <LoadError what="Users" error={err} onRetry={load} /> : !data ? <Loading /> : data.items.length === 0 ? <Empty icon="user" title="No users match" /> : (
           <TableWrap><table className="rtable">
             <caption className="sr-only">Users</caption>
-            <thead><tr>{th("email", "Account")}{th("created_at", "Registered")}{th("last_login", "Last sign-in", "hide-sm")}<th>Status</th>{th("launches", "Launches", "r")}{th("trades", "Trades", "r hide-sm")}<th className="r hide-sm">Automations</th>{th("wallets", "Wallets", "r")}<th className="hide-sm">Referral</th></tr></thead>
+            <thead><tr>{th("email", "Account")}{th("created_at", "Registered")}{th("last_login", "Last sign-in", "hide-sm")}<th>Status</th>{th("launches", "Launches", "r")}{th("trades", "Trades", "r hide-sm")}{th("wallets", "Wallets", "r")}<th className="hide-sm">Referral</th></tr></thead>
             <tbody>{data.items.map((u) => (
               <tr key={u.id} onClick={() => setOpen(u.id)} style={{ cursor: "pointer" }}>
                 <td className="span"><button className="linklike" onClick={() => setOpen(u.id)} style={{ textAlign: "left" }}><b>{u.display_name || u.email}</b></button>
@@ -449,7 +449,6 @@ function Users({ me }: { me: AdminMe }) {
                 <td data-label="Status">{u.status === "suspended" ? <span className="badge bad" title={u.flags[0]?.reason}>Suspended</span> : <span className="badge good">Active</span>}</td>
                 <td className="r" data-label="Launches">{u.launches}</td>
                 <td className="r hide-sm">{u.trades}</td>
-                <td className="r hide-sm">{u.automations}</td>
                 <td className="r" data-label="Wallets">{u.wallets}</td>
                 <td className="hide-sm muted small">{u.referred_by_code ?? "—"}</td>
               </tr>))}</tbody>
@@ -473,7 +472,7 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
     const feeAction = action === "free_launches" || action === "paid_launches";
     const path = feeAction ? `/admin/users/${id}/launch-fee-exemption` : action === "viewer" ? `/admin/roles/${id}/viewer` : action === "revoke" ? `/admin/roles/${id}/revoke` : `/admin/users/${id}/${action}`;
     const titles = { suspend: "Suspend account", restore: "Restore account", viewer: "Grant read-only admin (viewer)", revoke: "Remove admin role", free_launches: "Grant free launches", paid_launches: "Remove launch-fee exemption" };
-    return <StepUpDialog title={titles[action]} needsReason detail={action === "suspend" ? "Signs the account out everywhere, blocks sign-in and stops its scheduled trades. Funds stay in the user's wallets." : "Recorded in the audit log with your reason."}
+    return <StepUpDialog title={titles[action]} needsReason detail={action === "suspend" ? "Signs the account out everywhere, blocks sign-in and blocks new actions. Funds stay in the user's wallets." : "Recorded in the audit log with your reason."}
       onCancel={() => setAction(null)}
       onConfirm={async (proof, reason) => { await api(path, { method: feeAction ? "PUT" : "POST", body: { reason, confirm: proof, ...(feeAction ? { enabled: action === "free_launches" } : {}) } }); toast("good", "Done"); setAction(null); load(); onChanged(); }} />;
   }

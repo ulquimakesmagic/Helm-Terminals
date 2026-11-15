@@ -229,6 +229,16 @@ async def run_job(job_id: str, fn, *, already_claimed: bool = False) -> None:
     async def _wrapped() -> None:
         async with get_sessionmaker()() as db:
             from sqlalchemy import update
+            job = await db.get(Job, job_id)
+            if job and job.kind in ("scheduled_buy", "scheduled_sell"):
+                # A stale internal caller cannot revive retired trading after restart or rollback.
+                from .models import Transaction
+                sent = (await db.execute(select(Transaction.id).where(
+                    Transaction.job_id == job_id, Transaction.signature.is_not(None)).limit(1))).first()
+                if job.status in ("pending", "submitted"):
+                    job.status = "unconfirmed" if sent else "failed"
+                    await db.commit()
+                return
             # Claim once durably before any preparation or signature. A restarted process never replays
             # a submitted job merely because its in-memory task disappeared.
             if not already_claimed:

@@ -13,24 +13,20 @@ import { AppFooter } from "./components/public";
 const Legal = lazy(() => import("./pages/Legal"));
 // The landing, sign-in and dashboard pages load with the app; every other page is fetched when first opened,
 // so the first screen doesn't wait for the admin console, the trading workspace or the QR code library.
-const AutomationMoved = lazy(() => import("./pages/AutomationMoved"));
 const Wallets = lazy(() => import("./pages/Wallets"));
-const Networks = lazy(() => import("./pages/Networks"));
 const Launches = lazy(() => import("./pages/Launches"));
 const Workspace = lazy(() => import("./pages/Workspace"));
 const Tracker = lazy(() => import("./pages/Tracker"));
 const Activity = lazy(() => import("./pages/Activity"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
-const PublicProfile = lazy(() => import("./pages/PublicProfile"));
-const Billing = lazy(() => import("./pages/Billing"));
 const Admin = lazy(() => import("./pages/Admin"));
 import { ProfileAvatar } from "./components/profile";
 
 const NAV: { group: string; items: [string, string, IconName][] }[] = [
-  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"], ["/networks", "Networks", "layers"]] },
+  { group: "Operate", items: [["/", "Dashboard", "dashboard"], ["/launches", "Launches", "rocket"], ["/wallets", "Wallets", "wallet"]] },
   { group: "Monitor", items: [["/tracker", "Tracker", "radar"], ["/activity", "Activity", "activity"]] },
-  { group: "Account", items: [["/profile", "Profile", "user"], ["/billing", "Fees & payments", "coins"], ["/settings", "Settings", "settings"]] },
+  { group: "Account", items: [["/profile", "Profile", "user"], ["/settings", "Settings", "settings"]] },
 ];
 
 const TITLES: Record<string, string> = {
@@ -95,7 +91,6 @@ function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="side-foot">
-          <Link to="/billing" className="side-pricing"><span>Free launch · 2.5% trade</span><small>2.5% creator-reward share</small></Link>
           {me && !me.totp_enabled && seg !== "" && seg !== "settings" && (
             <div className="nudge">
               <strong><Icon name="shield" size={14} />2FA is off</strong>
@@ -192,17 +187,14 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
-        <Route path="/automation" element={<Private><AutomationMoved /></Private>} />
-        <Route path="/automation/*" element={<Private><AutomationMoved /></Private>} />
         <Route path="/wallets" element={<Private><Wallets /></Private>} />
-        <Route path="/networks" element={<Private><Networks /></Private>} />
+        <Route path="/networks" element={<Private><Navigate to="/settings?section=networks" replace /></Private>} />
         <Route path="/tracker" element={<Private><Tracker /></Private>} />
         <Route path="/activity" element={<Private><Activity /></Private>} />
         <Route path="/profile" element={<Private><Profile /></Private>} />
         <Route path="/settings" element={<Private><Settings /></Private>} />
-        <Route path="/billing" element={<Private><Billing /></Private>} />
+        <Route path="/billing" element={<Private><Navigate to="/settings?section=transactions" replace /></Private>} />
         <Route path="/admin" element={<Private><Admin /></Private>} />
-        <Route path="/u/:handle" element={<Suspense fallback={null}><PublicProfile /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={null}><Legal doc="terms" /></Suspense>} />
         <Route path="/privacy" element={<Suspense fallback={null}><Legal doc="privacy" /></Suspense>} />
         <Route path="/risk" element={<Suspense fallback={null}><Legal doc="risk" /></Suspense>} />

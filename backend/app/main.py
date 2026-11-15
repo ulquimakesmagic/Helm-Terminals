@@ -15,9 +15,10 @@ from .chains.evm import EvmRPCUnavailable
 from .config import get_settings
 from .signing.base import SigningError
 from .db import create_all
-from .routes import admin, allocations, auth, automations, chains, bridge, ton as ton_routes, external_wallets, distribute, launches, market, misc, profile, telegram, wallets
+from .routes import admin, allocations, auth, chains, bridge, ton as ton_routes, external_wallets, distribute, launches, market, misc, profile, telegram, wallets
 from .signing import get_signer
 from .routes import recovery
+from .routes import performance
 
 
 @asynccontextmanager
@@ -25,7 +26,6 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     check_production_config(settings)
     get_signer()  # fail fast on a bad signer config (e.g. local signer in production)
-    worker = None
     reconciler = None
     replica_lock = None
     try:
@@ -45,10 +45,6 @@ async def lifespan(app: FastAPI):
                 await backfill_trade_fees(db)
         except Exception:
             logging.getLogger("helm").warning("revenue backfill skipped", exc_info=True)
-        if settings.automation_worker_enabled:
-            from .services.automation_runner import automation_worker
-
-            worker = asyncio.create_task(automation_worker(), name="helm-scheduled-buy-worker")
         from .services.reconciliation import reconciliation_worker
         reconciler = asyncio.create_task(reconciliation_worker(), name="helm-reconciliation-worker")
         yield
@@ -59,10 +55,6 @@ async def lifespan(app: FastAPI):
             reconciler.cancel()
             with suppress(asyncio.CancelledError):
                 await reconciler
-        if worker:
-            worker.cancel()
-            with suppress(asyncio.CancelledError):
-                await worker
         if replica_lock is not None:
             await _release_single_replica_lock(replica_lock)
 
@@ -135,10 +127,11 @@ class BodyLimit:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        limit = 10 * 1024 * 1024 if scope.get("path") == "/profile/performance/media" and scope.get("method") == "PUT" else self.limit
         declared = dict(scope.get("headers") or []).get(b"content-length")
         if declared is not None:
             try:
-                too_big = int(declared) > self.limit
+                too_big = int(declared) > limit
             except ValueError:
                 too_big = True
             if too_big:
@@ -150,7 +143,7 @@ class BodyLimit:
             message = await receive()
             if message["type"] == "http.request":
                 seen += len(message.get("body", b""))
-                if seen > self.limit:
+                if seen > limit:
                     raise _TooLarge()
             return message
 
@@ -230,10 +223,11 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
-    for r in (admin.router, allocations.router, auth.router, recovery.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router, automations.router,
+    for r in (admin.router, allocations.router, auth.router, recovery.router, chains.router, ton_routes.router, external_wallets.router, wallets.router, distribute.router, bridge.router, launches.router,
               misc.router, telegram.router, profile.router, market.router):
         app.include_router(r)
     app.include_router(billing.router)
+    app.include_router(performance.router)
 
     # Upstream failures (RPC down, launchpad API changed, signer unreachable) become clear 502s. These are
     # handled responses, so CORS headers are attached and the UI can show the message instead of a network error.

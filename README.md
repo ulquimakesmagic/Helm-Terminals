@@ -2,6 +2,9 @@
 
 A transparent token-launch and wallet-operations platform, modelled on the useful parts of Proxima.
 Read `docs/SPEC.md` first: it lists what is in scope, what is deliberately excluded and why, and the roadmap.
+For deferred mainnet deployments and remaining integration requirements, use the
+[mainnet setup guide](docs/mainnet-integration-setup.md) and
+[current launchpad capability review](docs/launchpad-capability-review-2026-11-15.md).
 
 ## Run it locally
 
@@ -55,12 +58,12 @@ cd ../frontend && npm run build # type-check + production build
 ## Status
 
 Implemented: auth + TOTP, wallets/folders/funders, fund and withdraw, launch drafts, clone/import, manual buy/sell,
-finite one-way scheduled buys and staged sells, claim creator fees, burn, send, supply transparency, dashboard, P&L card export, tracker,
+claim creator fees, burn, send, supply transparency, dashboard, private performance-card image/video export, tracker,
 activity log, spend previews + idempotency + simulate-before-send. Launchpad adapters cover Pump.fun, LetsBonk,
 Meteora DBC, Bags, Clanker, Four.meme, flap.sh, Pons and Uniswap V2; some require server credentials or have
 route-specific limits.
 
-Still planned: Streamflow lock (the endpoint returns 501), additional adapters, and broader chain support for
-scheduled automation. Scheduled trades are Solana-only and finite. Buys are budget-capped; staged sells use a
-disclosed percentage of each wallet's then-current token balance. Both stop after any failed or uncertain order.
-They are not a volume-generation feature. See `docs/SPEC.md` for the product boundary and roadmap.
+Trading automation has been removed: there are no scheduling routes, controls or execution worker.
+Historical signed transactions remain available for reconciliation and audit. Profiles are private.
+Some launchpad variants still need creator-reward collection or verified deployed contracts before activation;
+see the current capability review above. Full upstream feature parity is not claimed.

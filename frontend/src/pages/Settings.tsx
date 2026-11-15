@@ -1,3 +1,8 @@
+import { Link, useSearchParams } from "react-router-dom";
+import { lazy, Suspense } from "react";
+const NetworkStatus = lazy(() => import("./Networks"));
+const TransactionRecords = lazy(() => import("./Billing"));
+const PerformanceSettings = lazy(() => import("../components/PerformanceSettings"));
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { api, errMsg } from "../api";
@@ -149,7 +154,7 @@ function Telegram() {
   );
 }
 
-export default function Settings() {
+function AccountSettings() {
   const toast = useToast();
   const { me } = useSession();
   const [sessions, setSessions] = useState<S[] | null>(null);
@@ -221,4 +226,10 @@ export default function Settings() {
       </Card>
     </>
   );
+}
+
+export default function Settings() {
+  const [params] = useSearchParams();
+  const section = params.get("section") ?? "account";
+  return <><nav className="settings-tabs" aria-label="Settings sections">{[["account","Account & security"],["performance","Performance cards"],["networks","Network status"],["transactions","Transaction records"]].map(([key,label]) => <Link key={key} to={`/settings?section=${key}`} aria-current={section === key ? "page" : undefined}>{label}</Link>)}</nav><Suspense fallback={<Loading />}>{section === "networks" ? <NetworkStatus /> : section === "transactions" ? <TransactionRecords /> : section === "performance" ? <PerformanceSettings /> : <AccountSettings />}</Suspense></>;
 }

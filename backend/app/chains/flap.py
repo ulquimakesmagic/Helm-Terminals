@@ -5,7 +5,7 @@ Launch:
   2. Find a CREATE2 salt so the token's address ends in Flap's vanity suffix (8888 for standard tokens,
      7777 for tax tokens). The Portal deploys a minimal proxy of the token implementation, so the address
      can be computed in advance.
-  3. Call Portal.newTokenV6 with the dev buy as msg.value. Before that, Helm dry-runs the call (eth_call) and
+  3. Call Portal.newTokenV7 for BNB non-tax tokens, or the chain's supported V6 route otherwise. Helm dry-runs the call (eth_call) and
      checks that the Portal returns the address we predicted, so a wrong implementation or salt never costs gas.
 
 Trading, while the token is on Flap's bonding curve: Portal.swapExactInput (native in for buys; tokens in for
@@ -61,12 +61,17 @@ DEX0 = 0
 LP_FEE_STANDARD = 0
 TOKEN_V2_PERMIT = 2
 TOKEN_TAXED_V3 = 6
+TOKEN_V3_PERMIT = 7
+STANDARD_V3_BSC = "0x88881b6f03090462a969eC7f48385744Eeb63333"
 TAX_RATES_PCT = (1, 3, 5, 10)  # the tax rates Flap allows
 
 NEW_TOKEN_V6 = ("newTokenV6((string,string,string,uint8,bytes32,uint8,address,uint256,address,bytes,bytes32,bytes,"
                 "uint8,uint8,uint16,uint16,uint64,uint64,uint16,uint16,uint16,uint16,uint256,address,address,uint8))")
 NEW_TOKEN_V6_TYPES = ["(string,string,string,uint8,bytes32,uint8,address,uint256,address,bytes,bytes32,bytes,"
                       "uint8,uint8,uint16,uint16,uint64,uint64,uint16,uint16,uint16,uint16,uint256,address,address,uint8)"]
+NEW_TOKEN_V7_TYPES = ["(string,string,string,uint8,bytes32,uint8,address,uint256,bytes,bytes32,bytes,uint8,"
+                      "uint16,uint16,uint64,uint64,address,uint8,(uint8,uint16,address,address,uint256)[4])"]
+NEW_TOKEN_V7 = "newTokenV7(" + NEW_TOKEN_V7_TYPES[0] + ")"
 SWAP = "swapExactInput((address,address,uint256,uint256,bytes))"
 QUOTE = "quoteExactInput((address,address,uint256))"
 APPROVE = "approve(address,uint256)"
@@ -214,6 +219,18 @@ class FlapAdapter:
     def encode_create(self, params: tuple) -> bytes:
         return selector(NEW_TOKEN_V6) + abi_encode(NEW_TOKEN_V6_TYPES, [params])
 
+    def _standard_v7(self, req: CreateRequest, cid: str, salt: bytes, value: int) -> bytes:
+        """BNB Portal v5.27.2: non-tax, Infinity CL migration, all LP revenue to holders.
+
+        Source: official V2 launch guide, checked 2026-11-15. No creator-side allocation exists in this mode.
+        """
+        none = (0, 0, ZERO, ZERO, 0)
+        holders = (2, 10_000, ZERO, ZERO, 10_000 * 10**18)
+        params = (req.name, req.symbol, cid, DEX_THRESH_FOUR_FIFTHS, salt, 3, ZERO, value,
+                  b"", b"\x00" * 32, b"", DEX0, 0, 0, 0, 0, ZERO, TOKEN_V3_PERMIT,
+                  (holders, none, none, none))
+        return selector(NEW_TOKEN_V7) + abi_encode(NEW_TOKEN_V7_TYPES, [params])
+
     async def prepare_create(self, req: CreateRequest) -> EvmPlan:
         tax_pct = int((req.options or {}).get("tax_rate_pct") or 0)
         if not tax_pct and not self.cfg["standard_impls"]:
@@ -222,13 +239,14 @@ class FlapAdapter:
             raise AdapterError(f"Flap tax rate must be one of {', '.join(map(str, TAX_RATES_PCT))}%")
         value = int(round(req.dev_buy_sol * 10**18))
         cid = await self.upload_metadata(req)
-        impls = [self.cfg["tax_impl"]] if tax_pct else self.cfg["standard_impls"]
+        v7 = not tax_pct and self.network == "bsc"
+        impls = [STANDARD_V3_BSC] if v7 else [self.cfg["tax_impl"]] if tax_pct else self.cfg["standard_impls"]
         suffix = "7777" if tax_pct else "8888"
         last_error = None
         for impl in impls:
             salt, predicted = await asyncio.to_thread(grind_salt, self.portal, impl, suffix)
             encoded_params = self._params(req, cid, salt, tax_pct, value)
-            data = self.encode_create(encoded_params)
+            data = self._standard_v7(req, cid, salt, value) if v7 else self.encode_create(encoded_params)
             try:
                 ret = await self.rpc.call("eth_call", [{"from": req.dev_pubkey, "to": self.portal,
                                                         "value": hex(value), "data": "0x" + data.hex()}, "latest"])
@@ -237,9 +255,9 @@ class FlapAdapter:
                 continue
             got = to_checksum_address(abi_decode(["address"], bytes.fromhex(ret[2:]))[0]) if ret and len(ret) >= 66 else None
             if got == predicted:
-                notes = {"token_type": f"tax token, {tax_pct}% on buys and sells for a year, paid to your dev wallet"
+                notes = {"token_type": "V7 non-tax token; LP revenue paid to holders in BNB" if v7 else f"tax token, {tax_pct}% on buys and sells for a year, paid to your dev wallet"
                          if tax_pct else "standard token, no tax",
-                         "graduates_to": f"{self.cfg['dex0']} when 80% of supply is sold on the curve"}
+                         "graduates_to": "PancakeSwap Infinity CL at 80% of supply sold" if v7 else f"{self.cfg['dex0']} when 80% of supply is sold on the curve"}
                 if tax_pct and encoded_params[24] != ZERO:
                     notes["commission_receiver"] = encoded_params[24]
                     notes["commission"] = ("Helm is this token's commission receiver on Flap, so Helm earns the launchpad "

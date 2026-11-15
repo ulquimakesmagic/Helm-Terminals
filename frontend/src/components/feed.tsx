@@ -132,7 +132,7 @@ export function FeedItem({ a, items, timeStyle = "relative" }: { a: ActivityRow;
         <div className="feed-sub">
           {d && <span>{d}</span>}
           {a.ref_type === "launch" && a.ref_id && <Link to={`/launches/${a.ref_id}`}>Open launch</Link>}
-          {a.ref_type === "automation" && (a.payload as any)?.launch_id && <Link to={`/launches/${(a.payload as any).launch_id}?tab=automation`}>Open in Launchdesk</Link>}
+          {a.ref_type === "automation" && (a.payload as any)?.launch_id && <Link to={`/launches/${(a.payload as any).launch_id}?tab=tx`}>View historical transactions</Link>}
         </div>
       )}
     </div>

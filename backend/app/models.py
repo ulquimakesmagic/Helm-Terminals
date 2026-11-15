@@ -161,7 +161,7 @@ class Transaction(Base):
 
 
 class Automation(Base):
-    """A finite, user-authorized one-way trade schedule. It is never a volume target or trading loop."""
+    """Archived schedule records only. The execution engine and all mutation endpoints were removed."""
     __tablename__ = "automations"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
@@ -538,5 +538,14 @@ class PlatformCharge(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
-# Run after all models exist so payment/automation rows also flush after their parents.
+class PerformanceCard(Base):
+    """Owner-only presentation preferences. Custom media is encrypted with the application's secret."""
+    __tablename__ = "performance_cards"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    media_cipher: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    media_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+# Run after all models exist so ledger and archived schedule rows flush after their parents.
 _declare_fk_dependencies()

@@ -1,7 +1,8 @@
+import TestLaunch from "../components/TestLaunch";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
-import { Brand, ChainStrip, PublicFooter, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
+import { Brand, PublicFooter, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
 import { Callout, Field, Icon, Spinner } from "../components/ui";
 import { useSession } from "../session";
 import { safeNext } from "../nav";
@@ -35,7 +36,7 @@ export default function Auth() {
   const [error, setError] = useState<{ text: string; switchTo?: Mode } | null>(null);
   const [busy, setBusy] = useState(false);
   const [triedSubmit, setTriedSubmit] = useState(false);
-  const { pads, health } = usePublicInfo();
+  const { health } = usePublicInfo();
   const heading = useRef<HTMLHeadingElement>(null);
   const wide = typeof window !== "undefined" && window.matchMedia?.("(min-width: 900px)").matches;
 
@@ -209,9 +210,9 @@ export default function Auth() {
         </section>
 
         <aside className="auth2-side" aria-label="About Helm Terminals">
-          <h2>A multichain launch desk</h2>
+          <span className="eyebrow">FROM FIRST IDEA TO WHAT COMES NEXT</span><h2>Big ideas deserve<br /><span className="good">a proper launch.</span></h2><TestLaunch compact />
           <p className="text-2">Launch tokens, manage the wallets behind them, and review every amount and fee before anything is signed.</p>
-          <ChainStrip pads={pads} counts={false} />
+
           <SafeguardList compact />
           <SignerNote health={health} />
           <Link to="/" className="small">See what Helm does<Icon name="arrowright" size={12} /></Link>

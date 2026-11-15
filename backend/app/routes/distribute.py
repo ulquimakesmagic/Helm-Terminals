@@ -10,6 +10,7 @@ so its transparency panel keeps counting the supply you control.
 """
 
 from typing import Literal
+from decimal import Decimal
 
 from eth_abi import encode as abi_encode
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,9 +46,9 @@ class DisperseBody(SpendConfirm):
     to_wallet_ids: list[str] = Field(min_length=1, max_length=50)
     asset: str = "native"  # "native", "stable", or a token mint/contract address
     split: Literal["even", "custom"] = "even"
-    total: float | None = Field(default=None, gt=0)  # even: this much in total, split evenly
-    percent: float | None = Field(default=None, gt=0, le=100)  # even: this share of the source balance
-    amounts: list[float] | None = None  # custom: one amount per destination, in order
+    total: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False, max_digits=78, decimal_places=36)
+    percent: Decimal | None = Field(default=None, gt=0, le=100, allow_inf_nan=False, decimal_places=2)
+    amounts: list[Decimal] | None = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def check(self):
@@ -56,7 +57,7 @@ class DisperseBody(SpendConfirm):
         if self.split == "custom":
             if not self.amounts or len(self.amounts) != len(self.to_wallet_ids):
                 raise ValueError("a custom split needs one amount per destination wallet")
-            if any(a <= 0 for a in self.amounts):
+            if any(not a.is_finite() or a <= 0 for a in self.amounts):
                 raise ValueError("every custom amount must be above zero")
         return self
 
@@ -116,8 +117,14 @@ async def _native_raw(ex: Executor, network: str, address: str) -> int:
     return int(await (ex.rpc.get_balance(address) if network == "solana" else ex.evm(network).rpc.get_balance(address)))
 
 
-def _to_raw(amount: float, decimals: int) -> int:
-    return int(round(amount * 10**decimals))
+def _to_raw(amount: Decimal | float, decimals: int) -> int:
+    from decimal import localcontext
+    with localcontext() as ctx:
+        ctx.prec = 100
+        raw = Decimal(str(amount)).scaleb(decimals)
+        if not raw.is_finite() or raw != raw.to_integral_value():
+            raise HTTPException(400, "Amount must be a whole number of token base units")
+        return int(raw)
 
 
 def _human(raw: int, decimals: int) -> float:
@@ -249,8 +256,8 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
     pf = build_preflight("disperse", {
         "network": net, "chain": chain_name(net), "asset": a["symbol"], "token": a["token"],
         "from": {"label": src.label or "Wallet", "address": src.address},
-        "to": [{"label": t.label or "Wallet", "address": t.address, "amount": _human(r, d)} for t, r in zip(targets, raws)],
-        "total": _human(total, d), "split": body.split if body.split == "custom" else "even",
+        "to": [{"label": t.label or "Wallet", "address": t.address, "amount": _human(r, d), "amount_raw": str(r)} for t, r in zip(targets, raws)],
+        "total": _human(total, d), "total_raw": str(total), "decimals": d, "split": body.split if body.split == "custom" else "even",
         "network_fees_max": _human(gas, 9 if net == "solana" else 18), "network_fee_coin": coin,
         "transactions": (-(-n // (SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX)))
         if net == "solana" else n,
@@ -371,8 +378,9 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
     pf = build_preflight("consolidate", {
         "network": net, "chain": chain_name(net), "asset": a["symbol"], "token": a["token"],
         "to": {"label": dest.label or "Wallet", "address": dest.address},
-        "from": [{"label": s.label or "Wallet", "address": s.address, "amount": _human(r, d)} for s, r in plan],
+        "from": [{"label": s.label or "Wallet", "address": s.address, "amount": _human(r, d), "amount_raw": str(r)} for s, r in plan],
         "skipped_empty": skipped, "percent": body.percent, "total": _human(sum(r for _, r in plan), d),
+        "total_raw": str(sum(r for _, r in plan)), "decimals": d,
         "network_fees_max": _human(gas_each * len(plan), nd), "network_fee_coin": coin,
         "own_wallets_only": True,
         "transparency": (f"The destination wallet is attached to {launch.name} (${launch.symbol}) so its "

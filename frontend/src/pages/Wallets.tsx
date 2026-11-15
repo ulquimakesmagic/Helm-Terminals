@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import ChainSelect from "../components/ChainSelect";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
 import { useSession } from "../session";
@@ -317,6 +318,7 @@ export default function Wallets() {
   const [q, setQ] = useState("");
   const [chainF, setChainF] = useState<string>("all");
   const [balances, setBalances] = useState(false);
+  const balanceFlight = useRef(false);
   const [loadingBal, setLoadingBal] = useState(false);
   const [modal, setModal] = useState<null | "create" | "fund" | "withdraw" | "folders" | "move" | "disperse" | "consolidate">(null);
   const [moveTo, setMoveTo] = useState("");
@@ -358,6 +360,8 @@ export default function Wallets() {
   const [loadErr, setLoadErr] = useState("");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const load = async (withBal = balances) => {
+    if (balanceFlight.current) return;
+    balanceFlight.current = true;
     setLoadErr("");
     if (withBal) setLoadingBal(true);
     try {
@@ -365,11 +369,18 @@ export default function Wallets() {
         api<W[]>(`/wallets${withBal ? "?with_balances=true" : ""}`), api<Folder[]>("/folders"), api<Funder[]>("/funders"),
       ]);
       setWallets(w); setFolders(f); setFunders(fu); setUpdatedAt(Date.now());
-      if (withBal) { setBalances(true); api("/portfolio?fresh=true").then(setFolio).catch(() => setFolio(null)); }
+      if (withBal) { setBalances(true); api("/portfolio").then(setFolio).catch(() => setFolio(null)); }
     } catch (e) { if (wallets) toast("bad", errMsg(e)); setLoadErr(errMsg(e)); }
-    finally { setLoadingBal(false); }
+    finally { setLoadingBal(false); balanceFlight.current = false; }
   };
-  useEffect(() => { load(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let active = true;
+    load(false).then(() => { if (active) void load(true); });
+    const refresh = () => { if (document.visibilityState === "visible") void load(true); };
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = wallets ?? [];
   const managed = all.filter((w) => w.kind === "managed");
@@ -398,7 +409,7 @@ export default function Wallets() {
     for (const w of shown) count.set(w.address, (count.get(w.address) ?? 0) + 1);
     return new Set([...count].filter(([, n]) => n > 1).map(([a]) => a));
   }, [shown]);
-  const unread = balances ? all.filter((w) => w.kind === "managed" && typeof w.balance_sol !== "number") : [];
+  const unread = balances ? all.filter((w) => w.kind === "managed" && (isExtraChain(w.network) ? w.balance_native == null : typeof w.balance_sol !== "number")) : [];
   const sel = [...selected];
   const selManaged = sel.filter((id) => managed.some((w) => w.id === id));
   const selNets = [...new Set(selManaged.map((id) => managed.find((w) => w.id === id)?.network ?? "solana"))];
@@ -466,11 +477,7 @@ export default function Wallets() {
             <button className="chip" onClick={() => setModal("folders")}><Icon name="folder" size={12} />{folders.length ? "Manage folders" : "New folder"}</button>
           </div>
           <div className="row filters" style={{ flex: "1 1 320px", justifyContent: "flex-end" }}>
-            <select value={chainF} onChange={(e) => setChainF(e.target.value)} style={{ flex: "0 1 190px" }} aria-label="Filter by chain">
-              <option value="all">All chains ({all.length})</option>
-              {[...CHAIN_ORDER, ...new Set([...extras.map((n) => n.id), ...all.map((w) => w.network).filter(isExtraChain)])].map((c) => (
-                <option key={c} value={c}>{chainOf(c).name} ({all.filter((w) => (w.network ?? "solana") === c).length})</option>))}
-            </select>
+            <ChainSelect value={chainF} onChange={setChainF} networks={[...CHAIN_ORDER, ...extras.map(n => n.id), ...all.map(w => w.network)]} counts={Object.fromEntries(["all", ...all.map(w => w.network)].map(n => [n, n === "all" ? all.length : all.filter(w => w.network === n).length]))} />
           <div style={{ flex: "1 1 200px", maxWidth: 280 }}><SearchInput aria-label="Search wallets" placeholder="Search label or address" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           </div>
         </div>

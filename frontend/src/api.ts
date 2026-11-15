@@ -18,6 +18,20 @@ export function setToken(t: string | null) {
 }
 export const hasToken = () => token !== null;
 
+/** Owner-only media uses the same memory-only bearer, never a token in a URL. */
+export async function performanceMedia(file?: File, remove = false): Promise<Blob | any> {
+  const response = await fetch(BASE + "/profile/performance/media", {
+    method: remove ? "DELETE" : file ? "PUT" : "GET",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(file ? { "Content-Type": file.type || "application/octet-stream" } : {}) },
+    body: file,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, error.detail || "Background request failed");
+  }
+  return file || remove ? response.json() : response.blob();
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) {
     super(detail);

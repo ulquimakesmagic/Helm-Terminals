@@ -18,7 +18,7 @@ def launchpad_capabilities(identifier, network, status):
     no_rewards = identifier in {"uniswap-v2", "four-meme", "sunpump", "meme-cooking", "tolly"}
     reward_ready = no_rewards or share["supported"] or identifier in {"flap-sh", "flap-sh-robinhood"}
     return {"create": implemented and reward_ready, "buy": implemented, "sell": implemented,
-            "claim_mode": claim, "automation": implemented and not extra,
+            "claim_mode": claim,
             "supply_lock": False, "creator_reward_share_bps": CREATOR_SHARE_BPS,
             "creator_reward_collection": "not_applicable" if no_rewards else share["collection"],
             "creator_reward_collection_ready": reward_ready,

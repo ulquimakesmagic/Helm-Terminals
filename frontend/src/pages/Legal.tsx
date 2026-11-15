@@ -36,7 +36,7 @@ const TERMS: Doc = {
       <p>Keep your password and authenticator safe. Withdrawals and token sends require two-factor authentication. You are responsible for activity under your account until you tell us it is compromised. <Pending>Jurisdictions where Helm is not offered</Pending></p>
     </>],
     ["Wallets and keys", <>
-      <p><b>Managed wallets.</b> Keys for wallets Helm creates or imports are held by a third-party key-management service (Turnkey) under Helm's organisation. Helm stores each key's reference and public address and asks the service to sign only when you confirm an action, or when a finite scheduled plan you created places one of its orders. Helm does not show or export private keys. Keep enough of your own records to identify your wallets and assets.</p>
+      <p><b>Managed wallets.</b> Keys for wallets Helm creates or imports are held by a third-party key-management service (Turnkey) under Helm's organisation. Helm stores each key's reference and public address and asks the service to sign only when you confirm an action. Helm does not show or export private keys. Keep enough of your own records to identify your wallets and assets.</p>
       <p><b>Connected wallets</b> (for example TON, TRON, NEAR or Arc wallets you link) are signed in your own wallet app; Helm never holds their keys. <b>Watch-only</b> addresses are read, never signed for.</p>
       <p>Account recovery is limited to the methods the app offers (verified-email reset and recovery codes). After a recovery, spending is held for 24 hours. <Pending>Operator procedure if both password and email access are lost</Pending></p>
     </>],

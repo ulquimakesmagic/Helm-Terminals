@@ -1,3 +1,5 @@
+> Current override (15 November 2026): trading automation and public profiles are permanently retired. The schedule schema below is historical retention only; its APIs and workers no longer exist. Launches are free, trading fees are 2.5%, and the new creator share is 2.5%. See `uiux-rebuild-prompt.md` and the release audit for current UX and capability scope.
+
 # Helm Terminals: transparent token launch and operations platform
 
 Name: **Helm Terminals** (helmterminals.xyz; short form "Helm"). This is a spec and scaffold for a Proxima-style launch and wallet operations tool,
@@ -23,7 +25,6 @@ holdings look like many independent holders, or to make trading look like organi
 | Launch | Draft, review, deploy. Clone metadata from an existing token. Import an existing token by address |
 | Launchpads | Adapter registry. Pump.fun implemented end to end. Others are one adapter file each (section 8) |
 | Live workspace | Holdings per wallet, balances, manual buy/sell (single wallet or selected wallets, staggered or parallel), transactions feed |
-| Automation | Finite scheduled-buy plans on Solana: selected attached wallets, fixed order count, interval, slippage cap, total notional cap, pause/cancel, stop on failure |
 | Token ops | Claim creator fees, lock supply (Streamflow), burn, send tokens, swap quote asset |
 | Tracker | Watchlist of external wallet addresses with labels and bookmarks |
 | Reporting | Dashboard (P&L, launches, referral), P&L card export |
@@ -45,12 +46,7 @@ boundary is a product decision and not an omission.
 | Nuke / Sniper Guard auto-dump | Automated mass sell of every wallet on a trigger. Also a rug-pull primitive |
 | Bubble Maps "detection mode" estimates | Only useful for tuning the above |
 
-What replaces them: a single dev buy at launch, manual user-initiated trades, finite scheduled buys for bounded
-accumulation, finite staged sells for user-directed exits, and a **Supply Transparency** panel (section 7) that
-shows the user's own wallets, in aggregate, next to the token's real holder distribution. Scheduled buys have a
-fixed order count and maximum trade notional; staged sells apply a fixed percentage to each wallet's then-current
-remaining balance. Each order uses the existing simulation and job audit path, and a failed or uncertain order
-stops the remaining plan. Neither direction can be combined into an automated buy/sell loop.
+Helm supports explicitly confirmed manual trades, initial developer buys, token distribution/consolidation and supply transparency. Trading automation is permanently retired.
 
 ## 3. Architecture
 
@@ -65,7 +61,6 @@ React (Vite, TS)  <--HTTPS/WS-->  FastAPI  ---> Postgres (SQLAlchemy 2, Alembic)
                                      +--> Chain adapters: Solana (solders + RPC), later EVM
                                      +--> Launchpad adapters: pumpfun, ...
                                      +--> Data: Helius (RPC, DAS, webhooks), Jupiter (quotes/swaps)
-                                     +--> Scheduled-buy worker: persisted plans, claimed with DB row locks
 ```
 
 Key decisions:
@@ -116,8 +111,6 @@ POST /launches/{id}/archive    POST /launches/{id}/restore
 
 GET  /launches/{id}/workspace  (holdings, balances, transactions, transparency panel)
 POST /launches/{id}/trade      (buy/sell; wallets[], mode=stagger|parallel; returns preflight unless confirm=true)
-POST /launches/{id}/automations/dca  (finite scheduled buys; preflight, then confirm)
-GET  /automations             POST /automations/{id}/pause|resume|cancel
 POST /launches/{id}/claim-fees POST /launches/{id}/lock   POST /launches/{id}/burn   POST /launches/{id}/send
 
 GET  /dashboard                GET /activity             GET/POST/DELETE /tracker
@@ -199,10 +192,9 @@ interface that changes over time, so treat this as an ongoing roadmap, not a v1 
 1. Auth, wallets, signer, dashboard shell (scaffold complete)
 2. Pump.fun create + dev buy + workspace holdings (scaffold has adapter and routes; needs mainnet test with small amounts)
 3. Manual multi-wallet trading, fees, claim rewards, P&L cards
-4. One-way scheduled trade automations (Solana only in v1; finite buys and staged sells; one worker is started by
-   the API, row claims use database locks; uncertain executions fail closed and are never replayed)
+4. Private identity and performance exports; unattended trading is retired
 5. Streamflow lock, burn, send, swap quote asset
-6. Second and third launchpad adapters, then broader automated execution on EVM
+6. Second and third launchpad adapters, then broader manually confirmed execution on EVM
 7. Hardening: Turnkey policy templates, monitoring, load test, external security review
 
 ## 11. Telegram bot (terminal)

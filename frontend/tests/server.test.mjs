@@ -35,8 +35,10 @@ test("unknown paths get the app shell with HTTP 404; app and legal deep links ge
   const url = `http://127.0.0.1:${server.address().port}`;
   const html = {headers: {Accept: "text/html"}};
   try {
-    for (const path of ["/", "/terms", "/privacy", "/risk", "/billing", "/launches/abc123", "/u/someone", "/login?next=%2Fwallets"])
+    for (const path of ["/", "/terms", "/privacy", "/risk", "/billing", "/launches/abc123", "/login?next=%2Fwallets"])
       assert.equal((await fetch(url + path, html)).status, 200, path);
+    for (const path of ["/u/someone", "/automation", "/automation/old"])
+      assert.equal((await fetch(url + path, html)).status, 404, path);
     const miss = await fetch(`${url}/definitely-not-a-page`, html);
     assert.equal(miss.status, 404);
     assert.match(await miss.text(), /Fixture/);  // the shell still renders its own not-found page

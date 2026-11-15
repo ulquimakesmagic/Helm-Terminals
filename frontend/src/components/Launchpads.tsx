@@ -24,7 +24,7 @@ export function LaunchpadDirectory({ pads, onPick, picked }: { pads: Pad[]; onPi
                   title={p.reason ?? (live ? undefined : "Coming soon")} onClick={() => onPick?.(p)}>
                   <PadMark pad={p.id} network={p.network} size={24} />
                   <span className="grow" style={{ fontWeight: 600, overflowWrap: "break-word", lineHeight: 1.25 }}>{padName(p.id)}</span>
-                  <span className={`badge ${live ? "good" : setup ? "warn" : ""}`}><span className="dot" />{live ? "Live" : setup ? "Needs setup" : "Soon"}</span>
+                  <span className={`badge ${live ? "good" : setup ? "warn" : ""}`}><span className="dot" />{live ? "Available" : setup ? (p.setup_kind === "reward_integration" ? "Integration pending" : p.setup_kind === "factory_deployment" ? "Factory required" : "Configuration needed") : "Planned"}</span>
                 </button>
               );
             })}

@@ -8,7 +8,7 @@ import SpendDialog from "../components/SpendDialog";
 import type { SpendRequest } from "../components/Distribute";
 import { ALL_CHAIN_ORDER, chainOf, Pad, padName } from "../chains";
 import { coverage } from "../components/Launchpads";
-import { ChainMark, PadLabel, PadMark } from "../components/marks";
+import { ChainMark, PadLabel } from "../components/marks";
 import { ActivityRow, FeedItem, groupRepeats, isRoutine } from "../components/feed";
 import {
   Callout, Card, Empty, Icon, IconName, LoadError, Loading, Metrics, parseDate, relTime, Seg, Skeleton, Spinner, StatusBadge, TableWrap, TokenImage,
@@ -51,7 +51,6 @@ export default function Dashboard() {
   const wallets = useList<any>("/wallets");
   const launches = useList<any>("/launches");
   const feed = useList<ActivityRow>("/activity?limit=40");
-  const plans = useList<any>("/automations");
   const [pads, setPads] = useState<Pad[]>([]);
   const [folio, setFolio] = useState<any>(null);
   const [folioErr, setFolioErr] = useState("");
@@ -87,12 +86,6 @@ export default function Dashboard() {
     ...(launches.data ?? []).filter((l) => l.status === "failed").map((l): NextAction => ({
       key: `f${l.id}`, icon: "alert", tone: "bad", title: `${l.name} failed to deploy`, text: "Review what happened and retry from its workspace.", to: `/launches/${l.id}`, cta: "Open",
     })),
-    ...(plans.data ?? []).filter((a) => a.status === "failed" && a.error).slice(0, 3).map((a): NextAction => ({
-      key: `a${a.id}`, icon: "calendar", tone: "bad", title: `Plan on $${a.launch_symbol ?? "token"} stopped`, text: a.error, to: `/launches/${a.launch_id}?tab=automation`, cta: "View",
-    })),
-    ...(plans.data ?? []).filter((a) => a.status === "paused").slice(0, 3).map((a): NextAction => ({
-      key: `p${a.id}`, icon: "calendar", tone: "warn", title: `Plan on $${a.launch_symbol ?? "token"} is paused`, text: `${a.runs_completed} of ${a.total_orders} orders done. Resume or cancel the rest.`, to: `/launches/${a.launch_id}?tab=automation`, cta: "Review",
-    })),
     ...(launches.data ?? []).filter((l) => l.status === "draft").slice(0, 3).map((l): NextAction => ({
       key: `d${l.id}`, icon: "rocket", tone: "info", title: `${l.name} is ready to deploy`, text: `Draft on ${padName(l.launchpad)}. The preview shows every cost first.`, to: `/launches/${l.id}`, cta: "Review",
     })),
@@ -118,7 +111,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <h1 className="sr-only">Dashboard</h1>
+      <div className="desk-welcome"><div><span className="eyebrow">YOUR OPERATIONS, IN FOCUS</span><h1>{me?.display_name ? `Welcome back, ${me.display_name}.` : "Your launch desk."}</h1><p className="muted">A clear view of your capital, launches and next move.</p></div><Link to="/profile" className="btn secondary"><Icon name="trend" size={16} />Your performance</Link></div>
       <section className="command" aria-label="Portfolio summary">
         <div style={{ minWidth: 0 }}>
           <div className="row" style={{ gap: 10 }}>
@@ -207,7 +200,7 @@ export default function Dashboard() {
                     <span role="columnheader" style={{ textAlign: "right" }}>Coin</span><span role="columnheader" style={{ textAlign: "right" }}>Stablecoin</span>
                     <span role="columnheader" style={{ textAlign: "right" }}>Value</span>
                   </div>
-                  {chains.map((c) => <ChainRow key={c.network} c={c} launches={data?.by_chain?.[c.network]?.launches ?? 0}
+                  {chains.filter(c => c.wallets > 0).map((c) => <ChainRow key={c.network} c={c} launches={data?.by_chain?.[c.network]?.launches ?? 0}
                     onRetry={() => loadFolio(true)} busy={folioBusy} />)}
                 </div>
               </>
@@ -263,33 +256,8 @@ export default function Dashboard() {
               )}
           </Card>
 
-          <Card title="Chain coverage" icon="layers" sub={pads.length ? `${coverage(pads).live} of ${coverage(pads).pads} launchpads live on ${coverage(pads).chains} chains` : undefined}
-            actions={<Link to="/launches" className="btn sm ghost">Launchpads<Icon name="arrowright" size={13} /></Link>}>
-            {!pads.length ? <Loading rows={3} /> : (
-              <div className="stack">
-                {ALL_CHAIN_ORDER.map((c) => {
-                  const list = pads.filter((p) => p.network === c);
-                  if (!list.length) return null;
-                  return (
-                    <div key={c} className="stack tight">
-                      <div className="row" style={{ gap: 8 }}><ChainMark network={c} size={18} /><b className="small-strong">{chainOf(c).name}</b>
-                        <span className="muted small">{list.filter((p) => p.status === "available").length} of {list.length} live</span></div>
-                      <ul className="pad-chips" style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                        {list.map((p) => {
-                          const st = p.status === "available" ? "live" : p.status === "setup_required" ? "setup" : "soon";
-                          return (
-                            <li key={p.id} className={`pad-chip ${st}`} title={p.reason ?? undefined}>
-                              <PadMark pad={p.id} network={p.network} size={20} />{padName(p.id)}
-                              <span className="st">{st === "live" ? "Live" : st === "setup" ? "Needs setup" : "Soon"}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <Card title="Your multichain desk" icon="layers" sub={pads.length ? `${coverage(pads).live} configured launchpads` : undefined} actions={<Link to="/launches" className="btn sm ghost">Explore<Icon name="arrowright" size={13}/></Link>}>
+            <div className="launch-network-grid">{ALL_CHAIN_ORDER.map(c => { const count = pads.filter(p => p.network === c && p.status === "available").length; return count ? <Link key={c} to="/launches"><ChainMark network={c} size={22}/><span>{chainOf(c).name}<small>{count} available</small></span><Icon name="chevron" size={12}/></Link> : null; })}</div>
           </Card>
 
           <ReferralCard data={data?.referral ?? null} onChange={load} />

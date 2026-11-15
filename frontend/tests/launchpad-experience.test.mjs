@@ -21,7 +21,7 @@ test("claim controls reflect the adapters Helm actually supports", () => {
   for (const id of ["pumpfun", "bags", "meteora-dbc", "clanker", "clanker-robinhood", "pons"])
     assert.equal(launchpadExperience(id).claimMode, "in-app", id);
   assert.equal(launchpadExperience("letsbonk").claimMode, "external");
-  assert.equal(launchpadExperience("flap-sh").claimMode, "automatic");
+  assert.equal(launchpadExperience("flap-sh").claimMode, "none");
   assert.equal(launchpadExperience("meme-cooking").claimMode, "auction");
   for (const id of ["four-meme", "uniswap-v2", "sunpump", "tolly"])
     assert.equal(launchpadExperience(id).claimMode, "none", id);

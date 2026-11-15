@@ -1,5 +1,10 @@
 # Launchpads not yet configured: what each needs (researched 2026-10-10)
 
+**Historical research — superseded.** Use [the current mainnet setup guide](mainnet-integration-setup.md)
+and [15 November capability review](launchpad-capability-review-2026-11-15.md).
+The old Pons factory setting below is not suitable for new launches: those require the separately
+deployed 2.5% V2 factory. The original notes are retained as dated research, not current activation instructions.
+
 Live API (`/launchpads`, 10 Oct 2026): Pons is `setup_required`; Printr, Surge, Anoncoin, Stonkfun and Bankr are
 `planned`. After the TRON/NEAR/TON restore, SunPump and Meme.Cooking depend on server config, and GasPump (TON) is
 `planned`. Findings are from official docs where available; anything unverified is marked.

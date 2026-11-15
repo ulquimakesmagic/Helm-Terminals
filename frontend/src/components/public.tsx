@@ -48,7 +48,7 @@ export function PublicHeader({ refCode, authLinks = true, children }: { refCode?
         <nav className="pub-nav hide-sm" aria-label="Overview">
           <a href="/#coverage">Coverage</a>
           <a href="/#capabilities">What it does</a>
-          <a href="/#pricing">Pricing</a>
+
           <a href="/#safeguards">Safeguards</a>
         </nav>
         <div className="spacer" />

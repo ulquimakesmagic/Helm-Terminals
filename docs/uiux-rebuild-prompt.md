@@ -1,108 +1,150 @@
-# Helm Terminals — full UI/UX audit & rebuild + wallet/launch feature expansion
+# Current Helm redesign brief
 
-> Reusable execution prompt. A fresh agent session can run this without prior context.
-> Invariants and scope decisions were reviewed 2026-10-02; re-verify repo state before starting.
+Apply the installed UI UX Pro Max skill throughout. Helm should feel like a polished crypto launch and trading terminal, with a strong visual identity, clear navigation, useful information density, and excellent mobile usability.
 
-## Context (read first — you have none from any prior session)
+1. Landing page
 
-Repository: Helm Terminals — a multichain token-launch and wallet-operations platform (Solana,
-Base, BSC, Robinhood Chain, Ethereum + TRON/NEAR/Arc/TON). Backend: FastAPI + async SQLAlchemy in
-`backend/app/` (400+ passing tests; run with `cd backend && ./.venv/Scripts/python.exe -m pytest -q
--p no:cacheprovider`). Frontend: React 18 + Vite + TypeScript strict, no state library, no UI kit —
-a deliberate hand-rolled token-driven design system in `frontend/src/styles.css` (~1,237 lines) with
-primitives in `frontend/src/components/ui.tsx`. `npm run build` = `tsc --noEmit` + vite; `npm test`
-runs node:test on pure domain logic. Read `docs/SPEC.md`, `docs/creator-reward-integration.md`,
-`docs/runbooks/`, and skim `frontend/src/launchpadExperience.ts` before touching anything.
+Redesign the landing page around attention, product understanding, and conversion.
+- Create a stronger opening headline, compelling product visuals, and clear calls to action.
+- Replace “Example Token / EXMPL” with “Test Launch / $TEST.” Clearly identify it as a demonstration.
+- Use image generation where useful to create original token artwork and visual assets. Render interface text and controls in code so they remain sharp, accessible, and responsive.
+- Make the preview demonstrate Helm’s actual launch and management experience.
+- Remove fee-focused marketing, pricing tables, and the Pricing navigation item from the landing page. Keep fees clearly disclosed in transaction reviews and relevant terms.
+- Add purposeful animations and interactions using appropriate frontend tools such as CSS, SVG, Canvas, or animation libraries. Support reduced motion and maintain fast loading.
+- Do not invent user counts, trading results, testimonials, or performance claims.
+2. Sign-in and account creation
 
-## Safety invariants — violating any of these is a failed task, no matter how good the UI looks
+Redesign both authentication experiences so they feel engaging and consistent with the landing page.
+- Use distinctive artwork, an animated product preview, or another useful visual treatment.
+- Keep forms easy to complete, with clear validation, password controls, recovery links, and loading/error states.
+- Make the primary action immediately visible on mobile and desktop.
+- Preserve authentication, recovery, session, and 2FA safeguards.
+3. Sidebar and application layout
 
-1. Every fund-moving action flows through the SpendDialog pipeline: server preflight → field-by-field
-   review → optional TOTP → confirm with `preflight_hash` + `idempotency_key` → job polling. Never
-   render a shortcut that spends without it.
-2. 2FA kinds, simulate-before-send, "Unavailable ≠ zero" honesty markers, and honest-revenue language
-   are product law. Don't redesign them away.
-3. Private keys/signing material never appear in GET responses, logs, screenshots, or the browser
-   except through the export flow defined below. The backend validates everything; client checks are
-   convenience only.
-4. Backend: tests stay green; every new spend endpoint follows the existing preflight/confirm/idempotency
-   pattern (see `app/routes/launches.py` claim_fees and `app/deps.py` begin_spend for the pattern).
-5. Accessibility stays at WCAG AA (contrast, focus-visible rings, focus-trapped modals, 44px touch
-   targets, `prefers-reduced-motion`). Mobile must work at 380px.
+Fix the sidebar being cut off around Admin and hiding navigation below it.
+- Make every navigation item reachable at normal browser zoom and on short screens.
+- Use appropriate spacing, grouping, and independent navigation scrolling where needed.
+- Keep account controls accessible without covering navigation.
+- Remove Networks from the main sidebar and move its useful information into Settings → Network status, or a dedicated status area.
+- Remove the standalone Fees & payments page and its sidebar entry.
+- Preserve financial records, fee accounting, referral liabilities, transaction receipts, and required failed-fee settlement functionality. Place necessary user-facing details within transaction history or Settings.
+- Preserve referral access in an appropriate account area.
+- Remove all Automation navigation and entry points.
+4. Dashboard
 
-## Phase A — audit (do this before changing anything)
+Substantially improve the dashboard’s visual design and usefulness.
+- Prioritize portfolio value, balances, active launches, relevant performance, recent activity, and quick actions.
+- Improve hierarchy, charts, spacing, and empty states.
+- Load balances automatically and show freshness, loading progress, and partial failures clearly.
+- Distinguish genuine zero balances from unavailable data.
+- Avoid large empty panels or repetitive summary cards.
+- Ensure the dashboard contains no automation features or promotions.
+5. Launches page and launchpad readiness
 
-Inventory every route in `frontend/src/pages/` and every component in `frontend/src/components/`.
-For each: render it (run backend + frontend locally), screenshot desktop and 380px, and grade
-against: typography rhythm, spacing/elevation consistency, loading/empty/error state coverage,
-interaction feedback, information density, accessibility, and motion quality. Produce
-`docs/audits/ui-ux-2026-10.md`: a findings table (severity P0–P3, screen, evidence, prescribed fix)
-plus a design-system gap list. This document drives Phase B priorities — show it before rebuilding.
+Redesign the launches page and simplify its filters.
+- Replace the crowded chain buttons with a compact, searchable selector using chain icons and names.
+- Improve launch cards, search, status filters, empty states, and launchpad discovery.
+- Investigate every launchpad marked Needs setup. Separate missing configuration, incomplete integration, unavailable upstream support, and missing creator-reward collection.
+- Complete integrations and configuration that can actually be completed.
+- Integrate the other planned launchpads where official deployed infrastructure and supported interfaces are available.
+- Keep Elpida readiness tied to verified mainnet availability.
+- Verify underlying functionality before changing a launchpad’s status to “Live.”
+- For blockers requiring credentials, account access, deployed contracts, or unavailable upstream features, report the precise dependency and continue independent work.
+6. Launchpad-specific launch flows
 
-## Phase B — rebuild to a best-in-class bar
+Research each integrated launchpad using its current official documentation and interface. Build a capability matrix before changing the forms.
 
-Design direction: research **Watermelon UI** as the primary aesthetic reference, then benchmark
-against Linear (linear.app), Vercel dashboard, Stripe Dashboard, Raycast, and crypto-native dark
-terminals (jup.ag, Axiom, Photon, GMGN) — Helm is a terminal, so: dense but calm, tabular numerals,
-precise hierarchy, restrained color with one accent per chain, motion that communicates state
-change rather than decorates.
+Helm’s launch flow should support each launchpad’s actual options and behavior through Helm’s own design system.
 
-- Evolve the existing token system (don't migrate to Tailwind or a component kit): refine the
-  surface/color/type/spacing tokens, add elevation and motion-duration tokens, unify status badges,
-  empty states, skeletons, and error/LoadError patterns across all screens.
-- Upgrade `ui.tsx` primitives: add Sheet/Drawer, Tabs, Tooltip, Progress, Segmented improvements,
-  a Command-palette-quality Modal, and better toasts. Every primitive keyboard-accessible.
-- Motion with **@react-spring/web** (the only new runtime dependency): spring-based modal/sheet
-  entrances, list mount/unmount transitions, number tickers for balances/quotes, staged card
-  reveals on the Dashboard, progress feedback on job polling. All gated behind
-  `prefers-reduced-motion`. Lazy-load it where it's not on the first screen.
-- Rebuild worst screens first per the audit (expect: Workspace, Wallets, the Create-launch modal
-  flow, Admin), then sweep the rest.
+Investigate, where applicable:
+- Supported chains, token standards, metadata, images, banners, and videos.
+- Pairing and quote assets, including supported tokenized-stock or other alternative asset pairings.
+- Initial buys, funding requirements, liquidity configuration, and graduation behavior.
+- Standard versus taxed tokens, independent tax settings, durations, recipients, allocations, and reward modes.
+- Creator rewards, vesting, locks, vaults, and post-launch controls.
+Show only options supported by the selected launchpad, network, and deployed integration. Avoid forcing every launchpad into the same generic form.
 
-## New features
+Keep draft saving, validation, transaction previews, cost disclosures, explicit confirmation, failure recovery, and transaction status clear throughout. Verify official contract/program addresses and supported interfaces before enabling execution.
 
-### 1. Export private key (wallet settings + wallet detail)
-Per managed wallet: password re-entry + fresh TOTP (step-up pattern exists — see Admin's
-StepUpDialog). Local-signer keys: server decrypts and returns the key exactly once over the
-response; Turnkey-managed keys: use Turnkey's export-private-key encrypted-bundle flow client-side,
-never plaintext through Helm's server. UI: show-once modal — explicit "I understand this cannot be
-shown again" acknowledgment, copy button, 20-second auto-hide, visible warning that exporting moves
-custody to the holder, audit-log entry, rate-limited (e.g. 1/10min/user), web-channel only. New
-backend endpoint + tests covering 2FA/password gates, audit logging, and that the key never lands
-in activity logs or GET endpoints.
+7. Wallets
 
-### 2. Withdrawal: specific amounts
-Today withdrawals sweep-all. Add an amount input with MAX (spendable minus fees — reuse the
-existing reserve/fee logic, `NATIVE_RESERVE_WEI` + `spendable()`), per-chain fee preview, and for
-multi-wallet withdrawals either an even split or per-wallet amounts with a running total. Still
-goes through SpendDialog. Extend the backend withdraw path if it only supports `all: true`, with
-validation (amount > 0, ≤ spendable) and tests.
+Redesign the wallets page for clearer balances, folders, and actions.
+- Fetch balances automatically on entry and refresh them sensibly without excessive RPC requests.
+- Diagnose and fix the NEAR and TRON “Unavailable” balances shown in the screenshots. Address the actual provider, account-state, configuration, or adapter issue.
+- Use a searchable chain selector containing both icons and names.
+- Improve folder management, filtering, selection, bulk actions, and responsive layouts.
+- Preserve accurate balance precision and distinguish spendable funds from amounts reserved for network costs.
+- Provide useful retry and partial-result states when providers fail.
+- Keep wallet folders available for organization and explicitly confirmed manual operations after automation is removed.
+8. Private profile and performance cards
 
-### 3. Jupiter swap inside the wallets surface
-Research Jupiter's current APIs first (quote/swap, free lite endpoint vs API-key production tier)
-and whether its cross-chain swap is production-ready — report findings before building. Solana
-swaps: backend-proxied Jupiter quote + swap (never call Jupiter from the browser; keep any API key
-server-side in settings with the same hygiene as GMGN's — see `docs/market-data.md`), route built
-through Helm's existing executor (simulate-before-send, transaction recorded), slippage control,
-route/price-impact display, USD values from the existing portfolio price source. Cross-chain
-conversion/bridging: keep it on the existing Relay routes but unify the UX into one "Swap & Bridge"
-surface in the wallets area. Explicitly preserve disperse/consolidate. Document the integration in
-`docs/jupiter-swap.md` (endpoints, key handling, boundaries) — match the honesty standard of
-`docs/market-data.md`.
+Redesign Profile as a private account and performance area.
+- Let every user set a nickname/display name and, if needed, a username.
+- Use the chosen display name on their PnL and performance cards.
+- Remove social-profile language and public profile discovery/viewing features. Helm is not intended to be a social network.
+- Improve the presentation of performance and trading history.
+- Clearly distinguish realized PnL, unrealized PnL, net flows, fees, and incomplete valuation data.
+- Sharing an exported performance card must not expose a publicly browsable account profile.
+Add Settings → Performance cards with:
+- Several polished crypto-themed templates.
+- Custom background image uploads.
+- Short custom video backgrounds, approximately 2–10 MB, with a 10 MB maximum.
+- Preview, crop/position, contrast, and layout controls.
+- Static-image export, plus animated/video export where implemented and supported.
+- A static fallback and reduced-motion behavior.
+- Validated media formats, dimensions, duration, file size, and secure private storage.
+- Controls to prevent unintended exposure of email addresses, wallet addresses, balances, or other private information.
+I will provide additional template references. Build the customization foundation so those templates can be incorporated without delaying unrelated work.
 
-### 4. Instant post-launch supply dispersal (launch workdesk)
-After a launch confirms live, the Workspace's token-operations area offers "Distribute supply":
-pick a folder → even split or custom percentages across its wallets → executes through the existing
-`/wallets/disperse` token path and SpendDialog. Two modes: manual (one click post-launch) and
-"queue on confirmation" — the user confirms the disperse preflight at deploy time and the job fires
-automatically once the launch confirms, using the existing job/automation infrastructure (fail
-safe: if the disperse fails, it reports and stays retryable; it never redeploys or retries into a
-double-send). Respect allocation locks (the allocations service already enforces them on sells —
-extend to dispersal), and keep the Supply-Transparency warning visible when dispersal would put
->20% of supply under user-controlled wallets.
+9. Token workspace and trading interface
 
-## Working method
+Redesign the token workspace using established trading terminals as interaction references.
+- Make the chart visible immediately when the page opens.
+- Remove the large bonding-curve information banner from the top. Move useful protocol details into a compact details section.
+- Reduce oversized headings, repeated summaries, and excessive vertical spacing.
+- Organize the chart, essential market statistics, manual trading controls, positions, and wallet information clearly.
+- Make mobile layouts usable without requiring desktop scaling.
+- Preserve quote freshness, slippage limits, price-impact warnings, fee disclosure, and transaction confirmation.
+- Remove Automation buttons, tabs, widgets, and promotional content.
+10. Remove automation completely from Helm
 
-Branch per phase, commit per coherent unit, merge to main only with `npm run build`, `npm test`,
-and the full backend suite green. Verify rendered pages visually (screenshot each rebuilt screen at
-desktop + 380px) before declaring a phase done. If a design decision conflicts with a safety
-invariant, the invariant wins — note it in the audit doc and move on.
+Remove the automation feature throughout the application.
+- Remove all Automation buttons, tabs, sidebar links, pages, onboarding content, and documentation.
+- Remove automation API endpoints, scheduled trading plans, execution engines, configuration, and feature-specific dependencies.
+- Disable existing plans and cancel queued automation actions so they cannot submit further transactions.
+- Reconcile already submitted transactions without resubmitting them. Preserve transaction history, receipts, and financial records.
+- Retire stored automation settings through safe migrations without affecting wallets, balances, launches, or unrelated account data.
+- Remove DCA, scheduled buys/sells, automated volume generation, and other unattended trading features. Do not replace automation with another trading feature.
+- Update tests and verify that retired endpoints, old links, queued jobs, and application restarts cannot reactivate automation.
+Keep automatic balance loading, market-data refresh, transaction-confirmation monitoring, and other essential background infrastructure working. Manual trading, explicitly confirmed token distribution, and consolidation remain available.
+
+11. Post-launch wallet attachment, distribution, and consolidation
+
+Improve the launch workspace’s wallet management.
+- Allow users to attach an existing single wallet or an eligible wallet folder after launch, even if it was not selected during creation.
+- Restrict attachments to authorized wallets on the correct chain and prevent duplicates.
+- Make attachment distinct from transferring funds or granting new signing authority.
+- Add a developer-wallet Distribute tokens action supporting explicit amounts, percentages, or equal distribution across selected attached wallets.
+- Add Consolidate tokens to move selected token holdings from authorized launch wallets into one selected destination.
+- Preview recipients, amounts, totals, network costs, and expected remaining balances before confirmation.
+- Check token restrictions, transfer taxes, native gas requirements, account creation costs, and chain-specific transfer behavior.
+- Track each transfer independently and support safe recovery from partial completion without duplicating confirmed transfers.
+- Preserve required authentication and signing controls.
+Distribution and consolidation must remain explicitly initiated and confirmed operations, with no recurring schedules or unattended trading behavior.
+
+12. Economics, verification, and delivery
+
+Preserve the agreed economics:
+- Launches remain free for every account.
+- Helm trading fees remain 2.5%.
+- Creator-reward allocation remains 2.5% on new Helm launches, subject to verified integration support.
+- Direct referrers earn 30% of actual collected Helm fees.
+- Historical immutable contracts retain their original terms.
+- Do not introduce a subscription requirement for basic launches.
+Removing pricing-focused pages must not remove transaction fee disclosures, accounting, receipts, or referral obligations.
+
+Implement the work in coherent phases, completing and testing each phase. Verify frontend and backend behavior together, including authorization, media uploads, financial calculations, launchpad capabilities, transaction recovery, and complete automation removal.
+
+Test mobile, tablet, desktop, short screens, normal browser zoom, keyboard navigation, reduced motion, and relevant error states. Use isolated fixtures, simulations, and local forks for financial execution tests.
+
+Push the changes, complete CI, deploy in the appropriate order, and verify the actual live site. Finish with a concise report explaining what shipped, what was tested, and any precise remaining blockers. Clearly distinguish completed integrations from features awaiting external infrastructure.

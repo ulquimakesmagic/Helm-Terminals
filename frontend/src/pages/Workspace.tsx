@@ -1,3 +1,4 @@
+import Distribute from "../components/Distribute";
 import { useCallback, useEffect, useState } from "react";
 import { Link, Location, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
@@ -5,7 +6,6 @@ import { chainOf, explorerUrl, isExtraChain } from "../chains";
 import { launchpadExperience } from "../launchpadExperience";
 import MarketTerminal from "../components/Market";
 import PonsRewards from "../components/PonsRewards";
-import LaunchAutomation from "../components/LaunchAutomation";
 import Allocations from "../components/Allocations";
 import DistributeSupply from "../components/DistributeSupply";
 import { DeleteDraft } from "./Launches";
@@ -137,6 +137,9 @@ export default function Workspace() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [attachId, setAttachId] = useState("");
+  const [folders, setFolders] = useState<{id:string;name:string}[]>([]);
+  const [consolidateOpen, setConsolidateOpen] = useState(false);
+  useEffect(() => { api<{id:string;name:string}[]>("/folders").then(setFolders).catch(() => {}); }, []);
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("0.1");
   const [mode, setMode] = useState<"stagger" | "parallel">("stagger");
@@ -261,16 +264,18 @@ export default function Workspace() {
   const amt = +amount || 0;
   const flow = ws.pnl.net_sol_flow as number;
 
-  const attach = () => api(`/launches/${id}/wallets`, { body: { wallet_ids: [attachId] } })
+  const attach = () => api(`/launches/${id}/wallets`, { body: { wallet_ids: attachId.startsWith("folder:") ? allWallets.filter(w => w.folder_id === attachId.slice(7) && w.network === l.network && !attached.has(w.id)).map(w => w.id) : [attachId] } })
     .then(() => { setAttachId(""); toast("good", "Wallet attached"); load(); }).catch((e) => toast("bad", errMsg(e)));
 
   // Sections, shared by the terminal layout (tokens with an address) and the draft layout.
   const walletsCard = (
           <Card title="Wallets" icon="wallet" sub={sel.length ? `${sel.length} selected · ${fmt(selSol, 4)} ${cur} · ${compact(selTok)} tokens` : "Select the wallets to trade or operate from"} flush
             actions={<div className="row nowrap">
+              {live && !extra && <><button className="btn secondary" onClick={() => setSupplyOpen(true)}><Icon name="send" size={14} />Distribute tokens</button><button className="btn secondary" disabled={ws.wallets.length < 2} onClick={() => setConsolidateOpen(true)}><Icon name="wallet" size={14} />Consolidate tokens</button></>}
               <label className="sr-only" htmlFor="attach-wallet">Attach a wallet</label>
               <select id="attach-wallet" value={attachId} onChange={(e) => setAttachId(e.target.value)} style={{ width: 200 }}>
-                <option value="">Attach a wallet…</option>
+                <option value="">Attach wallet or folder…</option>
+                {folders.map(f => { const count = allWallets.filter(w => w.folder_id === f.id && w.network === l.network && !attached.has(w.id)).length; return count > 0 ? <option key={f.id} value={`folder:${f.id}`} disabled={count > 50}>Folder: {f.name} · {count} wallets</option> : null; })}
                 {allWallets.filter((w) => !attached.has(w.id) && w.network === l.network).map((w) => <option key={w.id} value={w.id}>{w.label || short(w.address)}</option>)}
               </select>
               <button className="btn icon secondary" disabled={!attachId} onClick={attach} aria-label="Attach selected wallet"><Icon name="plus" size={14} /></button>
@@ -442,7 +447,7 @@ export default function Workspace() {
             </Card>
   ) : null;
   const perfCard = (
-          <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnl(launchPnlFacts(l, ws.pnl), `${l.symbol}-pnl.png`)}><Icon name="download" size={13} />Share card</button>}>
+          <Card title="Performance" icon="trend" actions={<button className="btn sm secondary" onClick={() => downloadPnl(launchPnlFacts(l, ws.pnl), `${l.symbol}-pnl.png`).catch(e => toast("bad", errMsg(e)))}><Icon name="download" size={13} />Share card</button>}>
             <PnlImage facts={launchPnlFacts(l, ws.pnl)} alt={`P&L card for ${l.name}`} />
             <div className={`num ${flow > 0 ? "good" : flow < 0 ? "bad" : ""}`} style={{ font: "500 26px var(--mono)" }}>
               {signed(flow)} <span className="muted" style={{ fontSize: 14 }}>{cur}</span>
@@ -480,7 +485,6 @@ export default function Workspace() {
         { label: "Wallets", value: String(ws.wallets.length), hint: sel.length ? `${sel.length} selected` : "attached" },
       ]} />
   );
-  const automationCard = <LaunchAutomation launchId={l.id} network={l.network} symbol={l.symbol} wallets={ws.wallets} live={live} />;
   const allocationsCard = <Allocations launch={l} wallets={ws.wallets} onChanged={load} />;
   const terminal = !!l.mint_address;
   // A copied draft shows the market of the token it was copied from, above the usual draft layout.
@@ -488,9 +492,9 @@ export default function Workspace() {
 
   return (
     <>
-      <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
+      <Link to="/launches" className="btn sm ghost workspace-back" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
 
-      <header className="page-head">
+      <header className="page-head workspace-head">
         <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
           <TokenImage launch={l} size={52} />
           <div style={{ minWidth: 0 }}>
@@ -515,7 +519,6 @@ export default function Workspace() {
             </span>
           )}
           {live && <button className="btn jump-trade" onClick={() => { setMobileView("trade"); requestAnimationFrame(() => { const el = document.getElementById("order-ticket"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); el?.focus({ preventScroll: true }); }); }}><Icon name="zap" size={14} />Trade</button>}
-          {live && !extra && <button className="btn secondary" onClick={() => { setTab("automation"); setMobileView("activity"); requestAnimationFrame(() => document.getElementById("wt-panel")?.scrollIntoView({ behavior: "smooth" })); }}><Icon name="calendar" size={14} />Automation</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
@@ -525,15 +528,7 @@ export default function Workspace() {
         </div>
       </header>
 
-      <Pipeline status={l.status} />
-
-      <section className="workspace-pad-strip" style={{ borderLeftColor: experience.accent }} aria-label={`${experience.mode} details`}>
-        <div className="grow"><span className="eyebrow" style={{ color: experience.accent }}>{experience.mode}</span><p>{experience.description}</p></div>
-        <div className="chips">
-          {(chosenSettings.length ? chosenSettings.map(([key, value]) => launchSetting(key, value)) : experience.features)
-            .map((feature) => <span className="chip static" key={feature}>{feature}</span>)}
-        </div>
-      </section>
+      {!terminal && <Pipeline status={l.status} />}
 
       {error && <Callout tone="err">Latest refresh failed: {error}</Callout>}
       {ws.rpc_error && <Callout tone="warn"><b>Chain data is partly unavailable.</b> Balances may be missing. {ws.rpc_error}</Callout>}
@@ -576,9 +571,10 @@ export default function Workspace() {
           </section>
           <WsTabs on={tab} setOn={setTab} tabs={[
             ["wallets", `Wallets${ws.wallets.length ? ` · ${ws.wallets.length}` : ""}`, walletsCard],
-            ...(extra ? [] : [["automation", "Automation", automationCard], ["allocations", "Allocation & vesting", allocationsCard]] as [string, string, React.ReactNode][]),
+            ...(extra ? [] : [["allocations", "Allocation & vesting", allocationsCard]] as [string, string, React.ReactNode][]),
             ["tx", `Transactions${ws.transactions.length ? ` · ${ws.transactions.length}` : ""}`, txCard],
             ["supply", "Holders", transparencyCard],
+            ["protocol", "Launch details", <Card title={experience.mode}><p>{experience.description}</p><div className="chips">{(chosenSettings.length ? chosenSettings.map(([key, value]) => launchSetting(key, value)) : experience.features).map(f => <span className="chip static" key={f}>{f}</span>)}</div></Card>],
             ...(opsCard ? [["ops", "Token operations", opsCard] as [string, string, React.ReactNode]] : []),
             ["perf", "Performance", perfCard],
           ]} />
@@ -601,7 +597,8 @@ export default function Workspace() {
       )}
 
       {dialog && <SpendDialog {...dialog} network={l.network} onClose={() => setDialog(null)} onDone={load} />}
-      {supplyOpen && <DistributeSupply launch={l} wallets={allWallets}
+      {consolidateOpen && <Distribute mode="consolidate" network={l.network} wallets={allWallets.filter(w => attached.has(w.id))} selected={sel.length ? sel : ws.wallets.filter((w:any) => w.role !== "dev").map((w:any) => w.id)} initialAsset={l.mint_address ?? "native"} onClose={() => setConsolidateOpen(false)} onReview={r => { setConsolidateOpen(false); setDialog(r); }} />}
+      {supplyOpen && <DistributeSupply launch={l} wallets={allWallets} attachedIds={ws.wallets.map((w:any) => w.id)}
         devWalletId={ws.wallets.find((w: any) => w.role === "dev")?.id}
         onClose={() => setSupplyOpen(false)}
         onReview={(r) => { setSupplyOpen(false); setDialog(r); }} />}
