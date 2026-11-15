@@ -76,6 +76,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   const [res, setRes] = useState<Res>("15");
   const [gInt, setGInt] = useState<ChartInterval>("15");
   const [pool, setPool] = useState("");
+  const [allStats, setAllStats] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
   useEffect(() => setPool(""), [launchId, network, token]);
@@ -110,8 +111,9 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
     <div className="term-head">
       <div className="th-pool"><span className="term-kicker"><Icon name="trend" size={12} />Codex · indicative market data</span>
         <b className="th-poolname">{r?.symbol ?? symbol} <span className="muted">/ USD · {net}</span></b>
+        <button className="btn sm ghost mobile-stats-toggle" type="button" aria-expanded={allStats} onClick={() => setAllStats(!allStats)}>{allStats ? "Fewer stats" : "More stats"}</button>
       </div>
-      <div className="th-stats">
+      <div className={`th-stats ${allStats ? "stats-expanded" : ""}`} role="region" aria-label="Market statistics">
         <HeadStat label="Price" value={metrics?.price_usd != null ? `$${fmtPrice(metrics.price_usd)}` : null} title="Codex price in US dollars" />
         <HeadStat label="24h change" value={pct(change)} tone={change != null && change >= 0 ? "good" : "bad"} title="Token price change over 24 hours (Codex)" />
         <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title="Circulating market cap: price × circulating supply, as reported by Codex" />

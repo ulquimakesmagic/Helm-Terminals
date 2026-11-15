@@ -10,7 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
-DATABASE = ROOT / ".audit-runtime" / "helm-redesign-browser-audit.db"
+DATABASE = ROOT / ".audit-runtime" / "helm-redesign-browser-audit-v2.db"
 ADMIN_ID = "000000000000000000000000000000aa"
 ADMIN_EMAIL = "audit-admin@example.com"
 USER_EMAIL = "audit-user@example.com"

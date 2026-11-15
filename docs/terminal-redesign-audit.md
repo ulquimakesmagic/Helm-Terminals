@@ -27,11 +27,19 @@ Current scope: `docs/uiux-rebuild-prompt.md`; branch `codex/terminal-redesign`.
 ## Verification so far
 
 - TypeScript and production frontend build pass.
-- Eight initial privacy/media/removal tests pass; additional dispatcher, precision and populated migration tests added.
+- Privacy/media/removal, stale-dispatcher and precision checks pass. The populated retirement migration test passes.
 - Forty isolated public/private browser checks at 375, 768, 1024 and 1440 widths report no JavaScript errors,
   automated WCAG A/AA violations or document overflow. Additional wallet/terminal/media/admin interactions are being checked.
 - Short-screen sidebar inspection at 1440 × 650: account footer stays inside the viewport.
-- The corrected migration/manual launchdesk follow-up passes 15 checks. Complete release-head CI is still required.
+- The corrected migration/manual launchdesk follow-up passes 15 checks. CI initially passed 533 backend checks
+  and found a missing network in the new migration fixture; that fixture is corrected and its rerun passes.
+- All 19 frontend tests and seven Flap adapter/API checks pass. A real 5.055-second H.264 MP4 was accepted,
+  privately uploaded, exported as a muted 457,640-byte WebM and deleted through the UI. PNG upload/export passes.
+- Admin navigation and account footer remain reachable at 1440 × 600. GMGN's external frame has a link contrast
+  accessibility finding; Helm cannot change that cross-origin frame's markup. Application-owned terminal controls pass.
+- A fresh encrypted revision-0004 production backup was restored locally to PostgreSQL 18 and upgraded to 0006.
+  Every row in all 37 original tables matches the expected retirement/privacy transformation; all other data stays exact.
+  The new media table is empty. The restored copy was stopped and removed; temporary production proxy removal was verified.
 - Production-configured read-only NEAR and TRON balance probes succeeded. The previous UI checked only `balance_sol`
   when deciding whether an extra-chain balance was unavailable; those chains return exact `balance_native` strings.
 
@@ -45,6 +53,10 @@ LetsBonk, Meteora DBC, Printr and taxed Flap routes require creator-reward colle
 the verified V2 factory. Bankr needs a compatible partner agreement, credentials and custody/recipient integration.
 Other planned pads and Elpida require verified deployed interfaces and acceptance tests. No unsupported route is
 enabled by relabelling its availability. Full upstream option parity is not claimed.
+
+The operator explicitly deferred Pons mainnet deployment until funded. The reusable, read-only
+`tools/pons_factory.py` preparation tool was checked on chain 4663 and signs/broadcasts nothing.
+See `mainnet-integration-setup.md` for deployment, runtime verification and every remaining integration gate.
 
 Token distribution/consolidation currently use Helm's existing Solana/core EVM transfer engine. Other network
 variants need equivalent storage/activation/token-tax handling and receipt-backed transfer acceptance before exposure.

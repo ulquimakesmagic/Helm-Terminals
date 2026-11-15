@@ -73,7 +73,7 @@ export function PnlImage({facts,alt,preferences,media:blob,displayName}:{facts:P
   const {me}=useSession();const [src,setSrc]=useState<string|null>(null),[error,setError]=useState('');const key=JSON.stringify(facts),prefs=JSON.stringify(preferences),owner=displayName??me?.display_name??'Helm trader';
   useEffect(()=>{let active=true;resources(prefs?JSON.parse(prefs):undefined,blob,owner).then(r=>{try{if(active){setSrc(drawPnl(JSON.parse(key),r.preferences,r.owner,r.media));setError('');}}finally{release(r.media);}}).catch(e=>{if(active)setError(errMsg(e));});return()=>{active=false;};},[key,prefs,blob,owner]);
   if(error)return <p className="muted small" role="status">Card preview unavailable: {error}</p>;
-  return src?<img src={src} alt={alt} style={{width:'100%',borderRadius:16,border:'1px solid var(--line)',display:'block'}}/>:<div className="skeleton" style={{aspectRatio:'1200/630'}} aria-label="Loading card preview"/>;
+  return src?<img src={src} alt={alt} style={{width:'100%',borderRadius:16,border:'1px solid var(--line)',display:'block'}}/>:<div className="skeleton" role="img" style={{aspectRatio:'1200/630'}} aria-label="Loading card preview"/>;
 }
 export function launchPnlFacts(l:{name:string;symbol:string;network:string},p:{net_sol_flow:number;confirmed_txs:number}):PnlFacts{
   const unit=chainOf(l.network).native;return {title:l.name,symbolLine:`$${l.symbol}`,value:`${p.net_sol_flow>=0?'+':''}${p.net_sol_flow.toFixed(3)} ${unit}`,tone:p.net_sol_flow>=0?'up':'down',caption:`Net ${unit} flow · ${p.confirmed_txs} confirmed transactions`,foot:'Net flow is not investment PnL. Unsold tokens are not valued. Fees included.'};

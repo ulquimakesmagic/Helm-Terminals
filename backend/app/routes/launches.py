@@ -128,7 +128,16 @@ async def quote_assets(launchpad_id: str):
 async def launchpad_options(launchpad_id: str):
     if launchpad_id not in IMPLEMENTED:
         raise HTTPException(404, "launchpad not available yet (see /launchpads for the roadmap)")
-    return get_adapter(launchpad_id).options_schema()
+    schema = get_adapter(launchpad_id).options_schema()
+    # Preserve historical tax-token decoding in the adapter. New launches expose
+    # only the zero-tax routes until creator-reward collection is implemented.
+    if launchpad_id in {"flap-sh", "flap-sh-robinhood"}:
+        schema = {**schema, "fields": [
+            {**field, "options": [0], "default": 0,
+             "hint": "Standard zero-tax route. Tax-token creation is unavailable pending creator-reward collection."}
+            if field["key"] == "tax_rate_pct" else field
+            for field in schema.get("fields", [])]}
+    return schema
 
 
 @router.get("/launchpads/{launchpad_id}/protections")

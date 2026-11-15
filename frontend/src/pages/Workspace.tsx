@@ -492,9 +492,9 @@ export default function Workspace() {
 
   return (
     <>
-      <Link to="/launches" className="btn sm ghost" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
+      <Link to="/launches" className="btn sm ghost workspace-back" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
 
-      <header className="page-head">
+      <header className="page-head workspace-head">
         <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
           <TokenImage launch={l} size={52} />
           <div style={{ minWidth: 0 }}>

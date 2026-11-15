@@ -196,6 +196,8 @@ async def test_flap_launch_and_trade_through_the_api(client, fake_rpc):
         pads = {p["id"]: p for p in (await client.get("/launchpads")).json()}
         assert pads["flap-sh"]["status"] == "available" and pads["flap-sh"]["network"] == "bsc"
         assert pads["flap-sh-robinhood"]["network"] == "robinhood"
+        public_fields = (await client.get("/launchpads/flap-sh/options")).json()["fields"]
+        assert next(f for f in public_fields if f["key"] == "tax_rate_pct")["options"] == [0]
         ws = (await client.post("/wallets", json={"network": "bsc", "count": 2}, headers=h)).json()
         dev, holder = ws
         for w in ws:

@@ -95,7 +95,7 @@ def test_retirement_cancels_pending_work_preserves_submitted_receipts_and_never_
     with Session(engine) as session:
         user=User(email='retirement-fixture@example.com',password_hash='fixture-hash-not-a-real-login')
         session.add(user);session.flush()
-        launch=Launch(user_id=user.id,name='Historical launch',symbol='HIST')
+        launch=Launch(user_id=user.id,network='solana',launchpad='pumpfun',name='Historical launch',symbol='HIST')
         session.add(launch);session.flush()
         queued=Job(user_id=user.id,launch_id=launch.id,kind='scheduled_buy',status='pending')
         submitted=Job(user_id=user.id,launch_id=launch.id,kind='scheduled_sell',status='submitted')
