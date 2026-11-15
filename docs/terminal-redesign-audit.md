@@ -37,6 +37,8 @@ Current scope: `docs/uiux-rebuild-prompt.md`; branch `codex/terminal-redesign`.
   privately uploaded, exported as a muted 457,640-byte WebM and deleted through the UI. PNG upload/export passes.
 - Admin navigation and account footer remain reachable at 1440 × 600. GMGN's external frame has a link contrast
   accessibility finding; Helm cannot change that cross-origin frame's markup. Application-owned terminal controls pass.
+- Post-launch attachment, distribution/consolidation dialogs and PNG upload/export pass at 375 and 1440 widths.
+  The phone chart begins within the initial viewport; secondary statistics expand on request. No document overflow.
 - A fresh encrypted revision-0004 production backup was restored locally to PostgreSQL 18 and upgraded to 0006.
   Every row in all 37 original tables matches the expected retirement/privacy transformation; all other data stays exact.
   The new media table is empty. The restored copy was stopped and removed; temporary production proxy removal was verified.

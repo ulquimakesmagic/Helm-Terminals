@@ -97,6 +97,10 @@
 .workspace-head { padding-block:8px; }
 .workspace-head h1 { font-size:24px; }
 .mobile-stats-toggle { display:none; }
+@media (max-width:480px) {
+  .modal .seg.full { display:grid; grid-template-columns:1fr; }
+  .modal .seg.full > button { min-height:44px; }
+}
 @media (max-width:600px) {
   .workspace-back { display:none; }
   .workspace-head { gap:12px; margin-bottom:0; padding-block:0; }
