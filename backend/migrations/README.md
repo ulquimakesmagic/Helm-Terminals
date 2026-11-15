@@ -1,8 +1,9 @@
 # Database migrations
 
-Helm now uses Alembic with a frozen baseline at revision `11d712bf1eb8`. The application still calls SQLAlchemy
-`create_all` at startup for compatibility with databases already in use; that only creates missing tables and does not
-upgrade changed columns. Every future schema change must have a reviewed Alembic revision.
+Helm uses Alembic with frozen baseline `11d712bf1eb8` and current head `42c9a01f0004`.
+Production startup refuses a missing or mismatched migration revision and does not call `create_all`.
+Development retains `create_all` for disposable databases; it cannot upgrade changed columns.
+Every schema change needs a reviewed Alembic revision.
 
 Run these commands from `backend/` against a local database or an isolated staging copy. The URL comes from the
 existing `DATABASE_URL` setting; keep it in the deployment secret store and out of command history and logs.
@@ -14,6 +15,15 @@ constraints with this baseline. Only after confirming that it matches, record th
 `python -m alembic -c alembic.ini stamp 11d712bf1eb8`. Future revisions can then be applied with
 `python -m alembic -c alembic.ini upgrade head`. Never stamp an unknown or partial schema: inspect it and write a
 data-preserving migration first.
+
+This remediation adds account recovery tables (`0001`), receipt evidence and manual-review fields (`0002`),
+durable nonce reservations (`0003`), and reviewed platform payments, launch exceptions and automation fee consent (`0004`).
+Revision `0004` stores large integer amounts as decimal text on SQLite to avoid floating-point rounding;
+PostgreSQL continues to use exact NUMERIC(78,0). Its downgrade preserves SQLite text amounts rather than risk
+rounding them back into SQLite's numeric affinity. Revision `0002` reclassifies historical unproven DEX fees as
+pending estimates; it does not delete the entries. Downgrading does not recertify those fees as received.
+Do not stamp the new head to skip these migrations. Stop all writers before a production migration,
+back up, apply the migrations once, then start the matching build and check `/health/ready`.
 
 To create a future revision, update the model, run
 `python -m alembic -c alembic.ini revision --autogenerate -m "describe the schema change"`, review the generated

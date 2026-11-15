@@ -1,0 +1,23 @@
+
+> helm-frontend@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ documented chain identifiers, token case and interval values reach GMGN unchanged (27.1589ms)
+✔ unsupported API chains are never guessed to be supported iframe chains (0.4764ms)
+✔ cross-chain addresses, injection, missing tokens and undocumented intervals are rejected (0.5492ms)
+✔ every implemented launchpad has a specific launch experience (8.9228ms)
+✔ claim controls reflect the adapters Helm actually supports (0.7562ms)
+✔ auction caps and optional zero hard cap are validated (13.394ms)
+✔ invalid numeric input and unsupported selections cannot produce a valid draft (0.7812ms)
+✔ grouping retains unrecognized provider fields once and does not mix creator funding into settings (2.5326ms)
+✔ production server serves deep links, enforces script CSP and refuses missing assets/mutations (474.4597ms)
+✔ solana and evm shapes match real addresses and reject lookalikes (3.9346ms)
+✔ extra-chain shapes keep their documented forms (1.0691ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3449.7003

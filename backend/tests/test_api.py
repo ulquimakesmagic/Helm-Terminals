@@ -17,7 +17,9 @@ async def confirm(client, h, path, body, **extra):
     assert pre.status_code == 200, pre.text
     data = pre.json()
     r = await client.post(path, json={**body, "confirm": True, "preflight_hash": data["preflight_hash"],
-                                      "idempotency_key": extra.pop("key", "k-" + path), **extra}, headers=h)
+                                      "idempotency_key": extra.pop("key", "k-" + path),
+                                      "quote_approval": data.get("quote_approval"),
+                                      "launch_fee_approval": data.get("launch_fee_approval"), **extra}, headers=h)
     return data, r
 
 
@@ -28,6 +30,13 @@ async def make_wallets(client, h, n=1):
 
 
 async def live_launch(client, h, fake_rpc, holders=2):
+    from app.models import User, Session, LaunchFeeExemption
+    from app.security import token_hash
+    async with get_sessionmaker()() as db:
+        session = (await db.execute(select(Session).where(Session.token_hash == token_hash(h["Authorization"][7:])))).scalar_one()
+        if await db.get(LaunchFeeExemption, session.user_id) is None:
+            db.add(LaunchFeeExemption(user_id=session.user_id, enabled=True, reason="Feature-test launch promotion", changed_by=session.user_id))
+            await db.commit()
     ws = await make_wallets(client, h, holders + 1)
     dev, others = ws[0], ws[1:]
     r = await client.post("/launches", json={"name": "Test", "symbol": "tst", "dev_wallet_id": dev["id"],
@@ -140,7 +149,7 @@ async def test_trade_flow_buy_and_workspace_transparency(client, fake_rpc):
 
     body = {"side": "buy", "wallet_ids": [w["id"] for w in holders], "amount": 0.1, "mode": "parallel"}
     pre, r = await confirm(client, h, f"/launches/{lid}/trade", body)
-    assert pre["preflight"]["platform_fee"] == "none"
+    assert pre["preflight"]["platform_fee"].startswith("1.00%")
     job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
     assert job["status"] == "confirmed" and len(job["transactions"]) == 2
 
@@ -193,12 +202,12 @@ async def test_sell_fee_is_priced_by_simulation_and_taken_in_the_same_transactio
     body = {"side": "sell", "wallet_ids": [holders[0]["id"]], "amount": 100, "stagger_ms": 0}
     sent_before = len(fake_rpc.sent)
     pre, r = await confirm(client, h, f"/launches/{lid}/trade", body)
-    assert pre["preflight"]["platform_fee"].startswith("5.00% of the SOL each sell receives")  # shown up front
+    assert pre["preflight"]["platform_fee"].startswith("1.00% of the SOL each sell receives")  # shown up front
     assert len(fake_rpc.sent) == sent_before + 1  # one transaction: the sale and its fee together
-    assert (PLATFORM, 50_000_000) in sol_transfers(fake_rpc.sent[-1])
+    assert (PLATFORM, 10_000_000) in sol_transfers(fake_rpc.sent[-1])
     async with get_sessionmaker()() as db:
         fee = (await db.execute(select(FeeRecord).where(FeeRecord.job_id == r.json()["job_id"]))).scalar_one()
-    assert (fee.mode, fee.status, fee.platform_lamports, fee.basis_lamports) == ("in_tx", "confirmed", 50_000_000, SOL)
+    assert (fee.mode, fee.status, fee.platform_lamports, fee.basis_lamports) == ("in_tx", "confirmed", 10_000_000, SOL)
 
 
 async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
@@ -220,12 +229,12 @@ async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
 
     body = {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0, "stagger_ms": 0}
     pre, r = await confirm(client, hb, f"/launches/{lid}/trade", body)
-    assert "25% of this fee goes to the person who referred you" in pre["preflight"]["platform_fee"]
+    assert "30% of this fee goes to the person who referred you" in pre["preflight"]["platform_fee"]
     transfers = sol_transfers(fake_rpc.sent[-1])
-    assert (PLATFORM, 7_500_000) in transfers and (payout, 2_500_000) in transfers
+    assert (PLATFORM, 7_000_000) in transfers and (payout, 3_000_000) in transfers
 
     summary = (await client.get("/referrals", headers=ha)).json()
-    assert summary["referred_users"] == 1 and summary["earned_sol"] == 0.0025 and summary["owed_sol"] == 0
+    assert summary["referred_users"] == 1 and summary["earned_sol"] == 0.003 and summary["owed_sol"] == 0
 
 
 async def test_referral_share_is_owed_when_referrer_has_no_payout_address(client, fake_rpc):
@@ -241,7 +250,7 @@ async def test_referral_share_is_owed_when_referrer_has_no_payout_address(client
     await confirm(client, hb, f"/launches/{lid}/trade", {"side": "buy", "wallet_ids": [holders[0]["id"]], "amount": 1.0})
     fees = [t for t in sol_transfers(fake_rpc.sent[-1]) if t[1] > 1]  # skip the fake adapter's 1-lamport self-transfer
     assert fees == [(PLATFORM, 10_000_000)]  # the referrer's share is held for them
-    assert (await client.get("/referrals", headers=ha)).json()["owed_sol"] == 0.0025
+    assert (await client.get("/referrals", headers=ha)).json()["owed_sol"] == 0.003
 
 
 async def test_failed_trade_charges_no_fee(client, fake_rpc):
@@ -661,5 +670,6 @@ async def test_health_reports_rpc_setup_per_chain(client):
     assert health == {"ok": True, "build": "unknown"}
     assert "evm_rpc" not in health and "signer" not in health and "env" not in health
     info = (await client.get("/public-info")).json()
-    assert info["test_signer"] is True and set(info) == {"test_signer", "capabilities"}
+    assert info["test_signer"] is True and set(info) == {"test_signer", "capabilities", "pricing"}
+    assert info["pricing"]["launch_usd"] == 20 and info["pricing"]["trade_bps"] == 100
     assert "rpc" not in str(info).lower() and "url" not in str(info).lower()  # no configuration detail

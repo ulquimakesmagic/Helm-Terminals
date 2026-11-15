@@ -48,6 +48,7 @@ def _core_only(network: str) -> None:
 
 
 def _launch_out(l: Launch) -> dict:
+    from ..services.capabilities import launchpad_capabilities
     return {
         "id": l.id, "network": l.network, "launchpad": l.launchpad, "status": l.status, "name": l.name,
         "symbol": l.symbol, "description": l.description, "socials": l.socials, "mint_address": l.mint_address,
@@ -57,6 +58,8 @@ def _launch_out(l: Launch) -> dict:
         "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
         "settings": _settings(l),
+        "capabilities": launchpad_capabilities(l.launchpad, l.network,
+            "setup_required" if needs_setup(l.launchpad) else "available"),
         # set when a deploy was sent but not confirmed in time (EVM), and why a late check ended it
         "deploy_tx": (l.launchpad_params or {}).get("evm_deploy_tx"),
         "deploy_error": (l.launchpad_params or {}).get("deploy_error"),
@@ -525,20 +528,14 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
         summary.update(adapter.deploy_notes({**(l.launchpad_params or {}), "helm_creator_share": share}))
     quote = (l.launchpad_params or {}).get("quote")
     if l.launchpad == "bags" and quote:
-        s = get_settings()
         summary["paired_with"] = f"{quote['symbol']} ({quote.get('name') or quote['mint']})"
         summary["pool"] = f"Meteora DAMM v2 pool, no bonding curve; liquidity is locked; a 2% pool fee accrues in {quote['symbol']}"
         summary["creator_fees"] = f"Your share of pool fees is paid in {quote['symbol']} and claimed on bags.fm for now"
-        if s.bags_partner_wallet:
-            summary["partner_share"] = "Bags pays Helm a partner share of this pool's fees (from Bags' side, not yours)"
         summary["steps"] = "up to 4 transactions: lookup table, token, launch, then lookup-table clean-up"
     elif l.launchpad == "bags":
-        s = get_settings()
         summary["creator_fees"] = (f"{100 - share['bps'] / 100:g}% of this token's creator fees go to your dev wallet, "
                                    f"{share['bps'] / 100:g}% to Helm's treasury" if share["bps"]
                                    else "100% of this token's creator fees go to your dev wallet")
-        if s.bags_partner_wallet and s.bags_partner_config:
-            summary["partner_share"] = "Bags pays Helm a partner share of this token's trading fees (from Bags' side, not yours)"
         summary["steps"] = "2 transactions: fee-share setup, then the launch"
     if funding:
         summary["funding"] = funding
@@ -547,6 +544,8 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
 
     summary["launch_protections"] = protections_for(l.launchpad)["summary"]
     pf = build_preflight("deploy", summary, warnings)
+    from ..services.charges import attach_launch_fee
+    pf = await attach_launch_fee(pf, db, user, ex, l, dev, body)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
@@ -581,6 +580,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                 j.status, j.params = "failed", {**j.params, "error": str(e)}
                 launch.status = "failed"
                 await session.commit()
+                return
+            from ..services.charges import pay_launch
+            if not await pay_launch(session, ex, j, launch):
                 return
             # Persist the address before any signature can be broadcast. A restart after sending can then be
             # reconciled by checking this mint's supply, even if the worker never returned from run_built().
@@ -679,6 +681,8 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
     s = get_settings()
     plan = await fee_plan_for(db, user, l.network)
     warnings = []
+    if not plan.active:
+        warnings.append("The 1% trading-fee treasury is not configured; trading is temporarily unavailable.")
     if body.side == "buy":
         fee_sol = body.amount * plan.bps / 10_000 if plan.active else 0.0
         need = int((body.amount + fee_sol + 0.01) * LAMPORTS_PER_SOL)
@@ -707,6 +711,7 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
         "amount_unit": "SOL per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "platform_fee": fee_note,
+        "trade_fee_terms": {"bps": 100, "destination": plan.platform_wallet, "network": l.network},
     }, warnings)
     if not body.confirm:
         return pf
@@ -1285,7 +1290,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         raise HTTPException(400, "This wallet is not eligible to launch on Pons. Request eligibility from Pons before funding it.")
     sender = ex.evm(l.network)
     coin = EVM_CHAINS[l.network]["native"]
-    params = dict(l.launchpad_params or {})
+    params = {key: value for key, value in (l.launchpad_params or {}).items()
+              if key not in {"helm_creator_share", "pons_rewards", "flap_commission_receiver"}}
     gas = await sender.max_gas_cost(EVM_DEPLOY_GAS)
     dev_buy = int(round(l.dev_buy_sol * WEI))
     launch_fee = 0
@@ -1338,6 +1344,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
 
     summary["launch_protections"] = protections_for(l.launchpad)["summary"]
     pf = build_preflight("deploy", summary, warnings)
+    from ..services.charges import attach_launch_fee
+    pf = await attach_launch_fee(pf, db, user, ex, l, dev, body)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
     pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
@@ -1389,6 +1397,9 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "helm_creator_share": share,
                                           "pons_rewards": {**rewards, "job_id": j.id}}
                 await session.commit()  # save recipient terms before broadcasting, including no-dev-buy launches
+            from ..services.charges import pay_launch
+            if not await pay_launch(session, ex, j, launch):
+                return
             if plan.token:
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "predicted_token": plan.token}
                 await session.commit()
@@ -1430,12 +1441,16 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
     sender = ex.evm(l.network)
     coin = EVM_CHAINS[l.network]["native"]
     warnings = []
+    from ..services import platform_config as pc
+    await pc.refresh(db)
+    if not pc.treasury_for(l.network):
+        warnings.append("The trading-fee treasury is not configured on this network.")
     if getattr(user, "channel", "web") == "bot":
         warnings.append(f"Trading on {EVM_CHAINS[l.network]['name']} from Telegram isn't enabled yet. Use the web app.")
     gas = await sender.max_gas_cost(EVM_TRADE_GAS)
     if body.side == "buy":
         for w in wallets:
-            if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI)) + gas:
+            if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI * 1.01)) + gas:
                 warnings.append(f"{w.address} has too little {coin} for a {body.amount} {coin} buy plus gas.")
     else:
         warnings += await _sell_lock_warnings(db, l, wallets, body.amount,
@@ -1446,8 +1461,8 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
         "amount_unit": f"{coin} per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "max_gas_each": gas / WEI,
-        "platform_fee": (f"none on bonding-curve trades; {ex.dex.fee_note} if the trade is routed through a DEX"
-                         if ex.dex.fee_bps else "none"),
+        "trade_fee_terms": {"bps": 100, "destination": pc.treasury_for(l.network), "network": l.network},
+        "platform_fee": "1% of each buy or the native proceeds of each sell; 30% of the fee is owed to your referrer when applicable",
     }, warnings)
     if not body.confirm:
         return pf

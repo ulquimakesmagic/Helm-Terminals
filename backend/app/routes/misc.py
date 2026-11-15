@@ -118,6 +118,19 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
                              .where(FeeRecord.referrer_user_id == user.id, FeeRecord.status == "confirmed")
                              .group_by(FeeRecord.referral_status))).all()
     by_status = {st: int(v) for st, v in rows}
+    from ..models import PlatformCharge
+    fee_rows = (await db.execute(select(PlatformCharge).where(PlatformCharge.referrer_user_id == user.id,
+        PlatformCharge.status == "confirmed", PlatformCharge.referral_raw > 0))).scalars().all()
+    earnings = {}
+    for row in fee_rows:
+        key = (row.network, row.asset, row.decimals)
+        bucket = earnings.setdefault(key, {"paid_raw": 0, "owed_raw": 0})
+        bucket["paid_raw" if row.referral_status == "paid" else "owed_raw"] += int(row.referral_raw)
+    if by_status:
+        bucket = earnings.setdefault(("solana", "SOL", 9), {"paid_raw": 0, "owed_raw": 0})
+        bucket["paid_raw"] += by_status.get("paid", 0)
+        bucket["owed_raw"] += by_status.get("owed", 0)
+    payouts = (await db.execute(select(PayoutAddress).where(PayoutAddress.user_id == user.id))).scalars().all()
     payout = (await db.execute(select(PayoutAddress).where(
         PayoutAddress.user_id == user.id, PayoutAddress.network == "solana"))).scalar_one_or_none()
     return {
@@ -126,8 +139,14 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
         "earned_sol": by_status.get("paid", 0) / LAMPORTS_PER_SOL,
         "owed_sol": by_status.get("owed", 0) / LAMPORTS_PER_SOL,
         "payout_address": payout.address if payout else None,
-        "share_pct": s.referral_share_bps / 100 if fee_bps else 0,
+        "share_pct": 30,
         "fee_pct": fee_bps / 100,
+        "launch_fee_usd": 20, "launch_referral_usd": 6,
+        "earnings": [{"network": net, "asset": asset, "decimals": dec,
+                      **{name: str(value) for name, value in bucket.items()}}
+                     for (net, asset, dec), bucket in sorted(earnings.items())],
+        "payout_addresses": [{"network": row.network, "address": row.address} for row in payouts],
+        "settlement_note": "Confirmed fees only. Owed amounts are liabilities held for you; they are not yet paid to your wallet.",
         "totp_enabled": user.totp_enabled,
     }
 
@@ -147,8 +166,8 @@ class PayoutBody(BaseModel):
 @router.put("/referrals/payout")
 async def set_payout(body: PayoutBody, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     """Changing referral earnings destination requires password re-entry and a fresh 2FA code."""
-    if body.network != "solana" or not valid_address_for("solana", body.address):
-        raise HTTPException(400, "invalid solana address")
+    if not valid_address_for(body.network, body.address):
+        raise HTTPException(400, "invalid payout address for the selected network")
     if not user.totp_enabled:
         raise HTTPException(403, "enable 2FA before setting a referral payout address")
     if not await check_password(db, user, body.password.get_secret_value()):
@@ -156,8 +175,12 @@ async def set_payout(body: PayoutBody, user: User = Depends(web_user), db: Async
     if not await check_totp_once(db, user, body.totp):
         raise HTTPException(401, "totp_required: provide a fresh 2FA code")
     referred_ids = select(ReferralLink.referred_user_id).where(ReferralLink.referrer_user_id == user.id)
+    address_match = Wallet.address == body.address
+    from ..chains.registry import is_evm_network
+    if is_evm_network(body.network):
+        address_match = func.lower(Wallet.address) == body.address.lower()
     linked_wallet = (await db.execute(select(Wallet.id).where(
-        Wallet.user_id.in_(referred_ids), Wallet.address == body.address).limit(1))).scalar_one_or_none()
+        Wallet.user_id.in_(referred_ids), Wallet.network == body.network, address_match).limit(1))).scalar_one_or_none()
     if linked_wallet:
         db.add(AdminAudit(actor_user_id=None, action="referral.self_referral_suspected", target=user.id,
                           changes={"flag": [None, "payout address belongs to a referred account"]}, context={}))

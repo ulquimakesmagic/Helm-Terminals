@@ -141,7 +141,7 @@ class FlapAdapter:
             return self._commission
         from ..services import platform_config as pc
 
-        return pc.treasury_for(self.network)
+        return ""  # New pricing has no Helm partner commission.
 
     def options_schema(self) -> dict:
         return {

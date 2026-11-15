@@ -438,8 +438,12 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
         raise HTTPException(400, f"all source wallets must be on {chain_name(net)}")
 
     a_native = {"kind": "native", "symbol": native_coin(net), "token": None, "decimals": 9 if net == "solana" else 18}
+    if net == "solana":
+        from ..services.cash_operations import cash_operation
+        return await cash_operation(body, user, db, ex, sources, dest.address, sweep=True)
     a_stable = await _asset(db, user, ex, net, "stable")
     nd = 9 if net == "solana" else 18
+    warnings: list[str] = []
     try:
         sender = ex.evm(net) if net != "solana" else None
         gas_each = (SOL_FEE + ATA_RENT) if net == "solana" else await sender.max_gas_cost(ERC20_TRANSFER_GAS)
@@ -455,6 +459,7 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
                 native_spendable = await sender.spendable(s.address)
             if stable_bal > 0:
                 plan_stable.append((s, stable_bal))
+                native_spendable = max(native_spendable - gas_each, 0)
                 if native_bal < gas_each:  # stablecoins go first, so every wallet pays its own gas
                     warnings.append(f"{_label(s)} holds {a_stable['symbol']} but needs about "
                                     f"{_human(gas_each, nd):.6f} {native_coin(net)} for the network fee to send it.")
@@ -467,7 +472,6 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
     except Exception as e:
         raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
 
-    warnings: list[str] = []
     if not plan_stable and not plan_native:
         warnings.append("None of the selected wallets has anything to sweep.")
     legs = len(plan_stable) + len(plan_native)
@@ -501,6 +505,7 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
             j.status = "submitted"
             await session.commit()
             results = []
+            blocked_sources = set()
 
             async def leg(s: Wallet, raw: int, asset: dict, kind: str):
                 if net == "solana":
@@ -512,7 +517,15 @@ async def sweep(body: SweepBody, user: User = Depends(current_user), db: AsyncSe
                 await _record(session, j, s, "sweep_stable", res, None)
                 await session.commit()
                 results.append(res)
+                if res.status != "confirmed":
+                    blocked_sources.add(s.id)
             for s, raw in plan_native:  # then the coin empties, keeping only fee reserves
+                if s.id in blocked_sources:
+                    continue
+                # The stablecoin transfer has already consumed gas. Never reuse its pre-send balance.
+                raw = min(raw, await sender.spendable(s.address))
+                if raw <= 0:
+                    continue
                 res = await leg(s, raw, a_native, "sweep")
                 await _record(session, j, s, "sweep", res, None)
                 await session.commit()

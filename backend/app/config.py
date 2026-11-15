@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     turnkey_api_private_key: str = ""  # P-256 private scalar, hex
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    # Dedicated fee payer, never inferred from a user's wallet or treasury recipient.
+    solana_cash_sponsor_address: str = ""
+    solana_cash_sponsor_ref: str = Field(default="", repr=False)
+    solana_cash_sponsor_usdc_raw: int = Field(default=0, ge=0, le=10_000_000)
+    solana_cash_sponsor_max_lamports: int = Field(default=3_000_000, ge=1, le=10_000_000)
     # GMGN display-only OpenAPI. No private key or GMGN trading access required.
     gmgn_api_key: str = Field(default="", repr=False)
     gmgn_requests_per_minute: int = Field(default=30, ge=1, le=300)
@@ -113,7 +118,7 @@ class Settings(BaseSettings):
     # (claim it at relay.link). Always shown in the route preview; 0 or no EVM fee wallet turns it off.
     relay_api_url: str = "https://api.relay.link"
     relay_api_key: str = ""
-    route_fee_bps: int = Field(default=30, ge=0, le=300)
+    route_fee_bps: int = Field(default=0, ge=0, le=300)
     route_poll_seconds: float = 3.0
     route_wait_seconds: float = 180.0
     # Public base URL of this API. Launchpads that store an image URL on-chain (Pons) get the token image from here.
@@ -128,7 +133,7 @@ class Settings(BaseSettings):
     # Optional platform fee on sells. 0 disables it. Always shown in the preflight.
     # Trading fee on buys and sells placed through Helm, in basis points (100 = 1%). Taken inside the trade
     # transaction and shown in every preview. 0 turns fees off.
-    platform_fee_bps: int = 0
+    platform_fee_bps: int = 100
     platform_fee_wallet: str = ""
     # Helm's 0x address on EVM chains. Used as the commission receiver on Flap tax tokens (Flap pays launchpad
     # commission to it). Optional.
@@ -142,7 +147,7 @@ class Settings(BaseSettings):
     # the signing-in account; either left empty or mismatched leaves the deployment without a superadmin.
     superadmin_email: str = ""
     # Share of the trading fee paid on-chain to whoever referred the trader (2500 = 25% of the fee).
-    referral_share_bps: int = 2500
+    referral_share_bps: int = 3000
     referral_code_max_uses: int = 1000
     referral_max_codes_per_user: int = Field(default=10, ge=1, le=100)
 

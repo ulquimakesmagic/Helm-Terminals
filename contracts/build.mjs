@@ -8,7 +8,11 @@ function artifact(url, value) {
     }
   } else fs.writeFileSync(url, contents);
 }
-const source = (name) => fs.readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
+// The reviewed artifacts were compiled from CRLF sources. Normalize compiler input on
+// every OS to preserve their exact metadata hash, runtime bytes and CREATE2 addresses.
+// Do not normalize generated artifacts or weaken the byte-for-byte drift comparison.
+const source = (name) => fs.readFileSync(new URL(`./${name}`, import.meta.url), 'utf8')
+  .replace(/\r\n?/g, '\n').replace(/\n/g, '\r\n');
 const settings = {
   optimizer: { enabled: true, runs: 200 }, evmVersion: 'paris',
   outputSelection: { '*': { '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object'] } }

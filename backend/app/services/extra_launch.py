@@ -1,7 +1,8 @@
 """Deploying and trading launches on SunPump (TRON), Meme.Cooking (NEAR) and Tolly (Arc).
 
 Same shape as Helm's other launches: a preview (the adapter's plan, hashed), a confirmation with the user's 2FA, then
-a job that runs the plan's steps with each wallet's own key and records every transaction. Helm takes no fee here.
+a job that runs the plan's steps with each wallet's own key and records every transaction.
+The fixed launch/trading policy is applied outside launchpad-native costs.
 """
 
 from decimal import Decimal
@@ -91,6 +92,8 @@ async def deploy(l: Launch, body, user, db, ex, dev: Wallet, adapter) -> dict:
     base = {"launch_id": l.id, "network": l.network, "name": l.name, "symbol": l.symbol, "dev_wallet": dev.address,
             "dev_buy_sol": l.dev_buy_sol, "coin": unit(l.network), "launchpad": l.launchpad}
     pf = _preflight("deploy", base, plan)
+    from .charges import attach_launch_fee
+    pf = await attach_launch_fee(pf, db, user, ex, l, dev, body)
     if not body.confirm:
         return pf
     if pf["preflight"]["warnings"]:
@@ -104,6 +107,9 @@ async def deploy(l: Launch, body, user, db, ex, dev: Wallet, adapter) -> dict:
             launch = await session.get(Launch, l.id)
             j.status = "submitted"
             await session.commit()
+            from .charges import pay_launch
+            if not await pay_launch(session, ex, j, launch):
+                return
             results = await run_plan(session, j, dev, "deploy", plan)
             got = await plan.finish(results) if plan.finish else {}
             if got.get("token"):
@@ -136,6 +142,8 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
     params = dict(l.launchpad_params or {})
     plans: list[tuple[Wallet, PadPlan]] = []
     warnings: list[str] = []
+    from .charges import trade_terms
+    fee_terms = await trade_terms(db, l.network)
     if l.launchpad == "meme-cooking" and params.get("meme_id") is None:
         raise HTTPException(409, "this launch's Meme.Cooking auction isn't known yet; refresh once it has confirmed")
     for w in wallets:
@@ -166,7 +174,9 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
         "launch_id": l.id, "network": l.network, "token": l.mint_address, "side": body.side, "amount": body.amount,
         "amount_unit": f"{unit(l.network)} per wallet" if body.side == "buy" else
         ("% of each wallet's deposit" if l.launchpad == "meme-cooking" else "% of each wallet's tokens"),
-        "wallets": [w.address for w, _ in plans], "slippage_pct": body.slippage_pct, "platform_fee": "none",
+        "wallets": [w.address for w, _ in plans], "slippage_pct": body.slippage_pct,
+        "platform_fee": "1% of the trade notional; 30% of the fee goes to your referrer when applicable",
+        "trade_fee_terms": fee_terms,
         "per_wallet": [p.summary for _, p in plans]}, warnings)
     pf["preflight"]["estimates"] = [p.display for _, p in plans]
     if not body.confirm:
@@ -180,7 +190,18 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
             await session.commit()
             results: list[StepResult] = []
             for w, plan in plans:
-                results += await run_plan(session, j, w, f"trade_{body.side}", plan)
+                before = await xc.native_balance(ex, l.network, w.address)
+                outcome = await run_plan(session, j, w, f"trade_{body.side}", plan)
+                results += outcome
+                if outcome and all(r.status == "confirmed" for r in outcome):
+                    from .charges import charge_trade
+                    after = await xc.native_balance(ex, l.network, w.address)
+                    # Native proceeds are measured; protocol fees reduce the proceeds before Helm's 1%.
+                    basis = native_raw(l.network, body.amount) if body.side == "buy" else max(0, after - before)
+                    fee = await charge_trade(session, ex, j, w, basis)
+                    if fee.status != "confirmed":
+                        results.append(StepResult(fee.signature, fee.status, fee.error))
+                        j.params = {**j.params, "fee_outstanding": True, "error": fee.error}
             _job_status(j, results)
             await session.commit()
 

@@ -47,7 +47,7 @@ def relay_mock(seen: list, statuses: list[str], fail_quote: str | None = None):
                     {"id": "deposit", "kind": "transaction", "requestId": "0xreq1", "items": [{"status": "incomplete", "data": {
                         "to": "0x" + "cd" * 20, "data": "0xabcdef", "value": "0", "chainId": 8453}}]},
                 ],
-                "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.06"}},
+                "fees": {"relayer": {"amountUsd": "0.04"}, "gas": {"amountUsd": "0.01"}, "app": {"amountUsd": "0.06" if body.get("appFees") else "0"}},
                 "details": {"timeEstimate": 20, "currencyOut": {
                     "currency": {"symbol": "BNB", "decimals": 18, "chainId": body["destinationChainId"], "address": body["destinationCurrency"]}, "amount": str(3 * 10**16), "minimumAmount": str(29 * 10**15),
                     "amountUsd": "19.8"}},
@@ -83,14 +83,14 @@ async def test_usdc_on_base_routes_to_bnb_with_disclosed_fee(client, fake_rpc, m
         body = {"from_wallet_id": src["id"], "to_wallet_id": dst["id"], "amount": 20}
         pf = (await client.post("/bridge", json=body, headers=h)).json()
         p = pf["preflight"]
-        assert p["send_asset"] == "USDC" and p["receive_asset"] == "BNB" and p["platform_fee"] == "0.3% of the amount sent"
+        assert p["send_asset"] == "USDC" and p["receive_asset"] == "BNB" and p["platform_fee"] == "none"
         assert p["quote"]["receive_estimate"] == 0.03 and p["quote"]["receive_minimum"] == 0.029
         assert p["max_send"] == 50  # the whole USDC balance; gas is paid in the native coin
         assert not p["warnings"], p
         q = seen[-1]
         assert q["originChainId"] == 8453 and q["destinationChainId"] == 56 and q["amount"] == str(20 * 10**6)
         assert q["originCurrency"] == BASE_USDC and q["destinationCurrency"] == EVM_NATIVE
-        assert q["appFees"] == [{"recipient": "0x" + "11" * 20, "fee": "30"}] and q["recipient"] == dst["address"]
+        assert not q.get("appFees") and q["recipient"] == dst["address"]
 
         r = await client.post("/bridge", json={**body, "confirm": True, "quote_approval": pf["quote_approval"], "preflight_hash": pf["preflight_hash"],
                                                "idempotency_key": "route-one"}, headers=h)

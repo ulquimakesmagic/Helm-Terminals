@@ -19,7 +19,7 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment"]);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
@@ -43,6 +43,10 @@ const KIND_LABEL: Record<string, string> = {
 
 
 function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
+  if (k === "launch_fee_payment" && v && typeof v === "object") {
+    const terms = v as { exempt: boolean; reason?: string; amount?: string; asset?: string; payer?: string; destination?: string; payment_terms?: string };
+    return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small good">100% of creator rewards stay with you.</p></div>;
+  }
   const coin = chainOf(network).native;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
   if (k === "quote_bounds" && v && typeof v === "object") {
@@ -178,6 +182,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const [phase, setPhase] = useState<Phase>("loading");
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
+  const [launchFeeApproval, setLaunchFeeApproval] = useState<string | undefined>();
   const [quoteApproval, setQuoteApproval] = useState<string | undefined>();
   const [totp, setTotp] = useState("");
   const [needs2fa, setNeeds2fa] = useState(false);
@@ -190,7 +195,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
 
   useEffect(() => {
     api(path, { body })
-      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
+      .then((r) => { setPre(r.preflight); setHash(r.preflight_hash); setQuoteApproval(r.quote_approval); setLaunchFeeApproval(r.launch_fee_approval); setNeeds2fa(Boolean(r.requires_2fa)); setPhase("review"); })
       .catch((e) => { setError(errMsg(e)); setPhase("error"); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -219,7 +224,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
     setPhase("submitting");
     setError("");
     try {
-      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, quote_approval: quoteApproval, idempotency_key: key.current, totp: totp || undefined } });
+      const r = await api(path, { body: { ...body, confirm: true, preflight_hash: hash, quote_approval: quoteApproval, launch_fee_approval: launchFeeApproval, idempotency_key: key.current, totp: totp || undefined } });
       setJobId(r.job_id);
       setPhase("polling");
       // Every half second at first (most transactions land within a few seconds), then every 1.5 s. A dropped
@@ -268,6 +273,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       {pre && phase !== "done" && phase !== "error" && (
         <>
           {summary && <ReviewHero s={summary} />}
+          {pre.launch_fee_payment && <Value k="launch_fee_payment" v={pre.launch_fee_payment} network={network} />}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
           {summary && !blocked && (
             <div className="review-section">

@@ -126,7 +126,68 @@ async def test_sweep_moves_stable_then_coin(client, fake_rpc):
     pf, job = await confirm(client, h, "/wallets/sweep", body, "sweep-1")
     p = pf["preflight"]
     assert p["wallets_swept"] == 2 and p["skipped_empty"] == []
-    assert p["total_stable"] == 3.5 and abs(p["total_native"] - 2 * (5 - 0.00001)) < 1e-9
+    assert p["total_stable"] == 3.5 and abs(p["total_native"] - 2 * (5 - 0.000005)) < 1e-9
     assert job["status"] == "confirmed", job
     kinds = [t["kind"] for t in job["transactions"]]
-    assert kinds == ["sweep_stable", "sweep_stable", "sweep", "sweep"]  # stablecoins first, then the coin
+    assert kinds == ["sweep", "sweep"]  # atomic token transfer, rent recovery, SOL transfer per source
+
+
+async def test_sweep_underfunded_wallet_returns_warning_not_server_error(client, fake_rpc):
+    h = await signup(client)
+    dest, source = (await client.post("/wallets", json={"count": 2}, headers=h)).json()
+    fake_rpc.tokens[source["address"]] = 1_000_000
+    fake_rpc.balances[source["address"]] = 0
+    r = await client.post("/wallets/sweep", headers=h, json={
+        "from_wallet_ids": [source["id"]], "to_wallet_id": dest["id"]})
+    assert r.status_code == 200, r.text
+    assert "not configured" in r.json()["preflight"]["warnings"][0]
+    assert not fake_rpc.sent
+
+
+async def test_sweep_rent_saved_after_first_wallet_is_also_transferred(client, fake_rpc):
+    h = await signup(client)
+    dest, a, b = (await client.post("/wallets", json={"count": 3}, headers=h)).json()
+    for w in (a, b):
+        fake_rpc.tokens[w["address"]] = 1_000_000
+    original_send = fake_rpc.send
+    async def send(raw):
+        result = await original_send(raw)
+        fake_rpc.tokens[dest["address"]] = 2_000_000
+        return result
+    fake_rpc.send = send
+    pf, job = await confirm(client, h, "/wallets/sweep", {
+        "from_wallet_ids": [a["id"], b["id"]], "to_wallet_id": dest["id"]}, "saved-rent")
+    assert job["status"] == "confirmed", job
+    native = []
+    for raw in fake_rpc.sent:
+        msg = VersionedTransaction.from_bytes(raw).message
+        native.append(int.from_bytes(msg.instructions[-1].data[4:12], "little"))
+    assert native[1] - native[0] == 2_039_280
+
+
+async def test_sponsored_sweep_signs_both_wallets_and_replay_does_not_resend(client, fake_rpc, monkeypatch):
+    from app.config import get_settings
+    from app.db import get_sessionmaker
+    from app.models import Wallet
+    h = await signup(client)
+    dest, source, sponsor = (await client.post("/wallets", json={"count": 3}, headers=h)).json()
+    async with get_sessionmaker()() as session:
+        wallet = await session.get(Wallet, sponsor["id"])
+        ref = wallet.signer_ref
+    settings = get_settings()
+    monkeypatch.setattr(settings, "solana_cash_sponsor_address", sponsor["address"])
+    monkeypatch.setattr(settings, "solana_cash_sponsor_ref", ref)
+    monkeypatch.setattr(settings, "solana_cash_sponsor_usdc_raw", 50_000)
+    fake_rpc.balances[source["address"]] = 0
+    fake_rpc.balances[sponsor["address"]] = 100_000_000
+    fake_rpc.tokens[source["address"]] = 1_000_000
+    fake_rpc.tokens[sponsor["address"]] = 0
+    body = {"from_wallet_ids": [source["id"]], "to_wallet_id": dest["id"]}
+    pf, job = await confirm(client, h, "/wallets/sweep", body, "sponsor-sweep")
+    assert job["status"] == "confirmed", job
+    assert pf["preflight"]["fee_reimbursement_usdc"] == 0.05
+    assert VersionedTransaction.from_bytes(fake_rpc.sent[-1]).verify_with_results() == [True, True]
+    count = len(fake_rpc.sent)
+    replay = await client.post("/wallets/sweep", headers=h, json={**body,
+        "confirm": True, "preflight_hash": pf["preflight_hash"], "idempotency_key": "sponsor-sweep"})
+    assert replay.status_code == 200 and len(fake_rpc.sent) == count

@@ -183,7 +183,7 @@ export function Skeleton({ h = 16, w = "100%", style }: { h?: number; w?: number
 
 export function Loading({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="stack" style={{ padding: 16 }} aria-busy="true" aria-label="Loading">
+    <div className="stack" role="status" style={{ padding: 16 }} aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={14} w={`${90 - i * 12}%`} />)}
     </div>
   );

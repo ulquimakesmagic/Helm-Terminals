@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { formatRaw } from "../amounts";
+import { chainOf } from "../chains";
 import { api, errMsg, fmt } from "../api";
 import { Callout, Card, CopyButton, Icon, Loading, Spinner, useToast } from "./ui";
 
@@ -11,6 +13,9 @@ export interface ReferralSummary {
   share_pct: number;
   fee_pct: number;
   totp_enabled: boolean;
+  earnings?: { network: string; asset: string; decimals: number; paid_raw: string; owed_raw: string }[];
+  settlement_note?: string;
+  payout_addresses?: { network: string; address: string }[];
 }
 
 export default function ReferralCard({ data, onChange }: { data: ReferralSummary | null; onChange: () => void }) {
@@ -18,13 +23,14 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
   const [addr, setAddr] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
+  const [payoutNetwork, setPayoutNetwork] = useState("solana");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const link = (code: string) => `${window.location.origin}/login?ref=${code}`;
 
   const savePayout = () => {
     setBusy(true);
-    api("/referrals/payout", { method: "PUT", body: { address: addr.trim(), password, totp } })
+    api("/referrals/payout", { method: "PUT", body: { address: addr.trim(), network: payoutNetwork, password, totp } })
       .then(() => { toast("good", "Payout address saved"); setEditing(false); setAddr(""); setPassword(""); setTotp(""); onChange(); })
       .catch((e) => toast("bad", errMsg(e)))
       .finally(() => setBusy(false));
@@ -32,7 +38,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
 
   return (
     <Card title="Referrals" icon="gift"
-      sub={data && data.fee_pct > 0 ? `Earn ${data.share_pct}% of the trading fees from people you invite` : "Invite people to Helm Terminals"}
+      sub={data && data.fee_pct > 0 ? `Earn ${data.share_pct}% of launch and trading fees from people you invite` : "Invite people to Helm Terminals"}
       actions={
         <button className="btn sm secondary" onClick={() => api("/referrals", { method: "POST", body: {} })
           .then(() => { toast("good", "Referral code created"); onChange(); }).catch((e) => toast("bad", errMsg(e)))}>
@@ -53,27 +59,34 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
             ))}
           </div>
 
+          <div className="stack tight" style={{ padding: "18px", borderBottom: "1px solid var(--line)" }}>
+            <b>30% of the fees your referrals pay</b><p className="small text-2">A $20 paid launch earns $6. A $1 trading fee earns $0.30. Free launches generate no fee or commission.</p>
+            {data.earnings?.map(row => <div className="row between small" key={`${row.network}:${row.asset}`}><span>{chainOf(row.network).name} · {row.asset}</span><span className="mono">{formatRaw(row.paid_raw, row.decimals)} paid · {formatRaw(row.owed_raw, row.decimals)} owed</span></div>)}
+            <p className="small muted">{data.settlement_note ?? "Confirmed payments only. Owed balances have not yet been paid to your wallet."}</p>
+          </div>
           <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)" }} className="stack tight">
             <div className="row between">
-              <span className="small text-2" style={{ fontWeight: 600 }}>Payout address (Solana)</span>
-              {data.payout_address && !editing && <button className="btn sm ghost" onClick={() => setEditing(true)}>Change</button>}
+              <span className="small text-2" style={{ fontWeight: 600 }}>Payout address</span>
+              {!editing && <button className="btn sm ghost" onClick={() => setEditing(true)}>Add or change</button>}
             </div>
-            {data.payout_address && !editing ? (
-              <span className="mono small" style={{ wordBreak: "break-all" }}>{data.payout_address}</span>
+            {!editing && (data.payout_addresses?.length || data.payout_address) ? (
+              <div className="stack tight">{(data.payout_addresses?.length ? data.payout_addresses : [{ network: "solana", address: data.payout_address! }]).map(row =>
+                <div key={row.network}><span className="small muted">{chainOf(row.network).name}</span><div className="mono small" style={{ overflowWrap: "anywhere" }}>{row.address}</div></div>)}</div>
             ) : (
               <>
                 {!data.payout_address && data.fee_pct > 0 && (
-                  <Callout tone="warn">Add a payout address so your share is paid on-chain with each trade. Until then it's recorded as owed.</Callout>
+                  <Callout tone="warn">Add your payout address. Asset balances marked owed remain visible until settlement; entering an address does not move treasury funds.</Callout>
                 )}
                 {!data.totp_enabled ? (
                   <Callout tone="warn">Enable two-factor authentication in Settings before setting or changing this payout address.</Callout>
                 ) : (
                   <div className="stack tight">
-                    <input className="mono" aria-label="Referral payout address (Solana)" placeholder="Your Solana wallet address" value={addr} onChange={(e) => setAddr(e.target.value)} />
+                    <label className="small">Network<select value={payoutNetwork} onChange={event => setPayoutNetwork(event.target.value)}>{["solana", "base", "ethereum", "bsc", "robinhood", "tron", "near", "arc"].map(network => <option key={network} value={network}>{chainOf(network).name}</option>)}</select></label>
+                    <input className="mono" aria-label="Referral payout address" placeholder="Your address on the selected network" value={addr} onChange={(e) => setAddr(e.target.value)} />
                     <div className="row nowrap">
                       <input type="password" autoComplete="current-password" aria-label="Confirm password" placeholder="Confirm your password" value={password} onChange={(e) => setPassword(e.target.value)} />
                       <input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="2FA code" maxLength={8} value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} />
-                      <button className="btn" disabled={addr.trim().length < 32 || !password || totp.length < 6 || busy} onClick={savePayout}>{busy && <Spinner />}Save</button>
+                      <button className="btn" disabled={addr.trim().length < 2 || !password || totp.length < 6 || busy} onClick={savePayout}>{busy && <Spinner />}Save</button>
                     </div>
                   </div>
                 )}

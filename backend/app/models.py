@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .db import Base
+from .db import Base, ExactRawAmount
 
 
 def uid() -> str:
@@ -399,7 +399,7 @@ class RevenueEvent(Base):
     network: Mapped[str] = mapped_column(String(16), index=True)
     asset: Mapped[str] = mapped_column(String(16))  # SOL, ETH, BNB, USDC ...
     # Integer base units (up to 78 digits: 18-decimal amounts overflow BIGINT). None when the provider doesn't say.
-    amount_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)
+    amount_raw: Mapped[int | None] = mapped_column(ExactRawAmount(), nullable=True)
     decimals: Mapped[int] = mapped_column(Integer, default=9)
     estimated: Mapped[bool] = mapped_column(Boolean, default=False)  # computed from a quote, not read on-chain
     status: Mapped[str] = mapped_column(String(12), index=True)
@@ -452,6 +452,7 @@ class AutomationTerms(Base):
     automation_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     trade_fee_bps_solana: Mapped[int] = mapped_column(Integer, default=0)
     trade_fee_bps_evm_dex: Mapped[int] = mapped_column(Integer, default=0)
+    fee_terms: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -463,8 +464,8 @@ class AutomationLimits(Base):
     automation_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     wallet_id: Mapped[str] = mapped_column(String(32))
     budget: Mapped[float | None] = mapped_column(nullable=True)  # buys: total native coin the plan may spend
-    sell_total_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)  # sells: total tokens to sell
-    sell_order_raw: Mapped[int | None] = mapped_column(Numeric(78, 0), nullable=True)  # sells: tokens per order
+    sell_total_raw: Mapped[int | None] = mapped_column(ExactRawAmount(), nullable=True)  # sells: total tokens to sell
+    sell_order_raw: Mapped[int | None] = mapped_column(ExactRawAmount(), nullable=True)  # sells: tokens per order
     token_decimals: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_price_impact_pct: Mapped[float] = mapped_column(default=5.0)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
@@ -501,4 +502,40 @@ class AutomationLaunchSlot(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     launch_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     automation_id: Mapped[str] = mapped_column(String(32))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class LaunchFeeExemption(Base):
+    __tablename__ = "launch_fee_exemptions"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[str] = mapped_column(String(300))
+    changed_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class PlatformCharge(Base):
+    """Exact, asset-aware platform payment and referral liability; never a quote relabelled as income."""
+    __tablename__ = "platform_charges"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    reference_key: Mapped[str] = mapped_column(String(120), unique=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    launch_id: Mapped[str | None] = mapped_column(ForeignKey("launches.id"), nullable=True, index=True)
+    wallet_id: Mapped[str] = mapped_column(ForeignKey("wallets.id"))
+    payer_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    network: Mapped[str] = mapped_column(String(16))
+    asset: Mapped[str] = mapped_column(String(16))
+    token: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decimals: Mapped[int] = mapped_column(Integer)
+    amount_raw: Mapped[int] = mapped_column(ExactRawAmount())
+    platform_raw: Mapped[int] = mapped_column(ExactRawAmount())
+    referral_raw: Mapped[int] = mapped_column(ExactRawAmount(), default=0)
+    referrer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    referral_status: Mapped[str] = mapped_column(String(12), default="none")
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    destination: Mapped[str] = mapped_column(String(120))
+    signature: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    terms: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

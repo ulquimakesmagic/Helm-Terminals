@@ -66,7 +66,7 @@ async def test_swap_preflight_then_confirmed_job(client, fake_rpc, fake_jupiter)
     assert r.status_code == 200, r.text
     summary = pf["preflight"]
     assert summary["input"].startswith("0.1 SOL") and "USDC" in summary["output"]
-    assert summary["route"] == "GoonFi V2" and summary["platform_fee"] == "none"
+    assert summary["route"] == "GoonFi V2" and summary["platform_fee"].startswith("1%")
     j = r.json()
     status = (await client.get(f"/jobs/{j['job_id']}", headers=h)).json()["status"]
     assert status == "confirmed", j
@@ -118,69 +118,21 @@ async def test_evm_swap_routes_through_relay(client, fake_rpc, monkeypatch):
         p = pre["preflight"]
         assert p["kind"] == "swap" and p["network"] == "base" and p["chain"] == "Base"
         assert p["input"] == "20 USDC" and p["estimated_output"] == "0.03 ETH"
-        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.06 and p["platform_fee"] == "none"
+        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0 and p["platform_fee"].startswith("1%")
         same = await client.post("/wallets/swap", json={**body, "output_mint": BASE_USDC}, headers=h)
         assert same.status_code == 400 and "same token" in same.text
         bad = await client.post("/wallets/swap", json={**body, "input_mint": "0x1234"}, headers=h)
         assert bad.status_code == 400 and "valid token address" in bad.text
 
         r = await client.post("/wallets/swap", json={**body, "confirm": True, "preflight_hash": pre["preflight_hash"],
-                                                     "idempotency_key": "evm-swap"}, headers=h)
+                                                     "quote_approval": pre["quote_approval"], "idempotency_key": "evm-swap"}, headers=h)
         assert r.status_code == 200, r.text
         job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
         assert job["status"] == "confirmed", job
-        assert [t["kind"] for t in job["transactions"]] == ["swap_approve", "swap"]
+        assert [t["kind"] for t in job["transactions"]] == ["swap_approve", "swap", "trade_fee"]
         # Provider-built transactions go out byte-for-byte (the guard checked, not rewrote, them).
-        assert base.sent[-2]["data"] == bytes.fromhex("095ea7b3" + "00" * 12 + "cd" * 20 + "00" * 32)
-        assert base.sent[-1]["to"].lower() == "0x" + "cd" * 20 and base.sent[-1]["data"] == bytes.fromhex("abcdef")
-        q = seen[-1]
-        assert q["originChainId"] == 8453 and q["destinationChainId"] == 8453  # same-chain route
-        assert q["originCurrency"] == BASE_USDC and q["destinationCurrency"] == EVM_NATIVE
-        assert q["user"] == q["recipient"] == w["address"]
-    finally:
-        app.dependency_overrides.pop(get_executor, None)
-
-
-async def test_evm_swap_routes_through_relay(client, fake_rpc, monkeypatch):
-    """Same-chain EVM swap: Relay quote for the preflight, approve capped at the quoted need, then the swap."""
-    import httpx as _httpx
-
-    from app.chains.relay import EVM_NATIVE, Relay
-    from app.deps import get_executor
-    from app.services.executor import Executor
-    from app.signing import get_signer
-
-    from .test_bridge import BASE_USDC, ETH, TokenNode, relay_mock
-
-    seen: list = []
-    relay = Relay("https://relay.test", client=_httpx.AsyncClient(transport=relay_mock(seen, ["success"])))
-    base = TokenNode("base")
-    app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"base": base}, relay=relay)
-    try:
-        h = await signup(client, "evmswap@example.com", main=False)
-        w = (await client.post("/wallets", json={"network": "base", "count": 1}, headers=h)).json()[-1]
-        base.tokens[w["address"].lower()] = 50 * 10**6          # 50 USDC
-        base.balances[w["address"].lower()] = ETH // 100        # gas money
-        body = {"wallet_id": w["id"], "input_mint": BASE_USDC, "output_mint": "native", "amount": 20}
-        pre = (await client.post("/wallets/swap", json=body, headers=h)).json()
-        p = pre["preflight"]
-        assert p["kind"] == "swap" and p["network"] == "base" and p["chain"] == "Base"
-        assert p["input"] == "20 USDC" and p["estimated_output"] == "0.03 ETH"
-        assert p["quote"]["fees_usd"]["helm_route_fee"] == 0.06 and p["platform_fee"] == "none"
-        same = await client.post("/wallets/swap", json={**body, "output_mint": BASE_USDC}, headers=h)
-        assert same.status_code == 400 and "same token" in same.text
-        bad = await client.post("/wallets/swap", json={**body, "input_mint": "0x1234"}, headers=h)
-        assert bad.status_code == 400 and "valid token address" in bad.text
-
-        r = await client.post("/wallets/swap", json={**body, "confirm": True, "preflight_hash": pre["preflight_hash"],
-                                                     "idempotency_key": "evm-swap"}, headers=h)
-        assert r.status_code == 200, r.text
-        job = (await client.get(f"/jobs/{r.json()['job_id']}", headers=h)).json()
-        assert job["status"] == "confirmed", job
-        assert [t["kind"] for t in job["transactions"]] == ["swap_approve", "swap"]
-        # Provider-built transactions go out byte-for-byte (the guard checked, not rewrote, them).
-        assert base.sent[-2]["data"] == bytes.fromhex("095ea7b3" + "00" * 12 + "cd" * 20 + "00" * 32)
-        assert base.sent[-1]["to"].lower() == "0x" + "cd" * 20 and base.sent[-1]["data"] == bytes.fromhex("abcdef")
+        assert base.sent[-3]["data"] == bytes.fromhex("095ea7b3" + "00" * 12 + "cd" * 20 + "00" * 32)
+        assert base.sent[-2]["to"].lower() == "0x" + "cd" * 20 and base.sent[-2]["data"] == bytes.fromhex("abcdef")
         q = seen[-1]
         assert q["originChainId"] == 8453 and q["destinationChainId"] == 8453  # same-chain route
         assert q["originCurrency"] == BASE_USDC and q["destinationCurrency"] == EVM_NATIVE

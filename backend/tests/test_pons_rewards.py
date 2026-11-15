@@ -104,7 +104,7 @@ def test_only_exact_successful_treasury_events_are_counted():
 
 
 @pytest.mark.parametrize("delayed", [False, True])
-async def test_new_launch_consent_claim_and_revenue_recover_after_restart(client, fake_rpc, setup_rewards, monkeypatch, delayed):
+async def test_new_launch_has_no_split_and_historical_claims_recover_after_restart(client, fake_rpc, setup_rewards, monkeypatch, delayed):
     node = setup_rewards
     registry._cache["pons"] = PonsAdapter(node)
     app.dependency_overrides[get_executor] = lambda: Executor(fake_rpc, get_signer(), evm_rpcs={"robinhood": node})
@@ -120,17 +120,8 @@ async def test_new_launch_consent_claim_and_revenue_recover_after_restart(client
         assert created.status_code == 201, created.text
         lid = created.json()["id"]
         pf = (await client.post(f"/launches/{lid}/deploy", json={}, headers=h)).json()
-        c = pf["preflight"]["pons_rewards"]
-        assert c["bps"] == 600 and c["treasury"].lower() == TREASURY.lower()
-        assert "including creator tax" in pf["preflight"]["reward_terms"]
-        # Modifying the treasury requires a fresh confirmation; an old hash cannot redirect rewards.
-        get_settings().platform_fee_wallet_evm = "0x" + "ef" * 20
-        pc.reset_cache()
-        rejected = await client.post(f"/launches/{lid}/deploy", json={"confirm": True,
-            "preflight_hash": pf["preflight_hash"], "idempotency_key": "stale"}, headers=h)
-        assert rejected.status_code == 409, rejected.text
-        get_settings().platform_fee_wallet_evm = TREASURY
-        pc.reset_cache()
+        assert "pons_rewards" not in pf["preflight"]
+        assert pf["preflight"]["helm_creator_share"]["bps"] == 0
         node.ready = not delayed
         sent = await client.post(f"/launches/{lid}/deploy", json={"confirm": True,
             "preflight_hash": pf["preflight_hash"], "idempotency_key": "deploy"}, headers=h)
@@ -143,11 +134,18 @@ async def test_new_launch_consent_claim_and_revenue_recover_after_restart(client
         node.ready = True
         r = await client.post(f"/launches/{lid}/recheck", json={}, headers=h)
         assert r.json()["status"] == "live" and r.json()["mint_address"], r.text
-        node.config = r.json()["pons_rewards"]
-        assert node.config["splitter"] == c["splitter"]
+        assert r.json()["pons_rewards"] is None
+        # A historical imported launch retains its immutable, previously agreed splitter.
+        c = rewards.configuration(lid, dev["address"], {"bps": 600, "recipient": TREASURY}, FACTORY)
+        node.config = c
         async with get_sessionmaker()() as db:
-            rows = (await db.execute(select(RevenueEvent).where(RevenueEvent.launch_id == lid))).scalars().all()
-            assert len(rows) == 1 and rows[0].status == "configured" and rows[0].amount_raw is None
+            old = await db.get(Launch, lid)
+            old.launchpad_params = {**(old.launchpad_params or {}), "pons_rewards": c,
+                "helm_creator_share": {"bps": 600, "recipient": TREASURY}}
+            db.add(RevenueEvent(source="creator_share", network="robinhood", asset="ETH", decimals=18,
+                amount_raw=None, estimated=True, status="configured", launch_id=lid,
+                destination=TREASURY, payer_user_id=old.user_id, reference=c["splitter"], note="Historical terms"))
+            await db.commit()
         # Later config changes/disablement do not disable or redirect an existing user's claim.
         get_settings().platform_fee_wallet_evm = "0x" + "ef" * 20
         get_settings().pons_rewards_enabled = False

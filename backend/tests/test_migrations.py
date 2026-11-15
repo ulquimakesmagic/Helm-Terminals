@@ -34,15 +34,17 @@ def test_alembic_bootstraps_a_fresh_database(tmp_path):
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "users" in tables and "transactions" in tables and "alembic_version" in tables
         version = db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert version == "42c9a01f0003"
+        assert version == "42c9a01f0004"
 
 
 def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
     path = tmp_path / "existing.db"
     url = f"sqlite+aiosqlite:///{path.as_posix()}"
+    # Simulate the frozen legacy schema without a migration marker, not today's models.
+    run_alembic(url, "upgrade", "11d712bf1eb8")
     engine = create_engine(f"sqlite:///{path.as_posix()}")
-    Base.metadata.create_all(engine)
     with engine.begin() as conn:
+        conn.execute(text("DROP TABLE alembic_version"))
         conn.execute(text(
             "INSERT INTO auth_failures (id, key, created_at) VALUES (:id, :key, :created_at)"
         ), {"id": "keep-me", "key": "redacted-test-key", "created_at": "2026-09-29 00:00:00"})
@@ -50,13 +52,13 @@ def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
 
     # Production's current create_all-created schema is adopted explicitly after the owner verifies the schema;
     # Alembic does not replay the baseline against existing tables.
-    run_alembic(url, "stamp", "head")
+    run_alembic(url, "stamp", "11d712bf1eb8")
     run_alembic(url, "upgrade", "head")
 
     with sqlite3.connect(path) as db:
         row = db.execute("SELECT key FROM auth_failures WHERE id='keep-me'").fetchone()
         assert row == ("redacted-test-key",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0003"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0004"
 
 
 def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
@@ -66,9 +68,12 @@ def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
     with sqlite3.connect(path) as db:
         db.execute("INSERT INTO revenue_events (id, source, network, asset, amount_raw, decimals, estimated, status, note, created_at) "
                    "VALUES ('old-fee', 'dex_trade_fee', 'base', 'ETH', 100, 18, 0, 'received', '', '2026-09-29')")
+        db.execute("INSERT INTO revenue_events (id, source, network, asset, amount_raw, decimals, estimated, status, note, created_at) "
+                   "VALUES ('large-fee', 'dex_trade_fee', 'base', 'ETH', 1e27, 18, 1, 'pending', '', '2026-09-29')")
     run_alembic(url, "upgrade", "head")
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT status, estimated, receipt_evidence FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending", 1, None)
+        assert db.execute("SELECT amount_raw FROM revenue_events WHERE id='large-fee'").fetchone()[0] == str(10**27)
         backup = tmp_path / "backup.db"
         with sqlite3.connect(backup) as restored:
             db.backup(restored)
@@ -76,5 +81,5 @@ def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT status FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending",)
     with sqlite3.connect(backup) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0003"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0004"
 

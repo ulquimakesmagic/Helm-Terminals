@@ -106,6 +106,12 @@ export default function Auth() {
             <div className="mode-tabs" role="tablist" aria-label="Account">
               {(["login", "register"] as Mode[]).map((m) => (
                 <button key={m} type="button" role="tab" id={`tab-${m}`} aria-selected={mode === m} aria-controls="auth-form"
+                  tabIndex={mode === m ? 0 : -1} onKeyDown={e => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+                    e.preventDefault();
+                    const next: Mode = e.key === "Home" ? "login" : e.key === "End" ? "register" : mode === "login" ? "register" : "login";
+                    setMode(next); document.getElementById(`tab-${next}`)?.focus();
+                  }}
                   className={mode === m ? "on" : ""} onClick={() => setMode(m)}>
                   {m === "login" ? "Sign in" : "Create account"}
                 </button>

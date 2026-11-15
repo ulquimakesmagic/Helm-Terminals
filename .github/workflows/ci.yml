@@ -79,6 +79,8 @@ jobs:
       # Compare with committed artifacts before any command can overwrite them.
       - run: npm run check
         working-directory: contracts
+      - run: npm test
+        working-directory: contracts
 
   frontend:
     runs-on: ubuntu-latest

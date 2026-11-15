@@ -1,0 +1,184 @@
+contracts	UNKNOWN STEP	﻿2026-10-04T22:44:40.2615023Z Current runner version: '2.337.0'
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2650255Z ##[group]Runner Image Provisioner
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2651364Z Hosted Compute Agent
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2652102Z Version: 20260901.588
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2653122Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2654461Z Build Date: 2026-09-01T19:56:44Z
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2655525Z Worker ID: {e9efa55a-1858-48f6-bc21-aa3c7d0c2d6f}
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2656571Z Azure Region: northcentralus
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2657413Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2659848Z ##[group]Operating System
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2660833Z Ubuntu
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2661611Z 24.04.5
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2662340Z LTS
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2663063Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2664694Z ##[group]Runner Image
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2665598Z Image: ubuntu-24.04
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2666407Z Version: 20260927.320.1
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2668332Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2670756Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2672115Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2673865Z ##[group]GITHUB_TOKEN Permissions
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2676937Z Contents: read
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2677506Z Metadata: read
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2678140Z Packages: read
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2678687Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2680762Z Secret source: Actions
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2681628Z Cache mode: write
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.2682643Z Prepare workflow directory
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.3132666Z Prepare all required actions
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.3205684Z Getting action download info
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.6577190Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+contracts	UNKNOWN STEP	2026-10-04T22:44:40.7641639Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.0477597Z Complete job name: contracts
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1154009Z ##[group]Run actions/checkout@v4
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1155321Z with:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1155986Z   repository: AbdulganiyuMalik01/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1160027Z   token: ***
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1160566Z   ssh-strict: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1161082Z   ssh-user: git
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1161583Z   persist-credentials: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1162170Z   clean: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1162713Z   sparse-checkout-cone-mode: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1163312Z   fetch-depth: 1
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1163820Z   fetch-tags: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1164466Z   show-progress: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1165226Z   lfs: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1165765Z   submodules: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1166302Z   set-safe-directory: true
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1166887Z   allow-unsafe-pr-checkout: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.1167653Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2551914Z Syncing repository: AbdulganiyuMalik01/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2567848Z ##[group]Getting Git version info
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2582654Z Working directory is '/home/runner/work/Helm-Terminals/Helm-Terminals'
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2590232Z [command]/usr/bin/git version
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2591615Z git version 2.55.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2595410Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2603095Z Temporarily overriding HOME='/home/runner/work/_temp/1358763c-51e7-40c3-b7a7-667b753b884d' before making global git config changes
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2606502Z Adding repository directory to the temporary git global config as a safe directory
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2608894Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Helm-Terminals/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2707882Z Deleting the contents of '/home/runner/work/Helm-Terminals/Helm-Terminals'
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2725840Z ##[group]Initializing the repository
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.2737330Z [command]/usr/bin/git init /home/runner/work/Helm-Terminals/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4089337Z hint: Using 'master' as the name for the initial branch. This default branch name
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4090901Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4092679Z hint: to use in all of your new repositories, which will suppress this warning,
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4094027Z hint: call:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4095155Z hint:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4095783Z hint: 	git config --global init.defaultBranch <name>
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4096464Z hint:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4097103Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4098078Z hint: 'development'. The just-created branch can be renamed via this command:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4098927Z hint:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4099409Z hint: 	git branch -m <name>
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4099974Z hint:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4100651Z hint: Disable this message with "git config set advice.defaultBranchName false"
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4101747Z Initialized empty Git repository in /home/runner/work/Helm-Terminals/Helm-Terminals/.git/
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4103726Z [command]/usr/bin/git remote add origin https://github.com/AbdulganiyuMalik01/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4106506Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4107693Z ##[group]Disabling automatic garbage collection
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4108666Z [command]/usr/bin/git config --local gc.auto 0
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4110829Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4111898Z ##[group]Setting up auth
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4112867Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4120402Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4127134Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4131611Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4312457Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4342496Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4570805Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4587057Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4589085Z ##[group]Fetching the repository
+contracts	UNKNOWN STEP	2026-10-04T22:44:41.4597817Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c69ddc0968d518b7169ed448b6916fd0e1d0d8d1:refs/remotes/origin/main
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3125635Z From https://github.com/AbdulganiyuMalik01/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3129273Z  * [new ref]         c69ddc0968d518b7169ed448b6916fd0e1d0d8d1 -> origin/main
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3135523Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3138370Z ##[group]Determining the checkout info
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3140829Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3142283Z [command]/usr/bin/git sparse-checkout disable
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3187115Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3294669Z ##[group]Checking out the ref
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3297513Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3579959Z Switched to a new branch 'main'
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3595287Z branch 'main' set up to track 'origin/main'.
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3600497Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3641315Z [command]/usr/bin/git log -1 --format=%H
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.3666248Z c69ddc0968d518b7169ed448b6916fd0e1d0d8d1
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4065855Z ##[group]Run actions/setup-node@v4
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4067109Z with:
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4068072Z   node-version: 24.19.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4069074Z   cache: npm
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4070194Z   cache-dependency-path: contracts/package-lock.json
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4071684Z   always-auth: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4072949Z   check-latest: false
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4082417Z   token: ***
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.4083426Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.5527317Z Attempting to download 24.19.0...
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.5640281Z (node:2060) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+contracts	UNKNOWN STEP	2026-10-04T22:44:42.5645907Z (Use `node --trace-deprecation ...` to show where the warning was created)
+contracts	UNKNOWN STEP	2026-10-04T22:44:43.3671782Z Acquiring 24.19.0 - x64 from https://github.com/actions/node-versions/releases/download/24.19.0-30872449280/node-24.19.0-linux-x64.tar.gz
+contracts	UNKNOWN STEP	2026-10-04T22:44:43.8896215Z Extracting ...
+contracts	UNKNOWN STEP	2026-10-04T22:44:43.9049700Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/3122e6dd-12e4-4106-953f-d6641d9a0e9b -f /home/runner/work/_temp/6ad4119c-b7c0-409a-904c-fb3ada6799d3
+contracts	UNKNOWN STEP	2026-10-04T22:44:45.3571552Z Adding to the cache ...
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.4232916Z ##[group]Environment details
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.7179714Z node: v24.19.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.7180658Z npm: 11.17.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.7181352Z yarn: 1.22.22
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.7182433Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.7202912Z [command]/opt/hostedtoolcache/node/24.19.0/x64/bin/npm config get cache
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.8138374Z /home/runner/.npm
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.9357924Z Cache hit for: node-cache-Linux-x64-npm-18cac70b776121a0b4e93fd8fba3ade79b41abc6349a7afe2c44a10bafcc5ae6
+contracts	UNKNOWN STEP	2026-10-04T22:44:51.9472802Z (node:2060) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5142791Z Received 6455598 of 6455598 (100.0%), 13.8 MBs/sec
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5143743Z Cache Size: ~6 MB (6455598 B)
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5195642Z [command]/usr/bin/tar -xf /home/runner/work/_temp/71b0cc0e-d6a7-4386-a5cd-b720f41ebb8f/cache.tzst -P -C /home/runner/work/Helm-Terminals/Helm-Terminals --use-compress-program unzstd
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5355030Z Cache restored successfully
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5375776Z Cache restored from key: node-cache-Linux-x64-npm-18cac70b776121a0b4e93fd8fba3ade79b41abc6349a7afe2c44a10bafcc5ae6
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5545751Z ##[group]Run npm ci --ignore-scripts
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5546257Z ^[[36;1mnpm ci --ignore-scripts^[[0m
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5777456Z shell: /usr/bin/bash -e {0}
+contracts	UNKNOWN STEP	2026-10-04T22:44:52.5778132Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2305273Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2322754Z added 8 packages, and audited 9 packages in 540ms
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2323794Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2324520Z 1 package is looking for funding
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2325342Z   run `npm fund` for details
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2325866Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2326337Z found 0 vulnerabilities
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2545606Z ##[group]Run npm run check
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2546052Z ^[[36;1mnpm run check^[[0m
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2591896Z shell: /usr/bin/bash -e {0}
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.2592321Z ##[endgroup]
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.3596697Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.3597739Z > check
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.3599611Z > node build.mjs --check
+contracts	UNKNOWN STEP	2026-10-04T22:44:53.3600191Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0795108Z file:///home/runner/work/Helm-Terminals/Helm-Terminals/contracts/build.mjs:7
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0796929Z       throw new Error(`Artifact differs from source: ${url.pathname}; run npm run build and review the changes`);
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0797860Z             ^
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0798215Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0799431Z Error: Artifact differs from source: /home/runner/work/Helm-Terminals/Helm-Terminals/backend/app/chains/contracts/HelmPonsRewards.json; run npm run build and review the changes
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0801231Z     at artifact (file:///home/runner/work/Helm-Terminals/Helm-Terminals/contracts/build.mjs:7:13)
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0802593Z     at file:///home/runner/work/Helm-Terminals/Helm-Terminals/contracts/build.mjs:36:5
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0803682Z     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0805224Z     at async node:internal/modules/esm/loader:643:26
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0806184Z     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0806822Z 
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0807115Z Node.js v24.19.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.0919598Z ##[error]Process completed with exit code 1.
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.1076994Z Post job cleanup.
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2033944Z [command]/usr/bin/git version
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2111700Z git version 2.55.0
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2181704Z Temporarily overriding HOME='/home/runner/work/_temp/9784d214-9a1d-4071-9e0a-b908990ee978' before making global git config changes
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2183487Z Adding repository directory to the temporary git global config as a safe directory
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2185285Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Helm-Terminals/Helm-Terminals
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2258381Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2300097Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2664949Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2707126Z http.https://github.com/.extraheader
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2734783Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.2782085Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.3447504Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.3527992Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.4020193Z Cleaning up orphan processes
+contracts	UNKNOWN STEP	2026-10-04T22:44:55.4273407Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

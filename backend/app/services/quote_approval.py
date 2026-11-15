@@ -63,3 +63,21 @@ def check_relay_bounds(quote: dict, bounds: dict, destination_asset: str, destin
     if (bounds.get("asset") != destination_asset or bounds.get("network") != destination_network
             or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
         raise AdapterError("The new quote is below the approved minimum; review a new preview")
+
+
+def jupiter_bounds(quote: dict, input_mint: str, output_mint: str, amount: int) -> dict:
+    if (quote.get("inputMint") != input_mint or quote.get("outputMint") != output_mint
+            or str(quote.get("inAmount")) != str(amount)):
+        raise AdapterError("The swap quote does not match the approved input and output")
+    raw = quote.get("otherAmountThreshold")
+    if not str(raw).isdigit() or int(raw) <= 0:
+        raise AdapterError("The swap quote has no usable minimum output")
+    return {"input": input_mint, "asset": output_mint, "amount_raw": str(amount), "minimum_raw": str(raw)}
+
+
+def check_jupiter_bounds(quote: dict, bounds: dict, input_mint: str, output_mint: str, amount: int) -> None:
+    current = jupiter_bounds(quote, input_mint, output_mint, amount)
+    if (bounds.get("expires", 0) <= time.time() or bounds.get("input") != input_mint
+            or bounds.get("asset") != output_mint or bounds.get("amount_raw") != str(amount)
+            or int(current["minimum_raw"]) < int(bounds["minimum_raw"])):
+        raise AdapterError("The approved swap expired or its minimum output fell; review a fresh preview")

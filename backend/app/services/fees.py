@@ -44,12 +44,12 @@ async def fee_plan_for(db: AsyncSession, user: User, network: str = "solana") ->
 
     s = get_settings()
     await pc.refresh(db)
-    plan = FeePlan(bps=pc.bps("trade_fee_bps_solana"), platform_wallet=pc.treasury_for("solana"))
+    plan = FeePlan(bps=pc.bps("trade_fee_bps_solana"), platform_wallet=pc.treasury_for(network))
     if not plan.active:
         return plan
     link = (await db.execute(select(ReferralLink).where(ReferralLink.referred_user_id == user.id))).scalar_one_or_none()
     if link:
-        plan.referral_share_bps = s.referral_share_bps
+        plan.referral_share_bps = 3000
         plan.referrer_user_id = link.referrer_user_id
         payout = (await db.execute(select(PayoutAddress).where(
             PayoutAddress.user_id == link.referrer_user_id, PayoutAddress.network == network))).scalar_one_or_none()

@@ -132,6 +132,7 @@ class SpendConfirm(BaseModel):
     confirm: bool = False
     preflight_hash: str | None = None
     quote_approval: str | None = None
+    launch_fee_approval: str | None = None
     idempotency_key: str | None = None
     totp: str | None = None
 
@@ -155,6 +156,13 @@ async def begin_spend(
     # Enforce this at the API boundary so a modified or stale bot client cannot bypass the UI restriction.
     if getattr(user, "channel", "web") != "web":
         raise HTTPException(403, "Telegram is temporarily read-only; use the Helm web app to confirm transactions")
+    if kind in {"trade_buy", "trade_sell", "swap"}:
+        from .models import PlatformCharge
+        unpaid = (await db.execute(select(PlatformCharge.id).where(
+            PlatformCharge.payer_user_id == user.id, PlatformCharge.kind == "trade",
+            PlatformCharge.status == "failed").limit(1))).first()
+        if unpaid:
+            raise HTTPException(402, "A trading fee needs settlement. Open Fees & payments before placing another trade.")
     if body.preflight_hash != pf["preflight_hash"]:
         raise HTTPException(409, "preflight_changed: review the new preflight and confirm again")
     from .models import AccountSecurity
@@ -177,6 +185,18 @@ async def begin_spend(
     ).scalar_one_or_none()
     if existing:
         return existing, False
+    if kind == "deploy" and launch_id:
+        from sqlalchemy import update
+        from .models import Launch
+        claimed = await db.execute(update(Launch).where(Launch.id == launch_id, Launch.user_id == user.id,
+            Launch.status.in_(("draft", "failed"))).values(status="deploying").execution_options(synchronize_session=False))
+        if claimed.rowcount != 1:
+            await db.rollback()
+            existing = (await db.execute(select(Job).where(Job.user_id == user.id,
+                Job.idempotency_key == body.idempotency_key))).scalar_one_or_none()
+            if existing:
+                return existing, False
+            raise HTTPException(409, "This launch is already being deployed; refresh its workspace")
     from .services.execution_journal import initialize
 
     job = Job(user_id=user.id, launch_id=launch_id, kind=kind, params=initialize(params), idempotency_key=body.idempotency_key,

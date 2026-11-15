@@ -30,7 +30,7 @@ def _letsbonk() -> LaunchpadAdapter:
 def _bags() -> LaunchpadAdapter:
     s = get_settings()
     return BagsAdapter(api_key=s.bags_api_key, api_url=s.bags_api_url, rpc=shared_rpc(s.solana_rpc_url),
-                       partner_wallet=s.bags_partner_wallet, partner_config=s.bags_partner_config)
+                       partner_wallet="", partner_config="")
 
 
 def _flap(launchpad_id: str, network: str):
@@ -95,12 +95,6 @@ def needs_setup(launchpad_id: str) -> str | None:
             return "Meme.Cooking launches pin the image to IPFS, which needs a Pinata key (PINATA_JWT)"
         if launchpad_id == "tolly" and not get_settings().public_api_url:
             return "Tolly stores the token image as a link, which needs PUBLIC_API_URL on the server"
-    if launchpad_id == "pons":
-        s = get_settings()
-        # Release gate (audit sec. 6): no new Pons launches while the reward splitter is disabled or undeployed.
-        if not (s.pons_rewards_enabled and s.pons_rewards_factory):
-            return ("Pons launches are paused until Helm's reward splitter passes independent review and is deployed "
-                    "(PONS_REWARDS_ENABLED and PONS_REWARDS_FACTORY)")
     if launchpad_id == "meteora-dbc" and not get_settings().jupiter_api_key:
         return "Meteora DBC launches go through Jupiter Studio, which needs a Jupiter API key (JUPITER_API_KEY)"
     return None
@@ -111,6 +105,9 @@ PLANNED = [
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("bankr", "base"),
     ("gaspump", "ton"),  # buy/sell are documented (SDK); token creation isn't public yet
+    # Elpida is a development prototype. Enable only after deployed program/contract verification.
+    ("elpida-solana", "solana"), ("elpida-ethereum", "ethereum"), ("elpida-base", "base"),
+    ("elpida-bsc", "bsc"), ("elpida-robinhood", "robinhood"),
 ]
 
 _cache: dict[str, LaunchpadAdapter] = {}
@@ -129,8 +126,11 @@ def list_launchpads() -> list[dict]:
     for lid, factory in IMPLEMENTED.items():
         a = get_adapter(lid)
         reason = needs_setup(lid)
+        from ..services.capabilities import launchpad_capabilities
+        status = "setup_required" if reason else "available"
         out.append({"id": lid, "network": a.network, "quote_assets": a.quote_assets,
-                    "status": "setup_required" if reason else "available", **({"reason": reason} if reason else {})})
+                    "status": status, "capabilities": launchpad_capabilities(lid, a.network, status), **({"reason": reason} if reason else {})})
     for lid, net in PLANNED:
-        out.append({"id": lid, "network": net, "quote_assets": [], "status": "planned"})
+        out.append({"id": lid, "network": net, "quote_assets": [], "status": "planned",
+                    "capabilities": launchpad_capabilities(lid, net, "planned")})
     return out

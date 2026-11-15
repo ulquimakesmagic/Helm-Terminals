@@ -4,8 +4,7 @@ Flow: POST /quote/v2 returns `steps`, each with `items` whose `data` is a transa
 wallet (EVM: to/data/value; Solana: raw instructions plus lookup tables, which we compile ourselves). After the
 origin transaction lands, Relay's solver fills on the destination chain; GET /intents/status/v3 tracks it.
 
-Helm's route fee is a Relay "app fee": bps of the input, paid to an EVM address as a USDC balance held by Relay,
-claimable at relay.link. It shows up in the quote under `fees.app` and in every preview.
+New routes add no Helm app fee. Historical app-fee balances remain readable for reconciliation.
 """
 
 import httpx
@@ -34,8 +33,8 @@ class Relay:
         self.api = api_url.rstrip("/")
         self.api_key = api_key
         # Relay pays app fees to an EVM address, so there's no fee without one.
-        self.fee_bps = fee_bps if fee_recipient else 0
-        self.fee_recipient = fee_recipient
+        self.fee_bps = 0  # The fixed policy disables Helm route commissions.
+        self.fee_recipient = ""
         self._client = client or httpx.AsyncClient(timeout=30)
 
     @property

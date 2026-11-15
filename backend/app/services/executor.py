@@ -67,7 +67,7 @@ class Executor:
 
         if self._dex is not None and getattr(self, "_dex_key", None) is None:
             return self._dex
-        key = (pc.bps("trade_fee_bps_evm_dex"), pc.treasury_for("evm"))
+        key = (0, pc.treasury_for("evm"))  # The uniform fee service charges once, including curve trades.
         if self._dex is None or self._dex_key != key:
             from ..chains.kyber import KyberSwap
             from ..config import get_settings
@@ -224,12 +224,13 @@ async def submit_tracked(
 
 
 async def send_evm_tracked(sender, job: Job, wallet: Wallet, kind: str, call,
-                           max_allowance: int | None = None) -> SubmitResult:
+                           max_allowance: int | None = None,
+                           require_contract_recipients: bool = False) -> SubmitResult:
     async def persist(signature: str) -> None:
         await _persist_pending_transaction(job, wallet, kind, signature)
 
     return await sender.send(wallet.address, wallet.signer_ref or "", call, on_signed=persist,
-                             max_allowance=max_allowance)
+                             max_allowance=max_allowance, require_contract_recipients=require_contract_recipients)
 
 
 def _finish(job: Job, results: list[SubmitResult]) -> None:
@@ -292,6 +293,13 @@ async def run_trade(
     await db.commit()
     results: list[SubmitResult] = []
     plan = plan or FeePlan(0, "")
+    if not plan.active:
+        failure = SubmitResult(None, "failed", "A configured 1% trading-fee treasury is required")
+        for wallet in wallets:
+            await _record(db, job, wallet, side, failure, None)
+        _finish(job, [failure])
+        await db.commit()
+        return
 
     async def price_fee(w: Wallet, built: BuiltTx) -> tuple[FeeOutcome | None, list[tuple[Pubkey, int]]]:
         if not plan.active:
@@ -302,6 +310,8 @@ async def run_trade(
             after = await ex.rpc.simulate_balance_after(built.raw, w.address)
             basis = max(0, after - await ex.rpc.get_balance(w.address)) if after is not None else 0
         platform, referral = plan.split(basis)
+        if basis <= 0:
+            raise AdapterError("The sell proceeds could not be verified for the 1% fee")
         if platform + referral <= 0:
             return None, []
         status = "none"
@@ -314,7 +324,7 @@ async def run_trade(
                 platform += referral  # held by the platform and recorded as owed to the referrer
                 status = "owed"
         if not await _can_receive(ex.rpc, plan.platform_wallet, platform):
-            return None, []  # never let a fee break a trade
+            raise AdapterError("The treasury needs its account rent reserve before fee-bearing trades can execute")
         transfers.insert(0, (Pubkey.from_string(plan.platform_wallet), platform))
         return FeeOutcome(basis, platform - (referral if status == "owed" else 0), referral, status, "in_tx"), transfers
 
@@ -329,7 +339,11 @@ async def run_trade(
             before_task.cancel()
             return [(side, SubmitResult(None, "failed", str(e)), None)], None
         refs = {w.address: w.signer_ref or ""}
-        fee, transfers = await price_fee(w, built)
+        try:
+            fee, transfers = await price_fee(w, built)
+        except AdapterError as error:
+            before_task.cancel()
+            return [(side, SubmitResult(None, "failed", str(error)), None)], None
         raw = built.raw
         if fee:
             try:
@@ -363,25 +377,6 @@ async def run_trade(
         if res.status == "confirmed":
             delta = await ex.rpc.get_balance(w.address) - before
         records = [(side, res, delta)]
-        if fee and fee.mode == "follow_up" and res.status == "confirmed":
-            blockhash = await ex.rpc.get_latest_blockhash()
-            payer = Pubkey.from_string(w.address)
-            fee_raw = build_unsigned(payer, [sol_transfer_ix(payer, d, n) for d, n in transfers], blockhash)
-            async def persist_fee_signature(signature: str) -> None:
-                fee.fee_signature = signature
-                pending_fee = FeeRecord(
-                    job_id=job.id, payer_user_id=job.user_id, wallet_id=w.id, side=side, basis_lamports=fee.basis,
-                    platform_lamports=fee.platform,
-                    referrer_user_id=plan.referrer_user_id if fee.referral else None,
-                    referral_lamports=fee.referral, referral_status=fee.referral_status, mode=fee.mode,
-                    status="pending", signature=signature,
-                )
-                await _persist_pending_transaction(job, w, "platform_fee", signature, pending_fee,
-                                                   plan.platform_wallet)
-
-            fee.result = await ex.submit(fee_raw, refs, on_signed=persist_fee_signature)
-            total = sum(n for _, n in transfers)
-            records.append(("platform_fee", fee.result, -total if fee.result.status == "confirmed" else None))
         return records, fee
 
     async def record(w: Wallet, outcome: tuple[list[tuple[str, SubmitResult, int | None]], FeeOutcome | None]) -> None:
@@ -389,7 +384,17 @@ async def run_trade(
         for kind, res, delta in records:
             await _record(db, job, w, kind, res, delta)
         trade_res = records[0][1]
-        results.append(trade_res)  # the trade itself decides the job outcome, not the fee transfer
+        results.append(trade_res)
+        if fee and fee.mode == "follow_up" and trade_res.status == "confirmed":
+            from .charges import charge_trade
+            # Persist the standalone fee before signing, including recoverable debt on a definitive failure.
+            # Atomic in-transaction fees retain the original FeeRecord accounting below.
+            fee.result = await charge_trade(db, ex, job, w, fee.basis)
+            results.append(fee.result)
+            if fee.result.status != "confirmed":
+                job.params = {**job.params, "fee_outstanding": True, "error": fee.result.error}
+            await db.commit()
+            return
         if fee:
             # Pending fee records were committed before broadcast. This write resolves the known outcome when the
             # worker stays alive; a later GET /jobs rechecks them if the worker was interrupted.
@@ -550,6 +555,7 @@ async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Walle
         for i, step in enumerate(plan.steps) if step.essential
     ])
     last = None
+    total_gas = 0
     for i, step in enumerate(plan.steps):
         to, data = step.to, step.data
         try:
@@ -576,6 +582,8 @@ async def _run_evm_steps(db: AsyncSession, ex: Executor, job: Job, wallet: Walle
             step.after(res)
         await _record(db, job, wallet, tx_kind, res, None)
         await db.commit()
+        total_gas += getattr(res, "gas_cost_wei", 0) or 0
+        res.total_gas_wei = total_gas
         last = res
         if res.status != "confirmed" and step.essential:
             break
@@ -605,7 +613,10 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
     await db.commit()
     sender_rpc = ex.evm(wallets[0].network).rpc
 
+    before_balances = {}
+
     async def plan_for(w: Wallet):
+        before_balances[w.id] = await sender_rpc.get_balance(w.address)
         if side == "buy":
             amt = int(round(amount * 10**18))
         else:
@@ -648,15 +659,20 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
         return res
 
     async def _note_dex_fee(w: Wallet, plan, res: SubmitResult) -> None:
-        """Ledger entry for Helm's DEX router fee, only when the swap itself confirmed (a failed swap pays none)."""
-        info = (getattr(plan, "notes", None) or {}).get("helm_fee")
-        if not info or res.status != "confirmed" or info.get("wei", 0) <= 0:
+        if res.status != "confirmed":
             return
-        from .revenue import dex_fee_event
-
-        db.add(dex_fee_event(w.network, int(info["wei"]), bool(info["estimated"]), info["receiver"], job.id,
-                             job.launch_id, job.user_id, res.signature, side))
-        await db.commit()
+        from .charges import charge_trade
+        from decimal import Decimal
+        if side == "buy":
+            basis = int(Decimal(str(amount)) * 10**18)
+        else:
+            after = await sender_rpc.get_balance(w.address)
+            basis = max(0, after - before_balances[w.id] + (getattr(res, "total_gas_wei", 0) or 0))
+        paid = await charge_trade(db, ex, job, w, basis)
+        if paid.status != "confirmed":
+            results.append(paid)
+            job.params = {**job.params, "fee_outstanding": True,
+                          "error": "The trade completed; its platform fee needs settlement. Check the payment history."}
 
     results = []
     if mode == "parallel" and execution_guard and not await execution_guard():
@@ -676,6 +692,7 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
 
         async def fire(w, plan):
             out = []
+            total_gas = 0
             for i, step in enumerate(plan.steps):
                 to, data = step.to, step.data
                 try:
@@ -692,6 +709,8 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
 
                 r = await sender.send(w.address, w.signer_ref or "", EvmCall(to, data, step.value),
                                       on_signed=persist_signature)
+                total_gas += getattr(r, "gas_cost_wei", 0) or 0
+                r.total_gas_wei = total_gas
                 out.append((step, r))
                 if r.status != "confirmed" and step.essential:
                     break
