@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BASE, short } from "../api";
+import { BASE, launchImage, short } from "../api";
 import { chainOf, explorerUrl } from "../chains";
 import { ChainMark } from "./marks";
 
@@ -301,11 +301,19 @@ export function TokenAvatar({ symbol, size = 40 }: { symbol: string; size?: numb
 }
 
 /** The launch's own image when the API can serve it (deploying or live), otherwise the generated avatar. */
-export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol: string; has_image?: boolean; status?: string }; size?: number }) {
+export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol: string; has_image?: boolean; status?: string; draft_revision?: number }; size?: number }) {
   const [broken, setBroken] = useState(false);
-  const servable = launch.has_image && (launch.status === "live" || launch.status === "deploying");
-  if (!servable || broken) return <TokenAvatar symbol={launch.symbol} size={size} />;
-  return <img src={`${BASE}/public/launch-images/${launch.id}`} alt="" width={size} height={size} onError={() => setBroken(true)}
+  const [privateImage, setPrivateImage] = useState<{key:string;url:string} | null>(null);
+  const publicImage = launch.status === 'live' || launch.status === 'deploying';
+  const key = `${launch.id}:${launch.draft_revision ?? 0}:${launch.has_image}:${publicImage}`;
+  useEffect(()=>{
+    let active=true, url:string | undefined;setBroken(false);
+    if(launch.has_image && !publicImage)launchImage(launch.id).then(blob=>{if(active){url=URL.createObjectURL(blob);setPrivateImage({key,url});}}).catch(()=>{if(active)setBroken(true);});
+    return ()=>{active=false;if(url)URL.revokeObjectURL(url);};
+  },[key,launch.id,launch.has_image,publicImage]);
+  const src = publicImage ? `${BASE}/public/launch-images/${launch.id}` : privateImage?.key===key ? privateImage.url : '';
+  if (!launch.has_image || broken || !src) return <TokenAvatar symbol={launch.symbol} size={size} />;
+  return <img src={src} alt={`${launch.symbol} token artwork`} width={size} height={size} onError={() => setBroken(true)}
     style={{ width: size, height: size, borderRadius: size * 0.3, objectFit: "cover", flex: "none", border: "1px solid var(--line-2)" }} />;
 }
 
@@ -318,7 +326,7 @@ export function TableWrap({ children, label = "Table" }: { children: ReactNode; 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1);
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
     check();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(check) : null;
     ro?.observe(el);
@@ -326,7 +334,7 @@ export function TableWrap({ children, label = "Table" }: { children: ReactNode; 
     return () => ro?.disconnect();
   }, []);
   return (
-    <div ref={ref} className="table-wrap" {...(scrolls ? { tabIndex: 0, role: "region", "aria-label": `${label} (scrolls sideways)` } : {})}>
+    <div ref={ref} className="table-wrap" {...(scrolls ? { tabIndex: 0, role: "region", "aria-label": `${label} (scrollable)` } : {})}>
       {children}
     </div>
   );

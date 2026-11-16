@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 class Register(BaseModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=200)
-    referral_code: str | None = Field(default=None, max_length=16)
+    referral_code: str | None = Field(default=None, max_length=32)
 
 
 class Login(BaseModel):
@@ -173,10 +173,13 @@ async def me(user: User = Depends(current_user), db: AsyncSession = Depends(get_
     from ..models import AccountSecurity
     security = await db.get(AccountSecurity, user.id)
     p = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    from ..services.trade_policy import policy_for
+    trade_policy = await policy_for(db, user)
     return {"id": user.id, "email": user.email, "totp_enabled": user.totp_enabled,
             "email_verified": bool(security and security.email_verified_at),
             "recovery_hold_until": security.recovery_hold_until.isoformat() if security and security.recovery_hold_until else None,
             "created_at": user.created_at.isoformat(),
+            "trade_fee": trade_policy,
             "display_name": p.display_name if p else user.email.split("@")[0][:40],
             "handle": p.handle if p else None, "avatar_hue": p.avatar_hue if p else 265,
             # Only decides whether the web app shows the admin link; every admin API checks the role itself.

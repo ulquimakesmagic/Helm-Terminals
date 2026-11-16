@@ -1,15 +1,17 @@
 import Distribute from "../components/Distribute";
+import FeeWalletSelect from '../components/FeeWalletSelect';
+import { useSession } from '../session';
 import { useAutoRefresh } from "../components/useAutoRefresh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Location, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
-import { chainOf, explorerUrl, isExtraChain } from "../chains";
+import { chainOf, explorerUrl, isExtraChain, Pad } from "../chains";
 import { launchpadExperience } from "../launchpadExperience";
 import MarketTerminal from "../components/Market";
 import PonsRewards from "../components/PonsRewards";
 import Allocations from "../components/Allocations";
 import DistributeSupply from "../components/DistributeSupply";
-import { DeleteDraft } from "./Launches";
+import { CreateLaunch, DeleteDraft } from "./Launches";
 import SpendDialog from "../components/SpendDialog";
 import { PnlImage, downloadPnl, launchPnlFacts } from "../components/pnl";
 import { ChainLabel, PadLabel } from "../components/marks";
@@ -124,6 +126,8 @@ function WsTabs({ tabs, on, setOn }: { tabs: [string, string, React.ReactNode][]
 
 export default function Workspace() {
   const { id } = useParams();
+  const {me}=useSession();
+  const [feeWallet,setFeeWallet]=useState('');
   // The launches list hands over what it already knows, so the header renders at once instead of
   // after the workspace payload; a cold load (refresh, deep link) falls back to granular skeletons.
   const cached: any | undefined = (useLocation().state as Location["state"])?.launch;
@@ -133,6 +137,9 @@ export default function Workspace() {
   const setTab = (k: string) => setSearch((p) => { const n = new URLSearchParams(p); n.set("tab", k); return n; }, { replace: true });
   const toast = useToast();
   const [ws, setWs] = useState<any>(null);
+  const [editDraft, setEditDraft] = useState(false);
+  const [editPads, setEditPads] = useState<Pad[]>([]);
+  useEffect(()=>{api<Pad[]>('/launchpads').then(setEditPads).catch(()=>{});},[]);
   const [allWallets, setAllWallets] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -172,7 +179,7 @@ export default function Workspace() {
         if (l && l.status !== "deploying") w = await api(`/launches/${id}/workspace`);
       }
       if (currentWorkspace.current !== id) return;
-      setWs(w);
+      setWs((old:any)=>old?.launch?.id===w.launch.id && (old.launch.draft_revision ?? 0)>(w.launch.draft_revision ?? 0)?old:w);
       setAllWallets(all.filter((x) => x.kind === "managed"));
       setError("");
       setUpdated(new Date());
@@ -310,7 +317,13 @@ export default function Workspace() {
           </Card>
   );
   const ticketCard = live ? (
-            <Card id="order-ticket" className="terminal-ticket" title={`Trade $${l.symbol}`} icon="zap" sub="Helm execution · review before sending">
+            <Card id="order-ticket" className="terminal-ticket" title={`Trade $${l.symbol}`} icon="zap" sub="Helm execution · review before sending" foot={<div className="ticket-submit">                <button className={`btn lg block ${side}`} disabled={!sel.length || !(amt > 0) || (side === "sell" && amt > 100)} onClick={() => setDialog({
+                  title: auction ? `${side === "buy" ? "Deposit into" : "Withdraw from"} the $${l.symbol} auction` : `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
+                  body: { side, wallet_ids: sel, amount: amt, mode, stagger_ms: +stagger, slippage_pct: +slippage },
+                })}>
+                  {sel.length ? `Review ${side} · ${sel.length} wallet${sel.length === 1 ? "" : "s"}` : "Select wallets to trade"}
+                </button>
+                <p className="muted small">The next step shows the server's preview, fees and any blockers. Nothing is sent until you confirm.</p></div>}>
               <div className="stack">
                 <Seg full className="trade" value={side} onChange={(s) => { setSide(s); setAmount(s === "buy" ? "0.1" : "25"); }} options={auction ? [["buy", "Deposit"], ["sell", "Withdraw"]] : [["buy", "Buy"], ["sell", "Sell"]]} />
                 <details className="ticket-wallets">
@@ -340,7 +353,7 @@ export default function Workspace() {
                   <div className="v mono">{side === "buy" ? `${fmt(sel.length * amt, 6)} ${cur}` : `${fmt(amt, 2)}% ≈ ${compact((selTok * Math.min(amt, 100)) / 100)} tokens`}</div>
                   <div className="k">Execution</div>
                   <div className="v">{mode === "stagger" ? `One at a time · ${stagger} ms` : "All at once"} · {slippage}% slippage</div>
-                  <div className="k">Fees & checks</div><div className="v">Shown in review</div>
+                  <div className="k">Helm trading fee</div><div className="v">{me?.trade_fee?.bps===0?'0% · '+me.trade_fee.reason:'2.5% · exact costs in review'}</div>
                 </div>
                 <button type="button" className="btn ghost sm" style={{ alignSelf: "flex-start", marginLeft: -8 }} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
                   <Icon name="settings" size={13} />{advanced ? "Hide" : "Change"} execution settings
@@ -354,13 +367,7 @@ export default function Workspace() {
                     </div>
                   </div>
                 )}
-                <button className={`btn lg block ${side}`} disabled={!sel.length || !(amt > 0) || (side === "sell" && amt > 100)} onClick={() => setDialog({
-                  title: auction ? `${side === "buy" ? "Deposit into" : "Withdraw from"} the $${l.symbol} auction` : `${side === "buy" ? "Buy" : "Sell"} $${l.symbol}`, path: `/launches/${id}/trade`,
-                  body: { side, wallet_ids: sel, amount: amt, mode, stagger_ms: +stagger, slippage_pct: +slippage },
-                })}>
-                  {sel.length ? `Review ${side} · ${sel.length} wallet${sel.length === 1 ? "" : "s"}` : "Select wallets to trade"}
-                </button>
-                <p className="muted small">The next step shows the server's preview, fees and any blockers. Nothing is sent until you confirm.</p>
+
               </div>
             </Card>
   ) : null;
@@ -399,11 +406,11 @@ export default function Workspace() {
                   <>
                     {l.launchpad === "pons" && <PonsRewards launchId={l.id} />}
                     <p className="muted small">{l.pons_rewards
-                      ? "This launch's ETH rewards are split permanently: 94% to the creator and 6% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract."
+                      ? `This launch's ETH rewards are split permanently: ${100-(l.pons_rewards.bps ?? 600)/100}% to the creator and ${(l.pons_rewards.bps ?? 600)/100}% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract.`
                       : experience.claimCopy}</p>
                     {l.pons_rewards && <div className="stack tight small">
-                      <span>Creator (94%) <Address address={l.pons_rewards.creator} network={l.network} /></span>
-                      <span>Helm (6%) <Address address={l.pons_rewards.treasury} network={l.network} /></span>
+                      <span>Creator ({100-(l.pons_rewards.bps ?? 600)/100}%) <Address address={l.pons_rewards.creator} network={l.network} /></span>
+                      <span>Helm ({(l.pons_rewards.bps ?? 600)/100}%) <Address address={l.pons_rewards.treasury} network={l.network} /></span>
                       <span>Reward address <Address address={l.pons_rewards.splitter} network={l.network} /></span>
                       <span className="muted">Each party can withdraw independently. Failed payments stay claimable at the reward address. Pons retains its timelocked authority over future reward routing.</span>
                     </div>}
@@ -433,7 +440,8 @@ export default function Workspace() {
                     <Field label="Share of the wallet's tokens" hint={firstSel ? `From ${firstSel.label || short(firstSel.address)} · needs your 2FA code` : "Select a wallet in the table first"}>
                       <UnitInput unit="%" value={sendPct} onChange={(e) => setSendPct(e.target.value)} />
                     </Field>
-                    <button className="btn secondary block" disabled={!firstSel || sendTo.trim().length < 32 || !(+sendPct > 0) || +sendPct > 100} onClick={() => setDialog({ title: "Send tokens", path: `/launches/${id}/send`, body: { wallet_id: firstSel.id, recipient: sendTo.trim(), percent: +sendPct } })}>
+                    <FeeWalletSelect network={l.network} wallets={allWallets} value={feeWallet} onChange={setFeeWallet}/>
+                    <button className="btn secondary block" disabled={!firstSel || sendTo.trim().length < 32 || !(+sendPct > 0) || +sendPct > 100} onClick={() => setDialog({ title: "Send tokens", path: `/launches/${id}/send`, body: { wallet_id: firstSel.id, recipient: sendTo.trim(), percent: +sendPct,fee_wallet_id:feeWallet || null } })}>
                       <Icon name="send" size={15} />Review send</button>
                     <p className="muted small">To move tokens between your own wallets, use Disperse or Consolidate on the Wallets page; those wallets stay counted in transparency.</p>
                   </>
@@ -494,12 +502,12 @@ export default function Workspace() {
   const sourceMarket = !l.mint_address && l.status === "draft" && !!l.cloned_from;
 
   return (
-    <>
+    <section className={terminal?`workspace-terminal workspace-mobile-${mobileView}`:"workspace-draft"} aria-label="Launch workspace">
       <Link to="/launches" className="btn sm ghost workspace-back" style={{ alignSelf: "flex-start", marginLeft: -8, marginBottom: -8 }}><Icon name="arrowleft" size={14} />All launches</Link>
 
       <header className="page-head workspace-head">
         <div className="row nowrap" style={{ gap: 14, minWidth: 0 }}>
-          <TokenImage launch={l} size={52} />
+          <TokenImage launch={l} size={40} />
           <div style={{ minWidth: 0 }}>
             <div className="row" style={{ gap: 10 }}>
               <h1 className="truncate">{l.name}</h1>
@@ -523,6 +531,7 @@ export default function Workspace() {
           )}
           {live && <button className="btn jump-trade" onClick={() => { setMobileView("trade"); requestAnimationFrame(() => { const el = document.getElementById("order-ticket"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); el?.focus({ preventScroll: true }); }); }}><Icon name="zap" size={14} />Trade</button>}
           <button className="btn icon secondary" onClick={load} aria-label="Refresh now" title="Refresh now"><Icon name="refresh" size={14} /></button>
+          {!l.mint_address && ['draft','failed'].includes(l.status) && <button type="button" className="btn secondary" disabled={!editPads.length} onClick={()=>setEditDraft(true)}><Icon name="edit" size={14}/>Edit draft</button>}
           {(l.status === "draft" || l.imported) && <DeleteDraft id={l.id} name={l.name} onDeleted={() => { toast("good", "Draft deleted"); nav("/launches"); }} />}
           <button className="btn secondary" onClick={() => api(`/launches/${id}/${l.status === "archived" ? "restore" : "archive"}`, { method: "POST", body: {} })
             .then(() => { toast("good", l.status === "archived" ? "Launch restored" : "Launch archived"); load(); }).catch((e) => toast("bad", errMsg(e)))}>
@@ -545,8 +554,8 @@ export default function Workspace() {
               {l.dev_wallet_id ? <>Dev buy <b className="text-2 mono">{fmt(l.dev_buy_sol, 6)} {cur}</b> from the dev wallet. The preview shows every cost before anything is sent.</> : "This launch has no dev wallet yet. Set one before deploying."}
             </p>
           </div>
-          <button className="btn" disabled={!l.dev_wallet_id} onClick={() => setDialog({ title: `Deploy ${l.name}`, path: `/launches/${id}/deploy`, body: {} })}>
-            Review deployment<Icon name="arrowright" size={15} />
+          <button className="btn" disabled={!l.dev_wallet_id && !editPads.length} onClick={() => l.dev_wallet_id ? setDialog({ title: `Deploy ${l.name}`, path: `/launches/${id}/deploy`, body: {} }) : setEditDraft(true)}>
+            {l.dev_wallet_id?'Review deployment':'Choose dev wallet'}<Icon name="arrowright" size={15} />
           </button>
         </div>
       )}
@@ -599,12 +608,13 @@ export default function Workspace() {
         </>
       )}
 
-      {dialog && <SpendDialog {...dialog} network={l.network} onClose={() => setDialog(null)} onDone={load} />}
-      {consolidateOpen && <Distribute mode="consolidate" network={l.network} wallets={allWallets.filter(w => attached.has(w.id))} selected={sel.length ? sel : ws.wallets.filter((w:any) => w.role !== "dev").map((w:any) => w.id)} initialAsset={l.mint_address ?? "native"} onClose={() => setConsolidateOpen(false)} onReview={r => { setConsolidateOpen(false); setDialog(r); }} />}
+      {editDraft && <CreateLaunch initial={l} pads={editPads} wallets={allWallets} onClose={()=>setEditDraft(false)} onSaved={updated=>{setWs((old:any)=>({...old,launch:updated}));toast('good','Draft saved');void load();}}/>}
+      {dialog && <SpendDialog {...dialog} network={l.network} backLabel={dialog.path.endsWith('/deploy')?'Back to draft':'Cancel'} onClose={() => setDialog(null)} onDone={load} />}
+      {consolidateOpen && <Distribute mode="consolidate" network={l.network} wallets={allWallets} selected={sel.length ? sel : ws.wallets.filter((w:any) => w.role !== "dev").map((w:any) => w.id)} initialAsset={l.mint_address ?? "native"} onClose={() => setConsolidateOpen(false)} onReview={r => { setConsolidateOpen(false); setDialog(r); }} />}
       {supplyOpen && <DistributeSupply launch={l} wallets={allWallets} attachedIds={ws.wallets.map((w:any) => w.id)}
         devWalletId={ws.wallets.find((w: any) => w.role === "dev")?.id}
         onClose={() => setSupplyOpen(false)}
         onReview={(r) => { setSupplyOpen(false); setDialog(r); }} />}
-    </>
+    </section>
   );
 }

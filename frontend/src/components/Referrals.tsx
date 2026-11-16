@@ -3,8 +3,10 @@ import { formatRaw } from "../amounts";
 import { chainOf } from "../chains";
 import { api, errMsg, fmt } from "../api";
 import { Callout, Card, CopyButton, Icon, Loading, Spinner, useToast } from "./ui";
+import { Link } from 'react-router-dom';
 
 export interface ReferralSummary {
+  username?: string | null; username_code?: string | null;
   codes: { code: string; uses: number; max_uses: number }[];
   referred_users: number;
   earned_sol: number;
@@ -40,9 +42,9 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
     <Card title="Referrals" icon="gift"
       sub={data && data.fee_pct > 0 ? `Earn ${data.share_pct}% of collected Helm fees from people you invite` : "Invite people to Helm Terminals"}
       actions={
-        <button className="btn sm secondary" onClick={() => api("/referrals", { method: "POST", body: {} })
+        <button className="btn sm secondary" disabled={!data?.username || !!data.username_code} onClick={() => api("/referrals", { method: "POST", body: {} })
           .then(() => { toast("good", "Referral code created"); onChange(); }).catch((e) => toast("bad", errMsg(e)))}>
-          <Icon name="plus" size={13} />New code
+          <Icon name="link" size={13} />{data?.username_code?'Username code active':'Use username'}
         </button>} flush>
       {!data ? <Loading rows={3} /> : (
         <>
@@ -95,7 +97,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
           </div>
 
           {data.codes.length === 0 ? (
-            <p className="muted small" style={{ padding: "12px 18px" }}>No referral codes yet. Use <b className="text-2">New code</b> to create an invite link.</p>
+            <p className="muted small" style={{ padding: "12px 18px" }}>{data.username?'Use your username above to activate its invite link.':<><Link to="/profile">Set a username in Profile</Link> to use it as your referral code.</>}</p>
           ) : (
             <div className="feed">
               {data.codes.map((c) => (

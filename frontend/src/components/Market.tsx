@@ -33,7 +33,7 @@ const pct = (v: number | null | undefined) => v == null ? null : `${v > 0 ? "+" 
 const ago = (s: number) => s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
 
 function HeadStat({ label, value, tone, title }: { label: string; value: string | null; tone?: string; title?: string }) {
-  return <div className="th-stat" title={value == null ? "Not reported by Codex for this token" : title}>
+  return <div className="th-stat" title={value == null ? "Not reported by Codex for this token" : `${value}${title?` · ${title}`:""}`}>
     <span className="k">{label}</span><span className={`v num ${value == null ? "na" : tone ?? ""}`}>{value ?? "—"}{value == null && <span className="sr-only"> not reported</span>}</span>
   </div>;
 }
@@ -161,8 +161,7 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
           {gmgnUrl ? <p className="market-note">The chart is GMGN's and loads from GMGN in your browser. GMGN picks the pool and controls its updates, so it can differ from the Codex figures on this page; Helm can't check what the embedded chart shows.</p>
             : <p className="market-note">Candles are Codex OHLCV data in US dollars{pool ? " for the selected pool" : ", aggregated across the token's indexed pools"}. Bars appear only where trades happened; Helm never fills gaps. Times are in your local time zone.</p>}
         </section>
-        <div className="term-panel market-pool" aria-label="Pools">
-          <div className="tp-head"><b>Pools</b><span className="muted small">Codex · by liquidity</span></div>
+        <details className="term-panel market-pool"><summary className="tp-head"><b>Pools & liquidity</b><span className="muted small">Details</span></summary>
           {!r && !m.error ? <Skeleton h={90} /> : pools.length ? <>
             {pools.length > 1 && !gmgnUrl && <label className="field pool-pick">Chart<select value={pool} onChange={(e) => setPool(e.target.value)}>
               <option value="">All pools (token)</option>
@@ -175,12 +174,11 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
               <div><dt>Pool liquidity</dt><dd className="num">{usd(shownPool.liquidity_usd) ?? "Not reported"}</dd></div>
             </dl>}
           </> : <p className="pool-placeholder muted small">{r?.state === "ok" ? "Pool details unavailable." : "No indexed pool yet."}</p>}
-        </div>
+        </details>
       </div>
       <div className="term-side">
         {ticket}
-        <div className="term-panel market-activity" role="group" aria-label="Token activity">
-          <div className="tp-head"><b>Token activity</b><span className="muted small">Codex · all pools</span></div>
+        <details className="term-panel market-activity"><summary className="tp-head"><b>Token activity</b><span className="muted small">{count(tx?.swaps) ?? "—"} trades · {usd(metrics?.volume_usd[win]) ?? "—"}</span></summary>
           <div className="win-tabs" role="group" aria-label="Activity time window">
             {WINS.map(([key, label]) => <button key={key} type="button" aria-pressed={win === key} className={win === key ? "on" : ""} onClick={() => setWin(key)}>
               <span>{label}</span><b className={`num ${metrics?.price_change[key] == null ? "na" : metrics.price_change[key]! >= 0 ? "good" : "bad"}`}>{pct(metrics?.price_change[key]) ?? "—"}</b>
@@ -194,9 +192,9 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
             <div className="tp-row"><span className="k">Volume</span><span className="v num">{usd(metrics.volume_usd[win]) ?? "—"}</span></div>
             {metrics.last_trade_at && <div className="tp-row"><span className="k">Last trade</span><span className="v">{new Date(metrics.last_trade_at).toLocaleString()}</span></div>}
           </div> : <Empty icon="activity" title="Activity unavailable" text="Counts appear once Codex reports market data for this token." />}
-        </div>
+        </details>
       </div>
     </div>
-    <p className="market-note">Market data from <a href="https://www.codex.io" target="_blank" rel="noreferrer">Codex</a>; charts from <a href="https://gmgn.ai" target="_blank" rel="noreferrer">GMGN</a> on Solana, Ethereum and BNB Chain, and from Codex on other chains. Indicative only: never used for wallet balances, trade previews, quotes or execution, which come from each chain and the launchpad or router that builds the transaction.</p>
+    <details className="market-provenance"><summary>Data sources & coverage</summary><p className="market-note">Market data from <a href="https://www.codex.io" target="_blank" rel="noreferrer">Codex</a>; charts from <a href="https://gmgn.ai" target="_blank" rel="noreferrer">GMGN</a> on Solana, Ethereum and BNB Chain, and from Codex on other chains. Indicative only: never used for wallet balances, trade previews, quotes or execution, which come from each chain and the launchpad or router that builds the transaction.</p></details>
   </section>;
 }

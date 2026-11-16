@@ -605,6 +605,8 @@ async def user_detail(user_id: str, request: Request, user: User = Depends(any_a
     launch_exemption = await db.get(LaunchFeeExemption, u.id)
     from ..services.charges import exemption
     launch_fee_reason = await exemption(db, u)
+    from ..services.trade_policy import policy_for
+    trade_fee = await policy_for(db, u)
     await audit(db, user, "user.view", u.id, request=request)
     await db.commit()
     prof = (await db.execute(select(Profile).where(Profile.user_id == u.id))).scalar_one_or_none()
@@ -630,6 +632,7 @@ async def user_detail(user_id: str, request: Request, user: User = Depends(any_a
         "id": u.id, "email": u.email if full else mask_email(u.email),
         "display_name": (prof.display_name if prof else "") or "", "registered_at": iso(u.created_at),
         "role": await _role_label(db, u), "status": st.status if st else "active",
+        "trade_fee": trade_fee,
         "launch_fee": {"exempt": bool(launch_fee_reason), "reason": launch_fee_reason,
                        "account_exception": bool(launch_exemption and launch_exemption.enabled)},
         "status_reason": st.reason if st else None, "status_changed_at": iso(st.changed_at) if st else None,
@@ -658,6 +661,27 @@ class AccessChange(BaseModel):
 
 class LaunchExemptionChange(AccessChange):
     enabled: bool
+
+
+@router.put("/users/{user_id}/trade-fee-exemption")
+async def set_trade_exemption(user_id: str, body: LaunchExemptionChange, request: Request,
+                             user: User = Depends(superadmin), db: AsyncSession = Depends(get_db)):
+    from ..models import TradeFeeExemption
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(404, 'no such user')
+    await step_up(db, user, body.confirm)
+    row = await db.get(TradeFeeExemption, user_id)
+    old = bool(row and row.enabled)
+    if row is None:
+        db.add(TradeFeeExemption(user_id=user_id, enabled=body.enabled, reason=body.reason, changed_by=user.id))
+    else:
+        row.enabled, row.reason, row.changed_by, row.updated_at = body.enabled, body.reason, user.id, utcnow()
+    await audit(db, user, 'trade_fee.exemption', user_id,
+                {'enabled': [old, body.enabled], 'reason': [None, body.reason]}, request)
+    await db.commit()
+    from ..services.trade_policy import policy_for
+    return {'user_id': user_id, 'trade_fee': await policy_for(db, target)}
 
 
 @router.put("/users/{user_id}/launch-fee-exemption")

@@ -17,10 +17,11 @@ interface Props {
   onClose: () => void;
   onDone?: () => void;
   network?: string;
+  backLabel?: string;
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw"]);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw",'draft_revision','split_seed']);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
@@ -36,6 +37,7 @@ const LABELS: Record<string, string> = {
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
   commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
   pons_rewards: "Pons reward recipients", reward_terms: "Permanent reward terms",
+  fee_payers:'Network fee payers',fee_funding:'Gas funding before this operation',fees_paid_by:'Separate fee payers',
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
@@ -43,7 +45,10 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 
-function Value({ k, v, network, asset }: { k: string; v: unknown; network?: string; asset?: string }): ReactNode {
+function Value({ k, v, network, asset, decimals }: { k: string; v: unknown; network?: string; asset?: string;decimals?:number }): ReactNode {
+  if(k==='fee_funding' && Array.isArray(v))return <div className="stack tight">{v.length?v.map((leg:any,i)=><div className="fee-funding-leg" key={i}><b>{formatRaw(leg.amount_raw,leg.decimals)} {chainOf(network).native}</b><span>From <Address address={leg.from_address} network={network}/> to <Address address={leg.to_address} network={network}/></span><small>Funding transaction fee: up to {formatRaw(leg.funding_fee_max_raw,leg.decimals)} {chainOf(network).native}. Unused gas allowance stays in the sending wallet.</small></div>):'No gas funding transfer required'}</div>;
+  if(k==='fee_payers' && Array.isArray(v))return <div className="stack tight">{v.map((payer:any,i)=><div className="fee-funding-leg" key={i}><b>{payer.method} · {payer.label}</b><Address address={payer.address} network={network}/><small>{payer.note}</small></div>)}</div>;
+  if(k==='fees_paid_by' && Array.isArray(v))return <div className="stack tight">{v.length?v.map((row:any,i)=><div className="fee-funding-leg" key={i}><span>Source <Address address={row.from} network={network}/></span><span>Fees paid by <Address address={row.payer.address} network={network}/></span></div>):'Sending wallets pay their own fees'}</div>;
   if (k === "initial_buy_fee" && v && typeof v === "object") {
     const fee = v as { amount_raw: string; decimals: number; asset: string; note: string; destination: string };
     return <div className="stack tight"><b>{formatRaw(fee.amount_raw, fee.decimals)} {fee.asset}</b><p>{fee.note}</p><Address address={fee.destination} network={network} /></div>;
@@ -59,10 +64,11 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
     return <div className="stack tight"><b>Minimum {bound.minimum_raw} base units</b><span>{chainOf(bound.network).name} · <Address address={bound.asset} network={bound.network} /></span><small>Locked to this preview. A lower output or expired quote requires confirmation again.</small></div>;
   }
   if (k === "pons_rewards" && v && typeof v === "object") {
-    const r = v as { creator: string; treasury: string; splitter: string };
+    const r = v as { creator: string; treasury: string; splitter: string; bps?: number };
+    const helmShare = (r.bps ?? 600) / 100;
     return <div className="stack tight">
-      <span>Creator 94% <Address address={r.creator} network={network} /></span>
-      <span>Helm 6% <Address address={r.treasury} network={network} /></span>
+      <span>Creator {100-helmShare}% <Address address={r.creator} network={network} /></span>
+      <span>Helm {helmShare}% <Address address={r.treasury} network={network} /></span>
       <span>Launch reward address <Address address={r.splitter} network={network} /></span>
     </div>;
   }
@@ -76,8 +82,7 @@ function Value({ k, v, network, asset }: { k: string; v: unknown; network?: stri
             return (
               <div key={i} className="row nowrap" style={{ gap: 10 }}>
                 {isAddr(o.address) && <Address address={o.address} network={network} />}
-                {typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} {cur}</span>}
-                {typeof o.amount === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.amount, 6)} {cur}</span>}
+                {typeof o.amount_raw==='string' && (typeof o.decimals==='number'||decimals!==undefined) ? <span className="num" style={{fontWeight:600}}>{formatRaw(o.amount_raw,Number(o.decimals ?? decimals))} {cur}</span> : <>{typeof o.sol === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.sol)} {cur}</span>}{typeof o.amount === "number" && <span className="num" style={{ fontWeight: 600 }}>{fmt(o.amount, 6)} {cur}</span>}</>}
               </div>
             );
           }
@@ -183,7 +188,7 @@ function Otp({ value, onChange }: { value: string; onChange: (v: string) => void
 }
 
 /** Every fund-moving action goes through here: preflight first, then confirm with the same hash. */
-export default function SpendDialog({ title, path, body, onClose, onDone, network = "solana" }: Props) {
+export default function SpendDialog({ title, path, body, onClose, onDone, network = "solana", backLabel='Cancel' }: Props) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [pre, setPre] = useState<any>(null);
   const [hash, setHash] = useState("");
@@ -257,11 +262,14 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
   const blocked = warnings.length > 0;
   const danger = kind === "burn" || kind === "withdraw" || kind === "send_tokens";
   const summary = summarize(pre, network);
+  const feeFunding = Array.isArray(pre?.fee_funding) ? pre.fee_funding : [];
+  const separatePayers = Array.isArray(pre?.fee_payers) ? pre.fee_payers.filter((payer:any)=>payer.address!==payer.source) : [];
+  const stablePayers = Array.isArray(pre?.fees_paid_by) ? pre.fees_paid_by : [];
   const foot =
     phase === "done" || phase === "error" ? <button className="btn" onClick={onClose}>Close</button> :
     phase === "loading" ? <button className="btn ghost" onClick={onClose}>Cancel</button> : (
       <>
-        <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className="btn ghost" onClick={onClose} disabled={busy}>{backLabel}</button>
         <button className={`btn ${danger ? "danger" : ""}`} onClick={confirm} disabled={busy || blocked || (needs2fa && totp.length !== 6)}>
           {busy ? <><Spinner />{phase === "polling" ? (kind === "deploy" && pre?.funding ? "Routing USDC, then deploying…" : "Waiting for confirmation…") : "Sending…"}</> : <><Icon name="check" size={15} />Confirm {KIND_LABEL[kind] ?? kind ?? ""}</>}
         </button>
@@ -278,7 +286,17 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
       {pre && phase !== "done" && phase !== "error" && (
         <>
           {summary && <ReviewHero s={summary} />}
+          {kind==='disperse' && ['random','weighted'].includes(pre.split) && <section className="review-section">
+            <h3>Recipient amounts · fixed for this review</h3>
+            <div className="split-review-amounts"><Value k="to" v={pre.to} network={network} asset={pre.asset} decimals={pre.decimals}/></div>
+          </section>}
           {pre.launch_fee_payment && <Value k="launch_fee_payment" v={pre.launch_fee_payment} network={network} />}
+          {(feeFunding.length>0 || separatePayers.length>0 || stablePayers.length>0) && <section className="review-section">
+            <h3>Network fee payment</h3>
+            {feeFunding.length>0 && <Value k="fee_funding" v={feeFunding} network={network}/>}
+            {separatePayers.length>0 && <Value k="fee_payers" v={separatePayers} network={network}/>}
+            {stablePayers.length>0 && <Value k="fees_paid_by" v={stablePayers} network={network}/>}
+          </section>}
           {warnings.map((w: string) => <Callout key={w} tone="warn"><b>Blocked:</b> {w}</Callout>)}
           {summary && !blocked && (
             <div className="review-section">
@@ -292,7 +310,7 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
               {rows.map(([k, v]) => (
                 <Fragment key={k}>
                   <div className="k">{LABELS[k] ?? k.replace(/_/g, " ")}</div>
-                  <div className="v"><Value k={k} v={v} network={network} asset={typeof pre?.asset === "string" ? pre.asset : undefined} /></div>
+                  <div className="v"><Value k={k} v={v} network={network} asset={typeof pre?.asset === "string" ? pre.asset : undefined} decimals={typeof pre?.decimals==='number'?pre.decimals:undefined}/></div>
                 </Fragment>
               ))}
             </div>

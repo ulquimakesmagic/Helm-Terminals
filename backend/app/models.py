@@ -233,7 +233,7 @@ class Referral(Base):
     __tablename__ = "referrals"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    code: Mapped[str] = mapped_column(String(16), unique=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True)
     uses: Mapped[int] = mapped_column(Integer, default=0)
     max_uses: Mapped[int] = mapped_column(Integer, default=1000)
 
@@ -244,7 +244,7 @@ class ReferralLink(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     referred_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
     referrer_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    code: Mapped[str] = mapped_column(String(16))
+    code: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -504,6 +504,16 @@ class AutomationLaunchSlot(Base):
 
 class LaunchFeeExemption(Base):
     __tablename__ = "launch_fee_exemptions"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[str] = mapped_column(String(300))
+    changed_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class TradeFeeExemption(Base):
+    """An audited account-level waiver; creator rewards and network fees are unchanged."""
+    __tablename__ = "trade_fee_exemptions"
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     reason: Mapped[str] = mapped_column(String(300))

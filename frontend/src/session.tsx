@@ -5,6 +5,7 @@ export interface Me {
   id: string; email: string; totp_enabled: boolean; created_at: string;
   email_verified?: boolean; recovery_hold_until?: string | null;
   display_name?: string; handle?: string | null; avatar_hue?: number;
+  trade_fee?: {bps:number;exempt:boolean;reason:string|null;account_exception:boolean};
   /** Only decides whether the Admin link shows; the server checks the role on every admin request. */
   admin_role?: "superadmin" | "viewer" | null;
 }

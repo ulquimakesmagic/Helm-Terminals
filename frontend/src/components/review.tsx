@@ -207,7 +207,7 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
     case "disperse": {
       const to = list(pre.to);
       return {
-        label: "Disperse", value: pre.total_raw != null ? formatRaw(String(pre.total_raw), pre.decimals) : fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {pre.from?.label ?? "your wallet"} to {to.length} of your wallets · {pre.split === "custom" ? "custom amounts" : "even split"}</>,
+        label: "Disperse", value: pre.total_raw != null ? formatRaw(String(pre.total_raw), pre.decimals) : fmt(num(pre.total) ?? 0, 6), unit: pre.asset, sub: <>From {pre.from?.label ?? "your wallet"} to {to.length} of your wallets · {pre.split === "custom" ? "custom amounts" : pre.split === 'weighted' ? 'variable weights' : pre.split === 'random' ? 'random split' : "even split"}</>,
         cells: [["Recipients", String(to.length)], ["Transactions", String(pre.transactions ?? to.length)], ...gasCell, ["Platform fee", fee(pre.platform_fee)]],
         next: [
           "Transfers are sent in order; if one fails, the rest stop so nothing is left half-known.",

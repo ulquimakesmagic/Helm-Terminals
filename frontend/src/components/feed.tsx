@@ -122,7 +122,11 @@ export function FeedItem({ a, items, timeStyle = "relative" }: { a: ActivityRow;
       {n > 1 && oldest ? `${when(oldest)} – ${when(a)}` : when(a)}
     </time>
   );
-  const body = (
+  const links = <>
+    {a.ref_type === "launch" && a.ref_id && <Link className="feed-action" to={`/launches/${a.ref_id}`}>Open launch</Link>}
+    {a.ref_type === "automation" && (a.payload as any)?.launch_id && <Link className="feed-action" to={`/launches/${(a.payload as any).launch_id}?tab=tx`}>View historical transactions</Link>}
+  </>;
+  const body = (linked = true) => (
     <div className="grow">
       <div className="row" style={{ gap: 8 }}>
         <span style={{ fontWeight: 550 }}>{m.label}</span>
@@ -131,8 +135,7 @@ export function FeedItem({ a, items, timeStyle = "relative" }: { a: ActivityRow;
       {(d || a.ref_type === "launch" || a.ref_type === "automation") && (
         <div className="feed-sub">
           {d && <span>{d}</span>}
-          {a.ref_type === "launch" && a.ref_id && <Link to={`/launches/${a.ref_id}`}>Open launch</Link>}
-          {a.ref_type === "automation" && (a.payload as any)?.launch_id && <Link to={`/launches/${(a.payload as any).launch_id}?tab=tx`}>View historical transactions</Link>}
+          {linked && links}
         </div>
       )}
     </div>
@@ -142,14 +145,15 @@ export function FeedItem({ a, items, timeStyle = "relative" }: { a: ActivityRow;
     return (
       <details className="feed-more">
         <summary className="feed-item" style={{ alignItems: "flex-start" }}>
-          {icon}{body}
+          {icon}{body(false)}
           <span className="row nowrap" style={{ gap: 6 }}>{time}<span className="feed-toggle" aria-hidden="true">›</span></span>
         </summary>
         <div className="feed-nested">
+          <div>{links}</div>
           {items.map((x) => <div key={x.id}><span>{m.label}</span><span className="mono">{parseDate(x.created_at).toLocaleString()}</span></div>)}
         </div>
       </details>
     );
   }
-  return <div className="feed-item">{icon}{body}{time}</div>;
+  return <div className="feed-item">{icon}{body()}{time}</div>;
 }

@@ -35,7 +35,7 @@ async def test_usdc_only_wallet_withdraws_with_another_wallet_paying_the_fee(cli
     pf, r = await go(client, h, body, "wd-usdc-1", secret)
     p = pf["preflight"]
     assert p["warnings"] == [], p["warnings"]
-    assert p["coin"] == "USDC" and p["from"] == [{"address": a["address"], "amount": 7.5}]
+    assert p["coin"] == "USDC" and p["from"] == [{"address": a["address"], "amount": 7.5, "amount_raw": "7500000", "decimals": 6}]
     assert abs(p["network_fees_max"] - (0.00001 + 0.00203928)) < 1e-12  # the outside address has no USDC account
     payer = p["fees_paid_by"][0]["payer"]["address"]
     assert payer != a["address"]  # the account's main wallet pays
@@ -94,7 +94,8 @@ async def test_usdc_withdraw_on_an_evm_chain_sends_erc20_and_flags_missing_gas(c
         secret = await enable_2fa(client, h)
         body = {"wallet_ids": [a["id"]], "destination": "0x" + "33" * 20, "asset": "stable"}
         pf = (await client.post("/wallets/withdraw", json=body, headers=h)).json()
-        assert any("for gas to send USDC" in w for w in pf["preflight"]["warnings"])  # no ETH yet
+        assert any("needs gas" in w for w in pf["preflight"]["warnings"])  # no ETH or funded fee wallet yet
+        assert not pf['preflight']['fee_funding']
         node.balances[a["address"].lower()] = 10**16
         pf, r = await go(client, h, body, "wd-usdc-evm", secret)
         assert pf["preflight"]["warnings"] == [] and pf["preflight"]["coin"] == "USDC"

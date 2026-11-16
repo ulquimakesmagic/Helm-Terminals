@@ -25,6 +25,7 @@ class FeePlan:
     referral_share_bps: int = 0
     referrer_user_id: str | None = None
     referrer_address: str | None = None
+    exemption_reason: str | None = None
 
     @property
     def active(self) -> bool:
@@ -44,7 +45,9 @@ async def fee_plan_for(db: AsyncSession, user: User, network: str = "solana") ->
 
     s = get_settings()
     await pc.refresh(db)
-    plan = FeePlan(bps=pc.bps("trade_fee_bps_solana"), platform_wallet=pc.treasury_for(network))
+    from .trade_policy import policy_for
+    policy = await policy_for(db, user)
+    plan = FeePlan(bps=policy['bps'], platform_wallet=pc.treasury_for(network), exemption_reason=policy['reason'])
     if not plan.active:
         return plan
     link = (await db.execute(select(ReferralLink).where(ReferralLink.referred_user_id == user.id))).scalar_one_or_none()
@@ -60,7 +63,7 @@ async def fee_plan_for(db: AsyncSession, user: User, network: str = "solana") ->
 def describe(plan: FeePlan, side: str, amount_sol: float | None = None) -> str:
     """Plain-language fee line for the preview."""
     if not plan.active:
-        return "none"
+        return f"None · {plan.exemption_reason}" if plan.exemption_reason else "none"
     pct = f"{plan.bps / 100:.2f}%"
     if side == "buy" and amount_sol is not None:
         per = f"{amount_sol * plan.bps / 10_000:.6f}".rstrip("0").rstrip(".")

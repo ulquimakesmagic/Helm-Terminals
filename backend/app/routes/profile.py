@@ -257,6 +257,9 @@ async def update_profile(body: ProfileUpdate, user: User = Depends(web_user), db
         await log_activity(db, user.id, "profile.updated", payload={"fields": changed,
                                                                     **({"public": p.is_public} if "is_public" in changed else {})})
     try:
+        if body.handle is not None and p.handle:
+            from ..services.referral_codes import ensure_username_code
+            await ensure_username_code(db, user, p.handle)
         await db.commit()
     except IntegrityError:
         await db.rollback()

@@ -13,6 +13,7 @@ import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
 import "./terminal-redesign.css";
 import "./terminal-compact.css";
+import "./trade-terminal.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

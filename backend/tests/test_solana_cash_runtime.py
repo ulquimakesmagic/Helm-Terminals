@@ -57,3 +57,40 @@ async def test_atomic_usdc_sweep_executes_in_solana_runtime(sponsored):
     sponsor_account = vm.get_account(find_ata(sponsor.pubkey(), mint))
     assert int.from_bytes(sponsor_account.data[64:72], "little") == plan.reimbursement
     assert vm.get_balance(destination.pubkey()) == 1_000_000 + plan.native
+
+
+@pytest.mark.parametrize('token', [False, True])
+async def test_owned_fee_wallet_executes_without_source_gas(token):
+    """The owner signs the asset movement; another wallet actually pays fees/rent."""
+    from app.chains.solana import build_unsigned, sol_transfer_ix
+    from app.services.sol_token_send import build_token_send
+    vm = LiteSVM()
+    source, destination, payer = Keypair(), Keypair(), Keypair()
+    vm.airdrop(payer.pubkey(), 100_000_000)
+    vm.airdrop(destination.pubkey(), 1_000_000)
+    amount = 10_000_000
+    if token:
+        mint = Keypair().pubkey()
+        mint_data = bytes(36) + amount.to_bytes(8, 'little') + bytes([6, 1]) + bytes(36)
+        vm.set_account(mint, Account(vm.minimum_balance_for_rent_exemption(82), mint_data, TOKEN_PROGRAM))
+        data = bytes(mint) + bytes(source.pubkey()) + amount.to_bytes(8, 'little') + bytes(36) + bytes([1]) + bytes(56)
+        assert len(data) == 165
+        vm.set_account(find_ata(source.pubkey(), mint), Account(vm.minimum_balance_for_rent_exemption(165), data, TOKEN_PROGRAM))
+        raw = build_token_send(str(source.pubkey()), str(payer.pubkey()), [(str(destination.pubkey()), amount)],
+                               str(mint), 6, TOKEN_PROGRAM, str(vm.latest_blockhash()))
+    else:
+        vm.airdrop(source.pubkey(), amount)
+        raw = build_unsigned(payer.pubkey(), [sol_transfer_ix(source.pubkey(), destination.pubkey(), amount)], str(vm.latest_blockhash()))
+    message = VersionedTransaction.from_bytes(raw).message
+    assert message.header.num_required_signatures == 2 and message.account_keys[0] == payer.pubkey()
+    signed = VersionedTransaction(message, [source, payer])
+    result = vm.send_transaction(signed)
+    assert not isinstance(result, FailedTransactionMetadata), str(result)
+    assert vm.get_balance(source.pubkey()) in (None, 0)
+    if token:
+        received = vm.get_account(find_ata(destination.pubkey(), mint))
+        assert int.from_bytes(received.data[64:72], 'little') == amount
+        assert vm.get_balance(payer.pubkey()) == 100_000_000 - 10_000 - vm.minimum_balance_for_rent_exemption(165)
+    else:
+        assert vm.get_balance(destination.pubkey()) == 1_000_000 + amount
+        assert vm.get_balance(payer.pubkey()) == 100_000_000 - 10_000

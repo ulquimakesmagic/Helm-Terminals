@@ -4,12 +4,12 @@ Disperse sends from one wallet to several of yours, split evenly or by explicit 
 share of each selected wallet's balance into one of yours. Both work for the native coin, the chain's dollar
 stablecoin (USDC, or USDG on Robinhood Chain) and any token, including your launch tokens.
 
-Only wallets on your own account can be destinations, and amounts are exactly what the preview shows: there is no
-randomised splitting. When the token is one of your launches, every destination wallet is attached to that launch
+Only wallets on your own account can be destinations. Random allocations are frozen by a request seed and exact
+base-unit amounts in the preview. When the token is one of your launches, every destination wallet is attached to that launch
 so its transparency panel keeps counting the supply you control.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 from decimal import Decimal
 
 from eth_abi import encode as abi_encode
@@ -30,6 +30,7 @@ from ..services.chain_balances import chain_name, native_coin, stable_for
 from ..services.evm_exec import NATIVE_RESERVE_WEI, EvmCall
 from ..services.executor import Executor, SubmitResult, _finish, _record, send_evm_tracked, submit_tracked
 from ..services.preflight import build_preflight
+from ..services.sol_transfer_support import describe as describe_fee_payer
 
 router = APIRouter()
 
@@ -45,15 +46,23 @@ class DisperseBody(SpendConfirm):
     from_wallet_id: str
     to_wallet_ids: list[str] = Field(min_length=1, max_length=50)
     asset: str = "native"  # "native", "stable", or a token mint/contract address
-    split: Literal["even", "custom"] = "even"
+    split: Literal["even", "custom", "weighted", "random"] = "even"
+    fee_wallet_id: str | None = Field(default=None, max_length=32)
+    weights: list[Annotated[int, Field(strict=True, ge=1, le=10000)]] | None = Field(default=None, max_length=50)
+    split_seed: str | None = Field(default=None, min_length=16, max_length=64)
     total: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False, max_digits=78, decimal_places=36)
     percent: Decimal | None = Field(default=None, gt=0, le=100, allow_inf_nan=False, decimal_places=2)
     amounts: list[Decimal] | None = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def check(self):
-        if self.split == "even" and (self.total is None) == (self.percent is None):
-            raise ValueError("an even split needs exactly one of total or percent")
+        if self.split != "custom" and (self.total is None) == (self.percent is None):
+            raise ValueError("a split needs exactly one of total or percent")
+        if self.split == 'weighted' and (not self.weights or len(self.weights) != len(self.to_wallet_ids)
+                or any(type(weight) is not int or not 1 <= weight <= 10000 for weight in self.weights)):
+            raise ValueError('Provide one integer weight (1–10000) per recipient')
+        if self.split == 'random' and not self.split_seed:
+            raise ValueError('A random split needs a seed so review and confirmation use the same allocation')
         if self.split == "custom":
             if not self.amounts or len(self.amounts) != len(self.to_wallet_ids):
                 raise ValueError("a custom split needs one amount per destination wallet")
@@ -67,6 +76,7 @@ class ConsolidateBody(SpendConfirm):
     to_wallet_id: str
     asset: str = "native"
     percent: float = Field(default=100, gt=0, le=100)
+    fee_wallet_id: str | None = Field(default=None, max_length=32)
 
 
 # --- asset helpers --------------------------------------------------------------------------------
@@ -152,8 +162,10 @@ def _erc20_transfer(to: str, amount: int) -> bytes:
 
 
 async def _send_solana(ex: Executor, job, src: Wallet, kind: str, a: dict,
-                       legs: list[tuple[Wallet, int]]) -> SubmitResult:
+                       legs: list[tuple[Wallet, int]], payer: Wallet | None = None) -> SubmitResult:
     owner = Pubkey.from_string(src.address)
+    payer = payer or src
+    paying = Pubkey.from_string(payer.address)
     ixs = []
     for dst, raw in legs:
         dest = Pubkey.from_string(dst.address)
@@ -161,10 +173,11 @@ async def _send_solana(ex: Executor, job, src: Wallet, kind: str, a: dict,
             ixs.append(sol_transfer_ix(owner, dest, raw))
         else:
             mint, program = Pubkey.from_string(a["token"]), a["program"]
-            ixs += [create_ata_idempotent_ix(owner, dest, mint, program),
+            ixs += [create_ata_idempotent_ix(paying, dest, mint, program),
                     token_transfer_checked_ix(owner, dest, mint, raw, a["decimals"], program)]
-    tx = build_unsigned(owner, ixs, await ex.rpc.get_latest_blockhash())
-    return await submit_tracked(ex, job, src, kind, tx, {src.address: src.signer_ref or ""})
+    tx = build_unsigned(paying, ixs, await ex.rpc.get_latest_blockhash())
+    from ..services.sol_token_send import refs_for
+    return await submit_tracked(ex, job, src, kind, tx, refs_for(src, payer))
 
 
 async def _send_evm(ex: Executor, job, src: Wallet, kind: str, a: dict, dst: Wallet, raw: int) -> SubmitResult:
@@ -197,34 +210,47 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
     a = await _asset(db, user, ex, net, body.asset)
     coin = native_coin(net)
     n = len(targets)
+    payer, fee_warnings, funding = src, [], []
     try:
         bal = await _balance(ex, net, a, src.address)
         native_bal = await _native_raw(ex, net, src.address)
         if net == "solana":
-            per_tx = SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX
-            txs = -(-n // per_tx)
-            gas = txs * SOL_FEE + (0 if a["kind"] == "native" else n * ATA_RENT)
+            from ..services.sol_transfer_support import plan as sol_fee_plan
+            principal = (sum(_to_raw(x, a['decimals']) for x in body.amounts or []) if body.split == 'custom'
+                         else _to_raw(body.total, a['decimals']) if body.total is not None else 0) if a['kind'] == 'native' else 0
+            payer, gas, fee_warnings = await sol_fee_plan(db, ex, user, src, a, [t.address for t in targets],
+                fee_wallet_id=body.fee_wallet_id, principal=principal)
         else:
             sender = ex.evm(net)
-            gas = n * await sender.max_gas_cost(21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
-            if a["kind"] == "native":
-                gas += NATIVE_RESERVE_WEI.get(net, 0)
+            from ..services.gas_funding import allowance
+            gas = n * await allowance(ex, net, 21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
 
-    available = max(bal - gas, 0) if a["kind"] == "native" else bal
+    separate = payer.id != src.id if net == 'solana' else bool(body.fee_wallet_id and body.fee_wallet_id != src.id)
+    available = max(bal - gas, 0) if a["kind"] == "native" and not separate else bal
     if body.split == "custom":
         raws = [_to_raw(x, a["decimals"]) for x in body.amounts or []]
     else:
         total = _to_raw(body.total, a["decimals"]) if body.total is not None \
             else available * int(round((body.percent or 0) * 100)) // 10_000
-        raws = [total // n] * n
-        raws[0] += total - sum(raws)  # any indivisible remainder goes to the first wallet
+        if body.split in ('weighted', 'random'):
+            from ..services.split_amounts import allocate, random_weights
+            weights = body.weights if body.split == 'weighted' else random_weights(body.split_seed, src.id, body.to_wallet_ids)
+            raws = allocate(total, weights)
+        else:
+            raws = [total // n] * n
+            raws[0] += total - sum(raws)  # any indivisible remainder goes to the first wallet
     total = sum(raws)
     d = a["decimals"]
-    warnings = []
+    if net != 'solana':
+        from ..services.gas_funding import plan as gas_plan
+        funding, fee_warnings = await gas_plan(db, ex, user, [(src, gas, total if a['kind'] == 'native' else 0)], body.fee_wallet_id)
+        if funding and a['kind'] == 'native':
+            available = bal
+    warnings = list(fee_warnings)
     if any(r <= 0 for r in raws):
         warnings.append(f"The split is too small: at least one wallet would get 0 {a['symbol']}.")
     if total > available:
@@ -237,7 +263,7 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 warnings.append(f"{_label(t)} would hold less than 0.00089 SOL, the minimum a Solana wallet "
                                 "needs, so that transfer would fail. Send more to each wallet.")
                 break
-    if a["kind"] == "token" and native_bal < gas:
+    if a["kind"] == "token" and native_bal < gas and not (net == 'solana' and payer.id != src.id) and not funding and not fee_warnings:
         warnings.append(f"{_label(src)} needs about {_human(gas, 9 if net == 'solana' else 18):.6f} {coin} for "
                         f"network fees{' and new token accounts' if net == 'solana' else ''}.")
     launch = a.get("launch")
@@ -257,8 +283,11 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
         "network": net, "chain": chain_name(net), "asset": a["symbol"], "token": a["token"],
         "from": {"label": src.label or "Wallet", "address": src.address},
         "to": [{"label": t.label or "Wallet", "address": t.address, "amount": _human(r, d), "amount_raw": str(r)} for t, r in zip(targets, raws)],
-        "total": _human(total, d), "total_raw": str(total), "decimals": d, "split": body.split if body.split == "custom" else "even",
-        "network_fees_max": _human(gas, 9 if net == "solana" else 18), "network_fee_coin": coin,
+        "total": _human(total, d), "total_raw": str(total), "decimals": d, "split": body.split,
+        "split_seed": body.split_seed if body.split == 'random' else None,
+        "fee_funding": funding,
+        "fee_payers": [describe_fee_payer(src, payer)] if net == 'solana' else [],
+        "network_fees_max": _human(gas + sum(int(f['funding_fee_max_raw']) for f in funding), 9 if net == "solana" else 18), "network_fee_coin": coin,
         "transactions": (-(-n // (SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX)))
         if net == "solana" else n,
         "own_wallets_only": True,
@@ -280,6 +309,11 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
             j.status = "submitted"
             await session.commit()
             results = []
+            if funding:
+                from ..services.gas_funding import execute
+                results = await execute(session, ex, j, funding)
+                if any(r.status != 'confirmed' for r in results):
+                    _finish(j, results); await session.commit(); return
             if net == "solana":
                 size = SOL_NATIVE_PER_TX if a["kind"] == "native" else SOL_TOKEN_PER_TX
                 chunks = [legs[i:i + size] for i in range(0, len(legs), size)]
@@ -287,7 +321,7 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 chunks = [[leg] for leg in legs]
             for chunk in chunks:
                 if net == "solana":
-                    res = await _send_solana(ex, j, src, "disperse", a, chunk)
+                    res = await _send_solana(ex, j, src, "disperse", a, chunk, payer)
                 else:
                     res = await _send_evm(ex, j, src, "disperse", a, chunk[0][0], chunk[0][1])
                 await _record(session, j, src, "disperse", res, None)
@@ -307,6 +341,9 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 results.append(res)
                 if res.status != "confirmed":
                     break  # don't keep spending from a wallet whose last send went wrong
+            if len(results) == len(funding) + len(chunks):
+                from ..services.gas_funding import assets_dispatched
+                assets_dispatched(j)
             _finish(j, results)
             await session.commit()
 
@@ -326,6 +363,8 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
         raise HTTPException(400, "each source wallet can only be listed once")
     if body.to_wallet_id in body.from_wallet_ids:
         raise HTTPException(400, "the destination wallet can't also be a source")
+    if body.asset == 'native' and len(body.from_wallet_ids) > 1 and body.fee_wallet_id in body.from_wallet_ids:
+        raise HTTPException(400, 'Choose a fee wallet outside the source wallets when consolidating native coin')
     dest = await owned_wallet(db, user, body.to_wallet_id)
     from .wallets import _core_only
 
@@ -341,19 +380,34 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
     plan: list[tuple[Wallet, int]] = []
     skipped: list[str] = []
     warnings: list[str] = []
+    payers, gas_by_source, funding = {}, {}, []
+    committed, payer_balances = {}, {}
     try:
         if net == "solana":
             gas_each = SOL_FEE + (ATA_RENT if a["kind"] == "token" else 0)
         else:
             sender = ex.evm(net)
-            gas_each = await sender.max_gas_cost(21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
+            from ..services.gas_funding import allowance
+            gas_each = await allowance(ex, net, 21_000 if a["kind"] == "native" else ERC20_TRANSFER_GAS)
         for s in sources:
             bal = await _balance(ex, net, a, s.address)
+            if bal <= 0:
+                skipped.append(s.address)
+                continue
+            if net == 'solana':
+                from ..services.sol_transfer_support import plan as sol_fee_plan
+                principal = bal * int(round(body.percent * 100)) // 10_000 if a['kind'] == 'native' and body.percent < 100 else 0
+                payer, gas_each, issues = await sol_fee_plan(db, ex, user, s, a, [dest.address],
+                    fee_wallet_id=body.fee_wallet_id, principal=principal, committed=committed,
+                    cache=payer_balances, exclude_ids={w.id for w in sources}, prefer=[dest])
+                payers[s.id] = payer
+                warnings += issues
+            gas_by_source[s.id] = gas_each
             if a["kind"] == "native":
                 if net == "solana":
-                    spendable = max(bal - SOL_FEE, 0)
+                    spendable = max(bal - gas_each, 0) if payers[s.id].id == s.id else bal
                 else:
-                    spendable = await sender.spendable(s.address)
+                    spendable = bal if body.fee_wallet_id and body.fee_wallet_id != s.id else await sender.spendable(s.address)
                 raw = spendable if body.percent >= 100 else min(bal * int(round(body.percent * 100)) // 10_000, spendable)
             else:
                 raw = bal * int(round(body.percent * 100)) // 10_000
@@ -362,8 +416,6 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
 
                     if (msg := await lock_warning(db, a["launch"], s, bal, raw, d)):
                         warnings.append(msg)
-                if raw > 0 and await _native_raw(ex, net, s.address) < gas_each:
-                    warnings.append(f"{_label(s)} needs about {_human(gas_each, nd):.6f} {coin} for the network fee.")
             if raw <= 0:
                 skipped.append(s.address)
             else:
@@ -374,6 +426,10 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
         raise HTTPException(502, f"Couldn't read balances on {chain_name(net)}: {type(e).__name__}")
     if not plan:
         warnings.append(f"None of the selected wallets has {a['symbol']} to move.")
+    if net != 'solana' and plan:
+        from ..services.gas_funding import plan as gas_plan
+        funding, issues = await gas_plan(db, ex, user, [(s, gas_by_source[s.id], raw if a['kind'] == 'native' else 0) for s, raw in plan], body.fee_wallet_id)
+        warnings += issues
     launch = a.get("launch")
     pf = build_preflight("consolidate", {
         "network": net, "chain": chain_name(net), "asset": a["symbol"], "token": a["token"],
@@ -381,7 +437,9 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
         "from": [{"label": s.label or "Wallet", "address": s.address, "amount": _human(r, d), "amount_raw": str(r)} for s, r in plan],
         "skipped_empty": skipped, "percent": body.percent, "total": _human(sum(r for _, r in plan), d),
         "total_raw": str(sum(r for _, r in plan)), "decimals": d,
-        "network_fees_max": _human(gas_each * len(plan), nd), "network_fee_coin": coin,
+        "fee_funding": funding,
+        "fee_payers": [describe_fee_payer(s, payers[s.id]) for s, _ in plan] if net == 'solana' else [],
+        "network_fees_max": _human(sum(gas_by_source[s.id] for s, _ in plan) + sum(int(f['funding_fee_max_raw']) for f in funding), nd), "network_fee_coin": coin,
         "own_wallets_only": True,
         "transparency": (f"The destination wallet is attached to {launch.name} (${launch.symbol}) so its "
                          "transparency panel counts this supply as yours") if launch else None,
@@ -400,14 +458,21 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
             j.status = "submitted"
             await session.commit()
             results = []
+            if funding:
+                from ..services.gas_funding import execute
+                results = await execute(session, ex, j, funding)
+                if any(r.status != 'confirmed' for r in results):
+                    _finish(j, results); await session.commit(); return
             for s, raw in plan:  # each source signs its own transfer; one failing doesn't stop the others
                 if net == "solana":
-                    res = await _send_solana(ex, j, s, "consolidate", a, [(dest, raw)])
+                    res = await _send_solana(ex, j, s, "consolidate", a, [(dest, raw)], payers[s.id])
                 else:
                     res = await _send_evm(ex, j, s, "consolidate", a, dest, raw)
                 await _record(session, j, s, "consolidate", res, None)
                 await session.commit()
                 results.append(res)
+            from ..services.gas_funding import assets_dispatched
+            assets_dispatched(j)
             _finish(j, results)
             await session.commit()
 

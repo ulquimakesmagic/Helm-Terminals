@@ -24,6 +24,15 @@ async def confirm(client, h, path, body, **extra):
     return data, r
 
 
+async def username_code(client, headers):
+    user=(await client.get('/auth/me',headers=headers)).json()
+    name=user.get('handle') or 'ref_'+user['id'][:12]
+    assert (await client.patch('/profile',headers=headers,json={'handle':name})).status_code==200
+    response=await client.post('/referrals',headers=headers,json={})
+    assert response.status_code==201,response.text
+    return response.json()['code']
+
+
 async def make_wallets(client, h, n=1):
     r = await client.post("/wallets", json={"count": n, "label_prefix": "W"}, headers=h)
     assert r.status_code == 201, r.text
@@ -213,7 +222,7 @@ async def test_sell_fee_is_priced_by_simulation_and_taken_in_the_same_transactio
 
 async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
     ha = await signup(client, "kol@example.com")
-    code = (await client.post("/referrals", json={}, headers=ha)).json()["code"]
+    code = await username_code(client, ha)
     payout = str(_Kp().pubkey())
     secret = await enable_2fa(client, ha)
     assert (await client.put("/referrals/payout", json={"address": payout, "password": TEST_PW,
@@ -240,7 +249,7 @@ async def test_buy_fee_splits_with_referrer_on_chain(client, fake_rpc):
 
 async def test_referral_share_is_owed_when_referrer_has_no_payout_address(client, fake_rpc):
     ha = await signup(client, "kol2@example.com")
-    code = (await client.post("/referrals", json={}, headers=ha)).json()["code"]
+    code = await username_code(client, ha)
     await client.post("/auth/register", json={"email": "fan2@example.com", "password": "correct-horse-battery",
                                               "referral_code": code})
     tok = (await client.post("/auth/login", json={"email": "fan2@example.com", "password": "correct-horse-battery"})).json()["token"]
@@ -271,20 +280,20 @@ async def test_bad_referral_code_is_rejected(client):
     assert r.status_code == 400
 
 
-async def test_referral_codes_are_capped_per_user(client, monkeypatch):
+async def test_username_referral_creation_is_idempotent(client, monkeypatch):
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "referral_max_codes_per_user", 1)
     h = await signup(client, "referral-cap@example.com", main=False)
-    assert (await client.post("/referrals", json={}, headers=h)).status_code == 201
-    assert (await client.post("/referrals", json={}, headers=h)).status_code == 429
+    first=await username_code(client,h)
+    assert (await client.post('/referrals',json={},headers=h)).json()['code']==first
 
 
 async def test_referral_payout_cannot_target_a_known_referred_wallet(client):
     from app.models import AdminAudit, User, Wallet
 
     referrer = await signup(client, "referrer@example.com", main=False)
-    code = (await client.post("/referrals", json={}, headers=referrer)).json()["code"]
+    code = await username_code(client, referrer)
     created = await client.post("/auth/register", json={"email": "referred@example.com",
                                                          "password": TEST_PW,
                                                          "referral_code": code})

@@ -1,0 +1,108 @@
+/* Launch terminal: bounded chart, execution and records work areas. */
+.feed-action { display:inline-flex;align-items:center;min-height:28px;padding:4px 2px; }
+.workspace-terminal,.workspace-draft { display:flex;flex-direction:column;gap:12px;min-width:0; }
+.workspace-terminal > .workspace-back { display:none; }
+.workspace-terminal .workspace-head { padding-block:0;gap:12px;min-height:54px; }
+.workspace-terminal .workspace-head h1 { font-size:20px;line-height:1.2;letter-spacing:-.02em; }
+.workspace-terminal .workspace-head .actions { gap:6px; }
+.workspace-terminal .workspace-head .actions .btn { min-height:36px;padding:7px 10px;font-size:12px; }
+.workspace-terminal .workspace-head .actions .hide-sm { font-size:10px; }
+.workspace-terminal .term { gap:8px; }
+.workspace-terminal .term-chart { padding:10px;gap:8px;border-radius:9px; }
+.workspace-terminal .chart-head { gap:6px; }
+.workspace-terminal .chart-head .res-seg button { min-height:34px;padding:5px 9px;font-size:11px; }
+.workspace-terminal .gmgn-frame-wrap { min-height:320px; }
+.workspace-terminal .gmgn-frame { height:clamp(320px,48dvh,520px); }
+.workspace-terminal .chart-support { padding:0;gap:6px; }
+.workspace-terminal .chart-support p { font-size:10px;flex-basis:220px; }
+.workspace-terminal .chart-support .btn { font-size:10px;min-height:30px;padding:5px 8px; }
+.workspace-terminal .term-chart > .market-note { font-size:10px;line-height:1.5; }
+.workspace-terminal .term-panel > summary { cursor:pointer;min-height:40px; }
+.workspace-terminal .term-panel[open] > summary { border-bottom:1px solid var(--line); }
+.workspace-terminal .term-panel:not([open]) > summary { border-bottom:0; }
+.workspace-terminal .market-provenance { font-size:11px;color:var(--muted); }
+.workspace-terminal .market-provenance > summary { cursor:pointer;min-height:28px;padding:5px 2px; }
+.workspace-terminal .market-provenance p { padding:6px 0;max-width:1000px; }
+.workspace-terminal .terminal-ticket { border-radius:9px; }
+.workspace-terminal .terminal-ticket .card-head { padding:10px 12px; }
+.workspace-terminal .terminal-ticket .card-head h2 { font-size:14px; }
+.workspace-terminal .terminal-ticket .card-head p { font-size:10px; }
+.workspace-terminal .terminal-ticket .card-body { padding:12px; }
+.workspace-terminal .terminal-ticket .stack { gap:10px; }
+.workspace-terminal .terminal-ticket .field > span:first-child { font-size:11px; }
+.workspace-terminal .terminal-ticket .field em { font-size:10px; }
+.workspace-terminal .terminal-ticket .input-wrap input { min-height:42px;font-size:18px; }
+.workspace-terminal .terminal-ticket .chips { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px; }
+.workspace-terminal .terminal-ticket .chip { padding:7px 4px;min-height:36px;font-size:12px;justify-content:center; }
+.workspace-terminal .terminal-ticket .kv { gap:6px 12px;font-size:11px; }
+.workspace-terminal .terminal-ticket > .card-body > .stack > p { font-size:10px; }
+.workspace-terminal .terminal-ticket .btn.lg { min-height:44px;font-size:13px;padding:10px; }
+.workspace-terminal .ticket-wallet-list { max-height:156px; }
+.workspace-terminal .ticket-wallet { min-height:42px;padding:7px 10px; }
+.workspace-terminal .ticket-wallets summary { padding:9px 10px; }
+.workspace-terminal .your-position { display:flex;flex-direction:column;gap:6px; }
+.workspace-terminal .your-position > h2 { font-size:10px;margin:0; }
+.workspace-terminal .metrics[aria-label="Launch figures"] { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.workspace-terminal .metrics[aria-label="Launch figures"] .metric { padding:10px 12px; }
+.workspace-terminal .metrics[aria-label="Launch figures"] .v { font-size:18px; }
+.workspace-terminal .metrics[aria-label="Launch figures"] .metric small { font-size:10px; }
+.workspace-terminal .terminal-records { gap:8px; }
+.workspace-terminal .ws-tablist { overflow-y:hidden;padding-bottom:2px;min-height:43px;align-items:stretch; }
+.workspace-terminal .ws-tablist button { min-height:40px;padding:8px 11px;font-size:12px; }
+.workspace-terminal .terminal-records .table-wrap { max-height:340px;overflow:auto;scrollbar-width:thin; }
+.workspace-terminal .terminal-records thead th { position:sticky;top:0;z-index:2;background:var(--panel); }
+.workspace-terminal .terminal-records tfoot td { position:sticky;bottom:0;background:var(--panel); }
+.workspace-terminal .terminal-records .rtable td { padding-block:8px;font-size:12px; }
+.workspace-terminal .workspace-wallet-actions .btn { min-height:34px;padding:6px 9px;font-size:11px; }
+.workspace-terminal .workspace-wallet-actions select { min-height:36px;font-size:12px;max-width:230px; }
+.split-choices { display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px; }
+.split-choices button { border:1px solid var(--line-2);border-radius:6px;background:var(--bg-2);color:var(--text-2);padding:9px;min-height:40px;cursor:pointer;font-size:12px; }
+.split-choices button.on { color:var(--accent);background:var(--accent-soft);border-color:var(--accent-line); }
+.split-recipient-list { max-height:260px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:3px; }
+.fee-funding-leg { display:flex;flex-direction:column;align-items:flex-end;gap:5px;max-width:100%;padding:8px 0;border-bottom:1px solid var(--line); }
+.fee-funding-leg small { color:var(--muted);font-size:11px;line-height:1.6;max-width:360px; }
+.split-review-amounts { max-height:220px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:6px; }
+@media (min-width:901px) {
+  .workspace-terminal .term-head { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;padding:5px 8px;min-height:58px;gap:8px; }
+  .workspace-terminal .th-pool { display:none; }
+  .workspace-terminal .th-stats { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0; }
+  .workspace-terminal .th-stat { padding:5px 8px;border-bottom:0;margin:0;min-height:44px; }
+  .workspace-terminal .th-stat .k { font-size:9px;letter-spacing:.025em; }
+  .workspace-terminal .th-stat .v { font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal; }
+  .workspace-terminal .th-src { border:0;padding:0;flex-direction:column;gap:0;max-width:130px; }
+  .workspace-terminal .th-src .fresh { font-size:9px;white-space:normal; }
+  .workspace-terminal .th-src .btn { font-size:10px;min-height:25px;padding:3px 5px; }
+  .workspace-terminal .term-main { grid-template-columns:minmax(0,1fr) 304px;gap:10px; }
+  .workspace-terminal .term-side { position:static; }
+  .workspace-terminal .terminal-ticket .card-body { max-height:calc(100dvh - 240px);overflow:auto;scrollbar-width:thin; }
+}
+@media (min-width:1400px) {
+  .workspace-terminal .term-main { grid-template-columns:minmax(0,1fr) 320px; }
+  .workspace-terminal .th-stat .v { font-size:15px; }
+}
+@media (max-width:900px) {
+  .workspace-terminal .terminal-mobile-nav { position:sticky;top:52px;z-index:5; }
+  .workspace-terminal .terminal-view-chart > .market-provenance { order:4; }
+  .workspace-terminal .terminal-view-trade > .market-provenance { display:none; }
+  .workspace-terminal .term-side { position:static; }
+  .workspace-terminal .terminal-ticket .chips .chip,.split-choices button { min-height:44px; }
+  .workspace-terminal .terminal-records .table-wrap { max-height:55dvh; }
+  .workspace-terminal .workspace-head { flex-wrap:wrap; }
+  .workspace-terminal .gmgn-frame { height:50dvh;min-height:320px; }
+}
+@media (max-width:600px) {
+  .workspace-terminal .workspace-head h1 { font-size:19px; }
+  .workspace-terminal .metrics[aria-label="Launch figures"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .workspace-terminal .workspace-wallet-actions { width:100%; }
+  .workspace-terminal .workspace-wallet-actions select { max-width:none; }
+  .fee-funding-leg { align-items:flex-start; }
+}
+.workspace-terminal .ticket-submit { width:100%;display:flex;flex-direction:column;gap:7px; }
+.workspace-terminal .ticket-submit > p { font-size:10px;line-height:1.5;color:var(--muted); }
+.workspace-terminal .terminal-ticket { display:flex;flex-direction:column; }
+.workspace-terminal .terminal-ticket .card-head,.workspace-terminal .terminal-ticket .card-foot { flex:none; }
+.workspace-terminal .terminal-ticket .card-foot { padding:10px 12px; }
+.workspace-terminal .terminal-ticket .card-body { min-height:0;flex:1;overflow:auto; }
+@media(min-width:901px) { .workspace-terminal .terminal-ticket { max-height:calc(100dvh - 300px);min-height:330px; } .workspace-terminal .terminal-ticket .card-body { max-height:none; } }
+@media(max-width:900px) { .workspace-mobile-trade .workspace-head .actions { display:none; } .workspace-mobile-trade .terminal-ticket { max-height:calc(100dvh - 220px);min-height:260px; } }
+@media(max-width:600px) { .workspace-mobile-trade .terminal-ticket { max-height:max(260px,calc(100dvh - 330px)); } }

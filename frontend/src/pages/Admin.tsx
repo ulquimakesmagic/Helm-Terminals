@@ -342,7 +342,7 @@ function Fees({ me }: { me: AdminMe }) {
   if (!data) return <Loading />;
   return (
     <div className="stack">
-      <Callout tone="warn" icon="alert">Launches are free for everyone. Helm charges 2.5% on trades, including admin accounts. Helm receives 2.5% of creator rewards from new Helm launches. Historical immutable reward splits retain their original terms.</Callout>
+      <Callout tone="warn" icon="alert">Launches are free for everyone. Helm charges 2.5% on standard trades. Admin accounts and users with an approved trading-fee exemption pay no Helm trading fee. Helm receives 2.5% of creator rewards from new Helm launches. Historical immutable reward splits retain their original terms.</Callout>
       <Card title="Rates" icon="coins" flush>
         <TableWrap><table className="rtable">
           <caption className="sr-only">Fee settings</caption>
@@ -465,16 +465,16 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
   const toast = useToast();
   const [u, setU] = useState<any>(null);
   const [err, setErr] = useState("");
-  const [action, setAction] = useState<"suspend" | "restore" | "viewer" | "revoke" | "free_launches" | "paid_launches" | null>(null);
+  const [action, setAction] = useState<"suspend" | "restore" | "viewer" | "revoke" | "free_trades" | "paid_trades" | null>(null);
   const load = useCallback(() => { api(`/admin/users/${id}`).then(setU).catch((e) => setErr(errMsg(e))); }, [id]);
   useEffect(load, [load]);
   if (action) {
-    const feeAction = action === "free_launches" || action === "paid_launches";
-    const path = feeAction ? `/admin/users/${id}/launch-fee-exemption` : action === "viewer" ? `/admin/roles/${id}/viewer` : action === "revoke" ? `/admin/roles/${id}/revoke` : `/admin/users/${id}/${action}`;
-    const titles = { suspend: "Suspend account", restore: "Restore account", viewer: "Grant read-only admin (viewer)", revoke: "Remove admin role", free_launches: "Grant free launches", paid_launches: "Remove launch-fee exemption" };
+    const feeAction = action === "free_trades" || action === "paid_trades";
+    const path = feeAction ? `/admin/users/${id}/trade-fee-exemption` : action === "viewer" ? `/admin/roles/${id}/viewer` : action === "revoke" ? `/admin/roles/${id}/revoke` : `/admin/users/${id}/${action}`;
+    const titles = { suspend: "Suspend account", restore: "Restore account", viewer: "Grant read-only admin (viewer)", revoke: "Remove admin role", free_trades: "Waive Helm trading fees", paid_trades: "Restore standard trading fees" };
     return <StepUpDialog title={titles[action]} needsReason detail={action === "suspend" ? "Signs the account out everywhere, blocks sign-in and blocks new actions. Funds stay in the user's wallets." : "Recorded in the audit log with your reason."}
       onCancel={() => setAction(null)}
-      onConfirm={async (proof, reason) => { await api(path, { method: feeAction ? "PUT" : "POST", body: { reason, confirm: proof, ...(feeAction ? { enabled: action === "free_launches" } : {}) } }); toast("good", "Done"); setAction(null); load(); onChanged(); }} />;
+      onConfirm={async (proof, reason) => { await api(path, { method: feeAction ? "PUT" : "POST", body: { reason, confirm: proof, ...(feeAction ? { enabled: action === "free_trades" } : {}) } }); toast("good", "Done"); setAction(null); load(); onChanged(); }} />;
   }
   return (
     <Modal title={u ? (u.display_name || u.email) : "Account"} sub={u ? <span className="mono">{u.id}</span> : undefined} onClose={onClose} wide
@@ -490,7 +490,7 @@ function UserDetail({ id, me, onClose, onChanged }: { id: string; me: AdminMe; o
             <div><div className="muted">Last sign-in</div><span className="mono">{utc(u.last_login)}</span></div>
             <div><div className="muted">Role</div>{u.role}</div>
             <div><div className="muted">Status</div>{u.status}{u.status_reason && <div className="muted">{u.status_reason} · {utc(u.status_changed_at)}</div>}</div>
-            <div><div className="muted">Launch pricing</div>{u.launch_fee?.exempt ? `Free · ${u.launch_fee.reason}` : "Free launches"}<div className="small muted">Trading fee: 2.5%</div></div>
+            <div><div className="muted">Launch pricing</div>{u.launch_fee?.exempt ? `Free · ${u.launch_fee.reason}` : "Free launches"}<div className="small muted">Trading fee: {u.trade_fee?.exempt?'0% · '+u.trade_fee.reason:'2.5%'}</div>{me.can_change && u.role==='user' && <button type="button" className="btn sm secondary" onClick={()=>setAction(u.trade_fee?.account_exception?'paid_trades':'free_trades')}>{u.trade_fee?.account_exception?'Restore trading fees':'Waive trading fees'}</button>}</div>
             <div><div className="muted">2FA</div>{u.two_factor ? "On" : "Off"}</div>
             <div><div className="muted">Referred with</div>{u.referred_by_code ?? "—"}</div>
             <div><div className="muted">Jobs</div>{Object.entries(u.jobs).map(([k, v]) => `${v} ${k}`).join(" · ") || "none"}</div>
