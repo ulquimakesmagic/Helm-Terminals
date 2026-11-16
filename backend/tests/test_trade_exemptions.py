@@ -37,6 +37,15 @@ async def test_admin_and_account_waivers_are_authoritative_and_audited(client,fa
         job=Job(user_id=uid,kind='trade_buy',params={'trade_fee_terms':{'bps':0}},status='confirmed');db.add(job);await db.commit()
         assert (await charges.charge_trade(db,None,job,dev,0)).status=='confirmed'
         assert (await db.execute(select(func.count()).select_from(PlatformCharge))).scalar_one()==before
+        from types import SimpleNamespace
+        from app.models import Wallet
+        dev_wallet=await db.get(Wallet,dev['id'])
+        waived_deploy=Job(user_id=uid,kind='deploy',params={'initial_buy_fee':{
+            'wallet_id':dev_wallet.id,'amount_raw':'0','policy':charges.POLICY_VERSION}},status='confirmed')
+        db.add(waived_deploy);await db.commit()
+        assert await charges.initial_buy_fee(db,None,waived_deploy,SimpleNamespace(status='live',network=dev_wallet.network),dev_wallet) is None
+        assert waived_deploy.params['initial_buy_fee_handled']
+        assert (await db.execute(select(func.count()).select_from(PlatformCharge))).scalar_one()==before
         audit=(await db.execute(select(AdminAudit).where(AdminAudit.action=='trade_fee.exemption'))).scalars().all()
         assert len(audit)==1 and audit[0].changes['enabled']==[False,True]
     revoked=await client.put(f'/admin/users/{uid}/trade-fee-exemption',headers=admin,json={**change,'enabled':False,'confirm':await proof(secret)})

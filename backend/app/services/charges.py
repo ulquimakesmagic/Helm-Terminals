@@ -253,6 +253,8 @@ async def initial_buy_fee(db, ex, job, launch, wallet, *, recovery=False):
             or wallet.kind != "managed" or wallet.network != launch.network):
         raise ValueError("Initial-buy fee source no longer matches the reviewed managed wallet")
     if int(terms["amount_raw"]) == 0:
+        job.params = {**job.params, 'initial_buy_fee_handled': True}
+        await db.commit()
         return None
     from .executor import SubmitResult, _finish
     reference = f"trade:{job.id}:{wallet.id}"
