@@ -74,19 +74,32 @@ async def check_evm_call(rpc, call, wallet: str, *, max_allowance: int | None = 
 def check_solana_signers(raw: bytes, held: set[str], *, allow_missing: bool = False) -> str | None:
     """Reason to refuse this provider-built transaction, or None.
 
-    Every required signature slot must belong to a signer Helm holds (the user's wallet, or an
-    ephemeral keypair such as a new token mint). A provider whose transaction needs some other
-    human's signature is asking a stranger to authorize the spend. With `allow_missing`, the
-    launchpad adds its own signature when it submits, so unknown slots are tolerated there.
+    Each slot needs a held signer or an existing signature verified against the
+    exact message (a mint or gas sponsor). Missing foreign signatures are rejected.
+    With `allow_missing`, a submitting launchpad can fill non-payer slots later.
     """
     try:
-        msg = VersionedTransaction.from_bytes(raw).message
+        tx = VersionedTransaction.from_bytes(raw)
+        tx.sanitize()
+        msg = tx.message
     except Exception:
         return "provider transaction could not be parsed"
     n = msg.header.num_required_signatures
     if n < 1:
         return "provider transaction has no signers"
-    for key in list(msg.account_keys)[:n]:
-        if str(key) not in held and not allow_missing:
+    if not any(str(key) in held for key in list(msg.account_keys)[:n]):
+        return "provider transaction does not require an authorized signer"
+    from solders.message import to_bytes_versioned
+    from solders.signature import Signature
+    message=to_bytes_versioned(msg)
+    for index,key in enumerate(list(msg.account_keys)[:n]):
+        if str(key) in held:
+            continue
+        signature=tx.signatures[index] if index<len(tx.signatures) else Signature.default()
+        if signature!=Signature.default():
+            if not signature.verify(key,message):
+                return 'provider transaction contains an invalid existing signature'
+            continue
+        if not allow_missing or index==0:
             return f"transaction needs a signature from {key}, which Helm does not hold"
     return None

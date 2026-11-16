@@ -53,6 +53,8 @@ def can_resolve(job, transactions) -> bool:
     params = job.params or {}
     if params.get("required_followup_pending") or params.get('gas_funding_followup_pending'):
         return False
+    if params.get('provider_plan_business_pending'):
+        return False
     if job.kind == "bridge" and params.get("route_status") not in DONE:
         return False
     funding = params.get("funding") or {}

@@ -1,20 +1,8 @@
-"""Bags (bags.fm) adapter, using the official Bags API v2.
+"""Bags trading and historical normal-recipient claims via the official API.
 
-A Bags launch is three calls:
-  1. create-token-info  -> Bags stores the metadata and returns the token mint (its own mint key signs later)
-  2. fee-share/config   -> a config transaction the creator signs first; creator fees go to the creator, less
-                           Helm's creator-reward share when one is set and disclosed in the deploy preview.
-                           If Helm has a Bags partner key, Bags pays Helm its partner share (25% by default) of
-                           the token's fees on top, out of Bags' side — this is disclosed in the deploy preview.
-  3. create-launch-transaction -> the launch itself, with the dev buy
-
-Pair-token launches (e.g. tokenized stocks like xStocks): instead of a SOL bonding curve, Bags opens a Meteora
-DAMM v2 pool paired with the chosen token at launch. There is no fee-share config step; Bags returns up to five
-ordered transactions (lookup table setup, token creation, launch, lookup table clean-up). Pool fees accrue in
-the pair token.
-
-Trades go through Bags' quote + swap endpoints. Every transaction comes back unsigned (apart from keys Bags
-holds, like the mint), and Helm signs it through the Signer as usual.
+New creation is gated pending combined creator/deployer reward collection.
+Custom-quote launches require Fee Share V2 transaction plans; the legacy direct
+DAMM construction is deliberately absent from the creation path.
 """
 
 import time
@@ -121,60 +109,11 @@ class BagsAdapter:
                                 files={"image": ("image.png", req.image_bytes, "image/png")})
         return info["tokenMint"], info["tokenMetadata"]
 
-    async def _build_pair_launch(self, req: CreateRequest, quote_mint: str) -> BuiltTx:
-        mint, metadata = await self._token_info(req)
-        body = {"ipfs": metadata, "tokenMint": mint, "wallet": req.dev_pubkey, "quoteMint": quote_mint}
-        if self.partner_wallet:
-            body["partner"] = self.partner_wallet
-        res = await self._call("POST", "/token-launch/damm-v2/create-transaction", json=body)
-        by_type: dict[str, list[bytes]] = {}
-        for t in res.get("transactions") or []:
-            by_type.setdefault(t.get("type", ""), []).append(decode_tx(t["transaction"]))
-        if len(by_type.get("LAUNCH", [])) != 1:
-            raise AdapterError("Bags returned an unexpected launch plan (no single LAUNCH transaction)")
-        # A lookup table can only be closed some minutes after it is deactivated, so the close step is skipped;
-        # the table's small rent deposit stays with it and can be reclaimed later.
-        return BuiltTx(raw=by_type["LAUNCH"][0], mint=mint,
-                       pre=by_type.get("LUT_SETUP", []) + by_type.get("CREATE_TOKEN", []),
-                       post=by_type.get("LUT_DEACTIVATE", []))
-
     async def build_create_tx(self, req: CreateRequest) -> BuiltTx:
-        if not req.image_bytes:
-            raise AdapterError("Bags needs a token image. Add one to the launch and try again.")
-        quote = (req.options or {}).get("quote") or {}
-        if quote.get("mint") and quote["mint"] != WSOL:
-            return await self._build_pair_launch(req, quote["mint"])
-        mint, metadata = await self._token_info(req)
-
-        config_body = {
-            "payer": req.dev_pubkey,
-            "baseMint": mint,
-            "claimersArray": [req.dev_pubkey],
-            "basisPointsArray": [10_000],
-        }
-        # Helm's share of creator fees, only as confirmed by the creator in the deploy preview. Everything else stays
-        # with the creator; Helm never takes more than the confirmed share.
-        share = (req.options or {}).get("helm_creator_share") or {}
-        bps, recipient = int(share.get("bps") or 0), share.get("recipient") or ""
-        if 0 < bps < 10_000 and recipient and recipient != req.dev_pubkey:
-            config_body["claimersArray"] = [req.dev_pubkey, recipient]
-            config_body["basisPointsArray"] = [10_000 - bps, bps]
-        if self.partner_wallet and self.partner_config:
-            config_body["partner"] = self.partner_wallet
-            config_body["partnerConfig"] = self.partner_config
-        cfg = await self._call("POST", "/fee-share/config", json=config_body)
-        if cfg.get("bundles"):
-            raise AdapterError("Bags returned a Jito bundle for this config, which Helm doesn't send yet.")
-        pre = [decode_tx(t["transaction"]) for t in cfg.get("transactions") or []]
-
-        launch = await self._call("POST", "/token-launch/create-launch-transaction", json={
-            "ipfs": metadata,
-            "tokenMint": mint,
-            "wallet": req.dev_pubkey,
-            "initialBuyLamports": int(req.dev_buy_sol * LAMPORTS_PER_SOL),
-            "configKey": cfg["meteoraConfigKey"],
-        })
-        return BuiltTx(raw=decode_tx(launch), mint=mint, pre=pre)
+        # The native recipient array omits the separate deployer stream. Do not
+        # create a new config until both streams can honor the approved policy.
+        # Historical trading/claims retain their saved allocations.
+        raise AdapterError('New Bags launches require verified 2.5% collection across both creator and deployer rewards')
 
     # --- trading --------------------------------------------------------------------------------
 

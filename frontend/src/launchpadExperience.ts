@@ -67,11 +67,11 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
   },
   bags: {
     mode: "SOL bonding curve", title: "Launch on Bags",
-    description: "Launch on the supported SOL curve. Bags' fee-share configuration is written at launch; new custom-pair launches are not available yet.",
-    features: ["97.5% creator rewards", "SOL launch route", "Permanent liquidity after graduation"],
+    description: "New Bags launches are awaiting reward integration. Existing launches remain manageable, with their original reward allocations.",
+    features: ["Existing launch management", "Creator and deployer rewards", "New launches pending integration"],
     settingsTitle: "Bags launch settings", rewardTitle: "Bags royalty split",
-    rewardCopy: "SOL launches configure a 97.5% creator / 2.5% Helm royalty split. Pair-token launches require a verified collection integration before deployment.",
-    claimMode: "in-app", claimCopy: "SOL-paired fees can be claimed in Helm. Other pair-token fees are claimed on Bags.", accent: "#ff5aa5",
+    rewardCopy: "For new launches, Helm's 2.5% must cover both normal creator rewards and Bags' separate deployer share. Creation stays unavailable until both are verified. Existing allocations remain unchanged.",
+    claimMode: "in-app", claimCopy: "Claim existing normal SOL recipient rewards in Helm. Separate deployer and custom-quote claims use Bags for now.", accent: "#ff5aa5",
   },
   printr: {
     mode: "Bonding curve", title: "Launch on Printr",

@@ -1,6 +1,6 @@
 # Mainnet setup and deferred integrations
 
-Updated 16 November 2026. See the [current dollar budget](mainnet-budget-2026-11-16.md).
+Updated 17 November 2026. See the [16 November dollar-budget estimate](mainnet-budget-2026-11-16.md).
 The operator has deferred funded mainnet deployments.
 The redesign and removal of trading automation do not require deploying a factory.
 No contract deployment or financial transaction was broadcast during this work.
@@ -104,10 +104,11 @@ key does not complete them. Do not change a status label to bypass a gate.
 | Meteora DBC / Studio | Jupiter and metadata credentials are already configured in the current production environment | Complete DBC creator-reward collection, asset-aware splitting and claim/reconciliation tests; keep existing pool presets accurately scoped |
 | Printr | Optional provider credential where required; Jupiter key for supported swaps | Verify its provider execution boundary and implement creator-reward collection and 2.5% accounting before enabling creation |
 | Flap Base and taxed BNB / Robinhood launches | Correct chain RPC and creator treasury | Implement reward capture for creator tax, without treating protocol commission or holder dividends as creator rewards. Base has no verified standard zero-tax route in Helm |
-| Bags alternative quote launches | Bags/Jupiter/metadata credentials already exist; discover eligible quote mints and units | Implement the current Fee Share V2/DBC transaction-plan flow, quote availability, staged signing, fee splitting and recovery. The enabled SOL route does not imply all pairings work |
+| Bags new launches (SOL and custom quotes) | Bags/Jupiter/metadata credentials already exist; no additional funded deployment requested | New SOL configs reserve a separate deployer share. Implement 2.5% collection across both reward streams, with attributed receipt accounting. Custom quotes additionally require Fee Share V2/DBC plans. Transaction validation/execution foundations are implemented but not enabled as a launch flow; the unsigned provider probe currently returns 503. Existing normal-recipient claims and trading remain available. See [Bags integration status](bags-integration-2026-11-17.md) |
 | Clanker V5 on Base / BNB Chain / Robinhood Chain | Existing upstream factories; owned creator wallet funded for gas and any initial buy | Native/stable atomic buys, registered quote launch controls and claims are implemented; custom quotes require zero creator buy and live factory admission. Funded end-to-end rehearsals remain pending. See [V5 scope](clanker-v5-integration.md) |
 | Bankr | Obtain suitable user/partner access from Bankr | Resolve Bankr deployment custody versus Helm's Turnkey model, verify recipient allocations and recoverable execution. Credentials alone do not integrate it |
-| Surge / Anoncoin / Stonk.fun | Obtain official production contracts/API access and any allowlisting | Verify transaction construction, signer ownership, quote support, fee collection and failure recovery. No unverified endpoint should be enabled |
+| Surge / Anoncoin | Obtain official production contracts/API access and any allowlisting | Verify transaction construction, signer ownership, quote support, fee collection and failure recovery. No unverified endpoint should be enabled |
+| Stonk.fun | Public OpenAPI is available at the official site's `/api/public/v1/openapi.json`; establish required production permissions | Integrate its LaunchLab platform/direct-build or intent flow, verify TeamRewards custody and allocations, signer ownership, quotes, reward collection and recovery. Public documentation alone does not enable a Helm adapter |
 | Elpida variants | Obtain official mainnet contracts/program IDs and execution documentation | Validate each chain independently, creator-reward semantics, signing and fee collection; leave planned until reviewed |
 
 For enabled chains, keep RPC credentials in Railway server variables. TRON uses
