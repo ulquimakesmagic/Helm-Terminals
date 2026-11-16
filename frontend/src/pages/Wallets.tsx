@@ -1,4 +1,5 @@
 import ChainSelect from "../components/ChainSelect";
+import { useAutoRefresh } from "../components/useAutoRefresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt, short, usd } from "../api";
@@ -359,7 +360,7 @@ export default function Wallets() {
 
   const [loadErr, setLoadErr] = useState("");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const load = async (withBal = balances) => {
+  const load = async (withBal = balances, quiet = false) => {
     if (balanceFlight.current) return;
     balanceFlight.current = true;
     setLoadErr("");
@@ -369,18 +370,14 @@ export default function Wallets() {
         api<W[]>(`/wallets${withBal ? "?with_balances=true" : ""}`), api<Folder[]>("/folders"), api<Funder[]>("/funders"),
       ]);
       setWallets(w); setFolders(f); setFunders(fu); setUpdatedAt(Date.now());
-      if (withBal) { setBalances(true); api("/portfolio").then(setFolio).catch(() => setFolio(null)); }
-    } catch (e) { if (wallets) toast("bad", errMsg(e)); setLoadErr(errMsg(e)); }
+      if (withBal) { setBalances(true); await api("/portfolio").then(setFolio).catch(() => setFolio(null)); }
+    } catch (e) { if (wallets && !quiet) toast("bad", errMsg(e)); setLoadErr(errMsg(e)); }
     finally { setLoadingBal(false); balanceFlight.current = false; }
   };
   useEffect(() => {
-    let active = true;
-    load(false).then(() => { if (active) void load(true); });
-    const refresh = () => { if (document.visibilityState === "visible") void load(true); };
-    const timer = window.setInterval(refresh, 60_000);
-    document.addEventListener("visibilitychange", refresh);
-    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+    void load(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(() => load(true, true), 30_000);
 
   const all = wallets ?? [];
   const managed = all.filter((w) => w.kind === "managed");
@@ -433,9 +430,9 @@ export default function Wallets() {
           <button className="btn secondary" onClick={() => load(true)} disabled={loadingBal}>{loadingBal ? <Spinner /> : <Icon name="refresh" size={15} />}{balances ? "Refresh balances" : "Load balances"}</button>
           <button className="btn" onClick={() => setModal("create")}><Icon name="plus" size={15} />Add wallets</button>
         </>} />
-
+      <p className="balance-refresh-note" role="status"><i/>{loadingBal ? 'Checking balances…' : loadErr ? 'Balance check failed · retrying automatically' : 'Auto-refresh every 30s while open'}{updatedAt && !loadingBal ? ` · updated ${new Date(updatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : ''}</p>
       <Metrics label="Wallet totals" items={[
-        { label: "Total across chains", value: folio ? usd(folio.totals.usd) : "—", tone: folio && folio.complete === false ? "warn" : undefined,
+        { label: "Total value", value: folio ? usd(folio.totals.usd) : "—", tone: folio && folio.complete === false ? "warn" : undefined,
           hint: folio ? (folio.complete === false ? `at least · ${folio.incomplete_chains.length} chain${folio.incomplete_chains.length === 1 ? "" : "s"} not fully read` : folio.priced ? "coins and stablecoins" : "coin prices unavailable") : "load balances to see" },
         { label: "Cash balance", value: folio ? usd(folio.totals.stable_usd) : "—", hint: "USDC and USDG · routing on supported networks" },
         { label: "Managed", value: wallets ? String(managed.length) : "—", hint: wallets ? `on ${new Set(managed.map((w) => w.network)).size} chains` : "inventory unavailable" },

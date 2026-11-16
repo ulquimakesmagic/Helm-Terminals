@@ -53,9 +53,9 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     claimMode: "external", claimCopy: "LetsBonk creator fees are claimed on bonk.fun.", claimUrl: "https://bonk.fun/", accent: "#ff9d2e",
   },
   bags: {
-    mode: "Bonding curve or paired pool", title: "Launch on Bags",
-    description: "Choose a SOL curve or an eligible paired asset. Bags' fee-share configuration is written at launch.",
-    features: ["97.5% creator rewards", "SOL or supported pair", "Permanent liquidity after graduation"],
+    mode: "SOL bonding curve", title: "Launch on Bags",
+    description: "Launch on the supported SOL curve. Bags' fee-share configuration is written at launch; new custom-pair launches are not available yet.",
+    features: ["97.5% creator rewards", "SOL launch route", "Permanent liquidity after graduation"],
     settingsTitle: "Bags launch settings", rewardTitle: "Bags royalty split",
     rewardCopy: "SOL launches configure a 97.5% creator / 2.5% Helm royalty split. Pair-token launches require a verified collection integration before deployment.",
     claimMode: "in-app", claimCopy: "SOL-paired fees can be claimed in Helm. Other pair-token fees are claimed on Bags.", accent: "#ff5aa5",
@@ -77,7 +77,7 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     claimMode: "in-app", claimCopy: "Claim creator fees through the supported Jupiter Studio flow.", accent: "#8258ff",
   },
   clanker: {
-    mode: "Uniswap V4 pool", title: "Launch with Clanker",
+    mode: "Clanker V4 · WETH pool", title: "Launch with Clanker V4",
     description: "Create a Base token with locked liquidity and Clanker's configurable descending sniper fee.",
     features: ["Locked V4 liquidity", "Descending sniper fee", "97.5% creator LP rewards"],
     settingsTitle: "Clanker pool settings", rewardTitle: "Clanker LP rewards",
@@ -85,7 +85,7 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     claimMode: "in-app", claimCopy: "Collect the creator wallet's WETH and token rewards from Clanker's locker.", accent: "#4d7cff",
   },
   "clanker-robinhood": {
-    mode: "Uniswap V4 pool", title: "Launch with Clanker on Robinhood Chain",
+    mode: "Clanker V4 · WETH pool", title: "Launch with Clanker V4 on Robinhood Chain",
     description: "Create with locked liquidity and Clanker's descending sniper-fee module.",
     features: ["Locked V4 liquidity", "Descending sniper fee", "97.5% creator LP rewards"],
     settingsTitle: "Clanker pool settings", rewardTitle: "Clanker LP rewards",

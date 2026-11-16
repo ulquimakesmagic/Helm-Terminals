@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, setToken } from "../api";
 import { Brand, PublicFooter, SafeguardList, SignerNote, usePublicInfo } from "../components/public";
-import { Callout, Field, Icon, Spinner } from "../components/ui";
+import { Callout, Field, Icon, Logo, Spinner } from "../components/ui";
 import { useSession } from "../session";
 import { safeNext } from "../nav";
 import { setMeta } from "../meta";
@@ -85,10 +85,10 @@ export default function Auth() {
     }
   }
 
-  const title = needTotp ? "Two-factor check" : mode === "login" ? "Sign in" : "Create your account";
+  const title = needTotp ? "Two-factor check" : mode === "login" ? "Back at the helm." : "Your next launch starts here.";
   const sub = needTotp
     ? "Enter the 6-digit code from your authenticator app to finish signing in."
-    : mode === "login" ? "Welcome back to your launch desk." : "An email and password is all it takes. No wallet connection needed.";
+    : mode === "login" ? "Sign in to manage your launches, wallets and trades." : "Create your private launch desk. No wallet connection needed.";
   const cta = needTotp ? "Verify and sign in" : mode === "login" ? "Sign in" : "Create account";
   const busyLabel = needTotp ? "Verifying…" : mode === "login" ? "Signing in…" : "Creating account…";
 
@@ -123,12 +123,11 @@ export default function Auth() {
           )}
 
           <div className="auth2-head">
-            <h1 id="auth-title" ref={heading} tabIndex={-1}>{title}</h1>
+            <div className="auth-title-row"><h1 id="auth-title" ref={heading} tabIndex={-1}>{title}</h1><span className="auth-helm" aria-hidden="true"><Logo size={40}/></span></div>
             <p className="text-2">{sub}</p>
           </div>
           {mode === "login" && <Link className="small" to="/recover">Forgot password or lost your authenticator?</Link>}
           {safeNext(params.get("next")) !== "/" && <Callout icon="lock">Sign in to continue to <span className="mono">{safeNext(params.get("next"))}</span>. Sessions live in this tab's memory, so a reload asks you to sign in again.</Callout>}
-          <p className="small muted">Your session stays in this tab's memory. Reloading the page or opening a new tab requires signing in again.</p>
 
           <form id="auth-form" className="stack" style={{ gap: 14 }} onSubmit={submit} noValidate
             role={needTotp ? undefined : "tabpanel"} aria-labelledby={needTotp ? "auth-title" : `tab-${mode}`}>
@@ -200,6 +199,7 @@ export default function Auth() {
               </button>
             )}
           </form>
+          <p className="auth-session-note muted"><Icon name="lock" size={12}/>Session stays in this tab. Reloading or opening a new tab requires signing in again.</p>
 
           {!needTotp && (
             <p className="small muted auth2-switch">

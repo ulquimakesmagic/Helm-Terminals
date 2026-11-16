@@ -3,7 +3,7 @@ import { Callout, Icon, Spinner } from "./ui";
 
 /** GMGN's public chart embed. The page loads in the visitor's browser straight from GMGN; Helm sends GMGN nothing
  *  but the token address in the URL. Prices, pools, holders and activity elsewhere on the page come from Codex. */
-export default function GmgnChart({ url, symbol }: { url: string; symbol: string }) {
+export default function GmgnChart({ url, symbol, onUseCodex }: { url: string; symbol: string; onUseCodex?: () => void }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "slow">("loading");
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -23,6 +23,7 @@ export default function GmgnChart({ url, symbol }: { url: string; symbol: string
       <p className="muted small">Blank chart? New tokens can take a few minutes to appear on GMGN after their first trades.</p>
       <div className="row">
         <button type="button" className="btn sm secondary" onClick={() => setRevision((r) => r + 1)}><Icon name="refresh" size={13} />Reload chart</button>
+        {onUseCodex && <button type="button" className="btn sm secondary" onClick={onUseCodex}>Use Codex chart</button>}
         <a className="btn sm ghost" href={url} target="_blank" rel="noreferrer">Open on GMGN <Icon name="ext" size={12} /></a>
       </div>
     </div>

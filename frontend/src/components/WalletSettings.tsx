@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAutoRefresh } from "./useAutoRefresh";
 import { Link } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { useSession } from "../session";
@@ -34,6 +35,7 @@ export default function WalletSettings() {
   const [send, setSend] = useState<OvWallet | null>(null);
   const load = useCallback(() => api<any>("/chains/wallets/overview").then((d) => { setData(d); setErr(""); }).catch((e) => setErr(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
+  useAutoRefresh(load);
   if (err && !data) return <LoadError what="Wallets" error={err} onRetry={load} />;
   if (!data) return <Loading />;
   const net = data.networks.find((n) => n.id === pick) ?? null;
@@ -60,6 +62,7 @@ export default function WalletSettings() {
 
   return (
     <div className="stack">
+      {err && <Callout tone="warn">Latest wallet check failed: {err}. Retrying automatically.</Callout>}
       <div className="stack tight">
         <span className="small muted">Choose a network first.</span>
         <div className="chips" role="group" aria-label="Network">

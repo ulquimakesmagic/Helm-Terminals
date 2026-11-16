@@ -1,6 +1,7 @@
 # Mainnet setup and deferred integrations
 
-Updated 15 November 2026. The operator has deferred funded mainnet deployments.
+Updated 16 November 2026. See the [current dollar budget](mainnet-budget-2026-11-16.md).
+The operator has deferred funded mainnet deployments.
 The redesign and removal of trading automation do not require deploying a factory.
 No contract deployment or financial transaction was broadcast during this work.
 

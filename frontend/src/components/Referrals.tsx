@@ -72,7 +72,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
             {!editing && (data.payout_addresses?.length || data.payout_address) ? (
               <div className="stack tight">{(data.payout_addresses?.length ? data.payout_addresses : [{ network: "solana", address: data.payout_address! }]).map(row =>
                 <div key={row.network}><span className="small muted">{chainOf(row.network).name}</span><div className="mono small" style={{ overflowWrap: "anywhere" }}>{row.address}</div></div>)}</div>
-            ) : (
+            ) : !editing ? <p className="small muted">Add a payout address when you are ready to receive earnings.</p> : (
               <>
                 {!data.payout_address && data.fee_pct > 0 && (
                   <Callout tone="warn">Add your payout address. Asset balances marked owed remain visible until settlement; entering an address does not move treasury funds.</Callout>
@@ -82,7 +82,7 @@ export default function ReferralCard({ data, onChange }: { data: ReferralSummary
                 ) : (
                   <div className="stack tight">
                     <label className="small">Network<select value={payoutNetwork} onChange={event => setPayoutNetwork(event.target.value)}>{["solana", "base", "ethereum", "bsc", "robinhood", "tron", "near", "arc"].map(network => <option key={network} value={network}>{chainOf(network).name}</option>)}</select></label>
-                    <input className="mono" aria-label="Referral payout address" placeholder="Your address on the selected network" value={addr} onChange={(e) => setAddr(e.target.value)} />
+                    <input className="mono" name="referral_payout_address" autoComplete="off" aria-label="Referral payout address" placeholder="Your address on the selected network" value={addr} onChange={(e) => setAddr(e.target.value)} />
                     <div className="row nowrap">
                       <input type="password" autoComplete="current-password" aria-label="Confirm password" placeholder="Confirm your password" value={password} onChange={(e) => setPassword(e.target.value)} />
                       <input inputMode="numeric" autoComplete="one-time-code" aria-label="Authenticator code" placeholder="2FA code" maxLength={8} value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} />

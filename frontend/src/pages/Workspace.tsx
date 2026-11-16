@@ -1,5 +1,6 @@
 import Distribute from "../components/Distribute";
-import { useCallback, useEffect, useState } from "react";
+import { useAutoRefresh } from "../components/useAutoRefresh";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Location, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, compact, errMsg, fmt, short, signed } from "../api";
 import { chainOf, explorerUrl, isExtraChain } from "../chains";
@@ -153,10 +154,15 @@ export default function Workspace() {
   const [sendPct, setSendPct] = useState("10");
   const [updated, setUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const workspaceFlights = useRef(new Set<string | undefined>());
+  const currentWorkspace = useRef(id);
+  currentWorkspace.current = id;
   const [mobileView, setMobileView] = useState<"chart" | "trade" | "activity">("chart");
   const [supplyOpen, setSupplyOpen] = useState(false);
 
   const load = useCallback(async () => {
+    if (workspaceFlights.current.has(id)) return;
+    workspaceFlights.current.add(id);
     setRefreshing(true);
     try {
       let [w, all] = await Promise.all([api<any>(`/launches/${id}/workspace`), api<any[]>("/wallets")]);
@@ -165,22 +171,19 @@ export default function Workspace() {
         const l = await api<any>(`/launches/${id}/recheck`, { body: {} }).catch(() => null);
         if (l && l.status !== "deploying") w = await api(`/launches/${id}/workspace`);
       }
+      if (currentWorkspace.current !== id) return;
       setWs(w);
       setAllWallets(all.filter((x) => x.kind === "managed"));
       setError("");
       setUpdated(new Date());
-    } catch (e) { setError(errMsg(e)); }
-    finally { setRefreshing(false); }
+    } catch (e) { if (currentWorkspace.current === id) setError(errMsg(e)); }
+    finally { if (currentWorkspace.current === id) setRefreshing(false); workspaceFlights.current.delete(id); }
   }, [id]);
 
   useEffect(() => {
     load();
-    // Refresh every 10 s while the tab is visible; catch up at once when it comes back (saves RPC calls in the background).
-    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 10000);
-    const onVis = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [load]);
+  useAutoRefresh(load, 10_000);
 
   if (!ws) {
     const head = cached ? (
@@ -270,7 +273,7 @@ export default function Workspace() {
   // Sections, shared by the terminal layout (tokens with an address) and the draft layout.
   const walletsCard = (
           <Card title="Wallets" icon="wallet" sub={sel.length ? `${sel.length} selected · ${fmt(selSol, 4)} ${cur} · ${compact(selTok)} tokens` : "Select the wallets to trade or operate from"} flush
-            actions={<div className="row nowrap">
+            actions={<div className="row workspace-wallet-actions">
               {live && !extra && <><button className="btn secondary" onClick={() => setSupplyOpen(true)}><Icon name="send" size={14} />Distribute tokens</button><button className="btn secondary" disabled={ws.wallets.length < 2} onClick={() => setConsolidateOpen(true)}><Icon name="wallet" size={14} />Consolidate tokens</button></>}
               <label className="sr-only" htmlFor="attach-wallet">Attach a wallet</label>
               <select id="attach-wallet" value={attachId} onChange={(e) => setAttachId(e.target.value)} style={{ width: 200 }}>
