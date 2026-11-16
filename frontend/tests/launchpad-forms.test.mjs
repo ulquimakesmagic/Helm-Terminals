@@ -15,8 +15,17 @@ test("invalid numeric input and unsupported selections cannot produce a valid dr
   assert.ok(validateLaunchFields([{ key: "tax", type: "select", options: [0, 1, 3] }], { tax: 5 }));
 });
 test("grouping retains unrecognized provider fields once and does not mix creator funding into settings", () => {
-  const fields = ["sniper_decay_s", "future_setting", "dev_buy_sol", "slippage_pct", "sniper_start_pct"].map(key => ({ key, type: "number" }));
+  const fields = ["sell_tax_pct", "future_setting", "dev_buy_sol", "slippage_pct", "buy_tax_pct"].map(key => ({ key, type: "number" }));
   const groups = groupedFields("clanker", fields);
-  assert.deepEqual(groups[0].fields.map(f => f.key), ["sniper_start_pct", "sniper_decay_s"]);
+  assert.deepEqual(groups[0].fields.map(f => f.key), ["buy_tax_pct", "sell_tax_pct"]);
   assert.deepEqual(groups.flatMap(g => g.fields.map(f => f.key)).sort(), fields.filter(f => f.key !== "dev_buy_sol").map(f => f.key).sort());
+});
+
+test('V5 dependent economics block an invalid draft',()=>{
+  assert.match(validateLaunchFields([],{dividend_share_pct:70,burn_share_pct:40}),/cannot exceed/);
+  assert.match(validateLaunchFields([],{dividend_share_pct:10,minimum_dividend_tokens:10000.5}),/whole-token/);
+  const quotes=[{key:'clanker_quote',type:'select',options:['native','stock'],asset_kinds:{stock:'stock'}}];
+  assert.match(validateLaunchFields(quotes,{clanker_quote:'stock',quote_eligibility:'not_confirmed',dev_buy_sol:0}),/eligibility/);
+  assert.match(validateLaunchFields(quotes,{clanker_quote:'stock',quote_eligibility:'confirmed',dev_buy_sol:1}),/creator buy/);
+  assert.equal(validateLaunchFields(quotes,{clanker_quote:'stock',quote_eligibility:'confirmed',dev_buy_sol:0}),null);
 });

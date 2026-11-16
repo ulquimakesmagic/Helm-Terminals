@@ -20,7 +20,7 @@ import {
 } from "../components/ui";
 
 type Dialog = { title: string; path: string; body: Record<string, unknown> } | null;
-type Op = "claim" | "burn" | "send" | "distribute";
+type Op = "claim" | "dividends" | "burn" | "send" | "distribute";
 
 function launchSetting(key: string, value: unknown): string {
   const labels: Record<string, string> = {
@@ -242,7 +242,7 @@ export default function Workspace() {
   }
   const l = ws.launch;
   const chain = chainOf(l.network);
-  const experience = launchpadExperience(l.launchpad);
+  const experience = launchpadExperience(l.launchpad,l.clanker_version);
   const claimMode = l.launchpad === "bags" && l.quote ? "external" : (l.capabilities?.claim_mode ?? experience.claimMode);
   const claimUrl = l.launchpad === "bags" && l.quote ? "https://bags.fm/" : experience.claimUrl;
   const claimInApp = claimMode === "in-app";
@@ -250,6 +250,7 @@ export default function Workspace() {
   const opOptions: [Op, string][] = claimInApp
     ? [["claim", "Claim fees"], ["burn", "Burn"], ["send", "Send"], ["distribute", "Distribute"]]
     : [["burn", "Burn"], ["send", "Send"], ["distribute", "Distribute"]];
+  if(l.clanker_version===5)opOptions.splice(1,0,["dividends","Holder dividends"]);
   const chosenSettings = Object.entries(l.settings ?? {});
   const cur = chain.native;
   const live = l.status === "live";
@@ -424,6 +425,13 @@ export default function Workspace() {
                       <Icon name="coins" size={15} />Review claim</button>
                   </>
                 )}
+                {effectiveOp === "dividends" && l.clanker_version===5 && <>
+                  <Callout>Claim this wallet’s holder dividends for this token. Creator rewards use the separate Claim fees action. No additional Helm claim fee applies.</Callout>
+                  <Field label="Holder wallet"><select value={claimWallet} onChange={e=>setClaimWallet(e.target.value)}>
+                    <option value="">Choose…</option>{ws.wallets.map((w:any)=><option key={w.id} value={w.id}>{w.label||short(w.address)}</option>)}
+                  </select></Field>
+                  <button className="btn block" disabled={!claimWallet} onClick={()=>setDialog({title:"Claim holder dividends",path:`/launches/${id}/claim-dividends`,body:{wallet_id:claimWallet}})}>Review dividend claim</button>
+                </>}
                 {effectiveOp === "burn" && (
                   <>
                     <Callout tone="warn">Burning permanently destroys tokens. It can't be undone.</Callout>

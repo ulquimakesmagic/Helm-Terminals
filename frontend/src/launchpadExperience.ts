@@ -27,6 +27,19 @@ const DEFAULT: LaunchpadExperience = {
   accent: "#74f0c6",
 };
 
+const CLANKER_V5: LaunchpadExperience = {
+  mode:'Clanker V5 · tax token',title:'Launch with Clanker V5',description:'Launch with registered pair assets, independent buy/sell taxes, holder dividends and burns.',
+  features:['Native, stable & registered pairs','Locked V4 pool liquidity','97.5% creator rewards'],settingsTitle:'Clanker V5 launch settings',
+  rewardTitle:'Clanker V5 creator rewards',rewardCopy:'Clanker takes its protocol share from the configured tax. Dividends and burns use their selected allocations; the remaining creator rewards are split 97.5% to you and 2.5% to Helm in the pair asset.',
+  claimMode:'in-app',claimCopy:'Claim the selected recipient’s whole pair-currency balance across Clanker V5 pools. This is not a token-only claim.',accent:'#4d7cff',
+};
+const CLANKER_V4: LaunchpadExperience = {
+  mode:'Clanker V4 · WETH pool',title:'Manage your Clanker V4 token',description:'This token keeps its historical V4 pool and locker settings.',
+  features:['Historical V4 liquidity','Original sniper schedule','Original reward recipients'],settingsTitle:'Historical V4 settings',rewardTitle:'Clanker V4 LP rewards',
+  rewardCopy:'This existing token retains its original on-chain locker allocations. V5 launch settings do not change it.',claimMode:'in-app',
+  claimCopy:'Collect the selected wallet’s WETH and token rewards from its V4 fee locker.',accent:'#4d7cff',
+};
+
 export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
   "flap-sh-base": {
     mode: "Tax token", title: "Launch on Flap.sh for Base",
@@ -76,22 +89,9 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
     rewardCopy: "The 2.5% creator-reward collection integration for this route is pending; new deployment is unavailable until verified.",
     claimMode: "in-app", claimCopy: "Claim creator fees through the supported Jupiter Studio flow.", accent: "#8258ff",
   },
-  clanker: {
-    mode: "Clanker V4 · WETH pool", title: "Launch with Clanker V4",
-    description: "Create a Base token with locked liquidity and Clanker's configurable descending sniper fee.",
-    features: ["Locked V4 liquidity", "Descending sniper fee", "97.5% creator LP rewards"],
-    settingsTitle: "Clanker pool settings", rewardTitle: "Clanker LP rewards",
-    rewardCopy: "New Helm launches allocate 97.5% of creator-side locker rewards to you and 2.5% to Helm. Historical locker allocations retain their on-chain terms.",
-    claimMode: "in-app", claimCopy: "Collect the creator wallet's WETH and token rewards from Clanker's locker.", accent: "#4d7cff",
-  },
-  "clanker-robinhood": {
-    mode: "Clanker V4 · WETH pool", title: "Launch with Clanker V4 on Robinhood Chain",
-    description: "Create with locked liquidity and Clanker's descending sniper-fee module.",
-    features: ["Locked V4 liquidity", "Descending sniper fee", "97.5% creator LP rewards"],
-    settingsTitle: "Clanker pool settings", rewardTitle: "Clanker LP rewards",
-    rewardCopy: "New Helm launches allocate 97.5% of creator-side locker rewards to you and 2.5% to Helm. Historical locker allocations retain their on-chain terms.",
-    claimMode: "in-app", claimCopy: "Collect the creator wallet's rewards from Clanker's locker.", accent: "#caff35",
-  },
+  clanker: CLANKER_V5,
+  'clanker-robinhood':{...CLANKER_V5,title:'Launch with Clanker V5 on Robinhood Chain',accent:'#caff35'},
+  'clanker-bsc':{...CLANKER_V5,title:'Launch with Clanker V5 on BNB Chain',accent:'#f0b90b'},
   "flap-sh": {
     mode: "Holder-dividend token", title: "Launch on Flap.sh",
     description: "Create a standard BNB token using Flap V7, with holder LP dividends and Infinity CL migration.",
@@ -158,6 +158,7 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
   },
 };
 
-export function launchpadExperience(id: string): LaunchpadExperience {
+export function launchpadExperience(id: string, version?:number): LaunchpadExperience {
+  if(id.startsWith('clanker') && version===4)return CLANKER_V4;
   return LAUNCHPAD_EXPERIENCES[id] ?? DEFAULT;
 }

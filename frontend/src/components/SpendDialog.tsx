@@ -21,7 +21,7 @@ interface Props {
 }
 
 const TERMINAL = ["confirmed", "failed", "partial", "unconfirmed"];
-const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw",'draft_revision','split_seed']);
+const HIDDEN = new Set(["launch_id", "network_fee_coin", "own_wallets_only", "chain", "trade_fee_terms", "launch_fee_payment", "approved_minimum_raw",'draft_revision','split_seed','clanker_v5_terms']);
 const LABELS: Record<string, string> = {
   dev_buy_sol: "Dev buy", total_sol: "Total", slippage_pct: "Slippage", stagger_ms: "Delay between wallets",
   platform_fee: "Platform fee", amount_unit: "Unit", from: "From", to: "To", mint: "Token mint", dev_wallet: "Dev wallet",
@@ -37,11 +37,13 @@ const LABELS: Record<string, string> = {
   creator_fees: "Creator fees", platform_share: "Helm's reward share", commission: "Launchpad commission",
   commission_receiver: "Flap commission recipient", claim_scope: "Rewards included in this claim",
   pons_rewards: "Pons reward recipients", reward_terms: "Permanent reward terms",
+  currency:'Reward currency',recipient:'Recipient',dividend_contract:'Dividend contract',claim_currency:'Reward currency',
   fee_payers:'Network fee payers',fee_funding:'Gas funding before this operation',fees_paid_by:'Separate fee payers',
 };
 const KIND_LABEL: Record<string, string> = {
   deploy: "deployment", trade: "trade", fund: "funding", withdraw: "withdrawal", claim_fees: "claim", burn: "burn", send_tokens: "send",
   disperse: "disperse", consolidate: "consolidate", bridge: "route", swap: "swap", sweep: "sweep", fund_cash: "cash fund",
+  claim_dividends:'dividend claim',
 };
 
 
@@ -58,6 +60,7 @@ function Value({ k, v, network, asset, decimals }: { k: string; v: unknown; netw
     return <div className="fee-review"><span className="eyebrow">HELM LAUNCH FEE</span><div className="fee-value">{terms.exempt ? "Free" : `${terms.amount} ${terms.asset}`}</div><p className="small text-2">{terms.exempt ? terms.reason : terms.payment_terms}</p>{!terms.exempt && <p className="small">From <Address address={terms.payer!} network={network} /> to <Address address={terms.destination!} network={network} /></p>}<p className="small text-2">New Helm launches share 2.5% of creator rewards; review the launchpad’s reward terms below.</p></div>;
   }
   const coin = chainOf(network).native;
+  if((k==='currency'||k==='claim_currency') && typeof v==='string')return v==='0x0000000000000000000000000000000000000000'?coin:<Address address={v} network={network}/>;
   const cur = asset ?? coin; // what amounts are counted in: the moved asset when there is one
   if (k === "quote_bounds" && v && typeof v === "object") {
     const bound = v as {minimum_raw: string; asset: string; network: string};
@@ -291,6 +294,14 @@ export default function SpendDialog({ title, path, body, onClose, onDone, networ
             <div className="split-review-amounts"><Value k="to" v={pre.to} network={network} asset={pre.asset} decimals={pre.decimals}/></div>
           </section>}
           {pre.launch_fee_payment && <Value k="launch_fee_payment" v={pre.launch_fee_payment} network={network} />}
+          {pre.clanker_v5_terms && <section className="review-section">
+            <h3>Clanker V5 economics</h3>
+            <div className="kv"><span className="k">Pair</span><span className="v">{pre.pair}{pre.clanker_v5_terms.quote_token!=='0x0000000000000000000000000000000000000000' && <Address address={pre.clanker_v5_terms.quote_token} network={network}/>}</span>
+            <span className="k">Launchpad tax</span><span className="v">{pre.launchpad_tax}</span>
+            <span className="k">Tax allocations</span><span className="v">{pre.tax_allocations}</span>
+            <span className="k">Creator rewards</span><span className="v">{pre.creator_rewards}</span>
+            <span className="k">Anti-sniping</span><span className="v">{pre.anti_sniping}</span></div>
+          </section>}
           {(feeFunding.length>0 || separatePayers.length>0 || stablePayers.length>0) && <section className="review-section">
             <h3>Network fee payment</h3>
             {feeFunding.length>0 && <Value k="fee_funding" v={feeFunding} network={network}/>}

@@ -31,10 +31,11 @@ Pons packet, deploy later from your own wallet and verify its exact runtime.
 
 The current native Clanker form is V5, with chain-specific registered quotes,
 separate buy/sell tax, optional holder dividends and burn allocation, mutable
-metadata controls and reward recipients. Helm's existing adapter is a V4 WETH
-preset. They must not be described as the same flow. Clanker V5 already has
-upstream factories; updating Helm's adapter does not require deploying a new
-Helm factory on each chain.
+metadata controls and reward recipients. The new
+[Clanker V5 adapter](clanker-v5-integration.md) implements that version on Base,
+BNB Chain and Robinhood Chain while preserving V4 token management. It uses the
+existing upstream factories, with no new Helm factory deployment fee per chain.
+Funded production lifecycle rehearsals remain separate from unsigned simulation.
 
 Bags' current custom-quote route starts on DBC with Fee Share V2 and a staged
 transaction plan, rather than the older direct DAMM-only path. Enabling quote

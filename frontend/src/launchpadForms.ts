@@ -1,13 +1,18 @@
 export interface LaunchField {
   key: string; type: string; label?: string; hint?: string;
   options?: (string | number)[]; default?: unknown; min?: number; max?: number;
+  option_labels?: Record<string,string>;
+  asset_kinds?: Record<string,string>;
 }
 interface Section { title: string; description: string; keys: string[] }
 interface Profile { sections: Section[]; scope: string; pair: string; funding: string }
 const execution: Section = { title: "Execution preferences", description: "These settings apply when you review and deploy the draft.", keys: ["priority_fee_sol", "slippage_pct"] };
 const clanker: Profile = {
-  sections: [{ title: "Pool protection", description: "Set the opening swap fee and how long it takes to decay.", keys: ["sniper_start_pct", "sniper_decay_s"] }, execution],
-  scope: "Helm uses Clanker V4's WETH pool preset and the disclosed creator/Helm reward recipients. The native V5 tax, holder-dividend and custom-quote controls are not integrated here. Vesting, airdrops and social launch tools are not configured by this preset.", pair: "WETH", funding: "Creator buy",
+  sections: [
+    { title: "Pair asset", description: "Choose a registered native, stable, crypto or stock-token quote. Availability is checked on-chain before launch.", keys: ["clanker_quote", "quote_eligibility"] },
+    { title: "V5 tax & holder rewards", description: "Buy and sell taxes include Clanker's protocol fee. Allocate the remainder to creator rewards, holder dividends or burns.", keys: ["buy_tax_pct","sell_tax_pct","dividend_share_pct","minimum_dividend_tokens","burn_share_pct"] },
+    { title: "Launch controls", description: "The live factory sets the opening anti-sniping schedule. Metadata editing is a permanent launch choice.", keys:["anti_sniping","metadata_editable"] },execution],
+  scope: "Clanker V5 uses permanently locked Uniswap V4 liquidity. Rewards and dividends accrue in the pair asset. Native and stable quotes support an atomic native-coin creator buy; other registered quotes currently require a zero creator buy in Helm. Stock-token use depends on issuer eligibility. V4 tokens retain their historical locker and reward terms. Vesting, airdrops and custom sniper schedules are not V5 launch controls.", pair: "Selected pair asset", funding: "Creator buy",
 };
 const flap: Profile = {
   sections: [{ title: "Token type & trading tax", description: "Choose a standard token or a tax-token preset. Review the tax before deployment.", keys: ["tax_rate_pct"] }, execution],
@@ -19,7 +24,7 @@ export const LAUNCHPAD_FORMS: Record<string, Profile> = {
   bags: { sections: [execution], scope: "SOL launches configure the disclosed creator/Helm fee split. New custom-quote launches require Bags' updated DBC and Fee Share V2 execution and reward integration; they are not available here yet. Social shareholders, holder rewards and Bags apps are not configurable here.", pair: "SOL", funding: "Creator buy" },
   "meteora-dbc": { sections: [{ title: "Curve & launch protection", description: "Select the Studio API preset and its anti-sniping setting.", keys: ["dbc_quote", "anti_sniping"] }, execution], scope: "Helm uses the integrated Studio API presets. Custom curves, creator vesting and the full native Studio configuration are not available here. An initial creator buy is not supported.", pair: "Curve currency", funding: "Creator buy unavailable" },
   printr: { sections: [{ title: "Curve size", description: "When the bonding curve graduates to Printr's AMM pool.", keys: ["graduation_usd"] }, execution], scope: "Helm launches Printr tokens on Solana only, with creator fees to the dev wallet. Multichain launches, staking, buyback and custom fee routing are not configured here.", pair: "SOL", funding: "Creator buy" },
-  clanker, "clanker-robinhood": clanker,
+  clanker, "clanker-robinhood": clanker, "clanker-bsc":clanker,
   "flap-sh": { ...flap, sections: [execution], scope: "BNB standard route: Flap V7, zero trading tax, Infinity CL migration, and 100% of LP-fee allocation to holder dividends with a 10,000-token minimum. Custom quotes, marketing allocations and vaults are not supported. Tax-token creation is unavailable pending creator-reward collection.", pair: "BNB" },
   "flap-sh-robinhood": flap,
   "flap-sh-base": { ...flap, sections: [{ title: "Base trading tax", description: "Choose the rate applied to buys and sells. Helm supports tax-token launches on Base.", keys: ["tax_rate_pct"] }, execution], scope: "Base supports the tax-token preset only: equal buy/sell rates for one year, with creator tax sent to the dev wallet. Flap's commission is separate from Helm's creator-reward share. Custom allocations and vaults are not supported here.", pair: "ETH" },
@@ -52,6 +57,12 @@ export function validateLaunchFields(fields: LaunchField[], values: Record<strin
     }
   }
   const hard = Number(values.hard_cap_near), soft = Number(values.soft_cap_near);
+  if (values.dividend_share_pct !== undefined && Number(values.dividend_share_pct)+Number(values.burn_share_pct ?? 0)>100) return 'Dividends and burns together cannot exceed 100%.';
+  if (Number(values.dividend_share_pct)>0 && !Number.isInteger(Number(values.minimum_dividend_tokens))) return 'Enter a whole-token minimum holding.';
+  const quote=fields.find(f=>f.key==='clanker_quote');
+  const kind=quote?.asset_kinds?.[String(values.clanker_quote)];
+  if (kind==='stock' && values.quote_eligibility!=='confirmed') return 'Confirm the stock-token issuer’s eligibility terms.';
+  if (kind && !['native','stable'].includes(kind) && Number(values.dev_buy_sol)>0) return 'Set the creator buy to zero for this pair asset.';
   if (hard > 0 && hard < soft) return "The hard cap must be at least the soft cap, or 0 for no hard cap.";
   return null;
 }

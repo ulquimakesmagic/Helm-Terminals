@@ -5,7 +5,7 @@ import { LAUNCHPAD_EXPERIENCES, launchpadExperience } from "../src/launchpadExpe
 
 const IMPLEMENTED = [
   "pumpfun", "letsbonk", "bags", "flap-sh", "flap-sh-base", "flap-sh-robinhood", "pons", "printr", "four-meme",
-  "uniswap-v2", "meteora-dbc", "clanker", "clanker-robinhood", "sunpump", "meme-cooking", "tolly",
+  "uniswap-v2", "meteora-dbc", "clanker", "clanker-robinhood", "clanker-bsc", "sunpump", "meme-cooking", "tolly",
 ];
 
 test("every implemented launchpad has a specific launch experience", () => {
@@ -15,6 +15,12 @@ test("every implemented launchpad has a specific launch experience", () => {
     assert.notEqual(experience.title, "Configure this launch", id);
     assert.ok(experience.features.length >= 3);
   }
+});
+
+test('V4 management retains its historical reward explanation',()=>{
+  assert.match(launchpadExperience('clanker',4).mode,/V4/);
+  assert.match(launchpadExperience('clanker',5).mode,/V5/);
+  assert.match(launchpadExperience('clanker-robinhood',4).claimCopy,/V4 fee locker/);
 });
 
 test("claim controls reflect the adapters Helm actually supports", () => {

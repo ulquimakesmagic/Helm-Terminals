@@ -192,6 +192,12 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
         cells: [["Platform fee", fee(pre.platform_fee)]],
         next: ["The launchpad's claim transaction is simulated, then sent.", "If there is nothing to claim, nothing is sent."],
       };
+    case "claim_dividends":
+      return {
+        label:"Claim holder dividends",value:pre.wallet?short(pre.wallet):"—",sub:"This token’s currently payable dividends return to the selected wallet",
+        cells:[["Platform fee","None"],...gasCell],
+        next:["The claim is simulated before sending. An empty or excluded claim sends nothing.","Network gas is paid by the selected wallet."],
+      };
     case "burn":
       return {
         label: "Burn tokens", value: fmt(num(pre.tokens) ?? 0, 2), unit: "tokens", sub: <>{fmt(num(pre.percent) ?? 0, 2)}% of the balance in {pre.wallet ? short(pre.wallet) : "the wallet"}</>,

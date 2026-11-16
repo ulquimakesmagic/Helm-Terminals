@@ -1,5 +1,8 @@
 # Launchpad capability review
 
+The Clanker rows below describe the 15 November baseline. They are superseded by
+the [16 November V5 integration](clanker-v5-integration.md); other gates remain.
+
 This matrix separates Helm's implemented routes from the complete upstream product.
 Review date: 15 November 2026. Readiness is reported per operation, not inferred from
 a logo, an API key, or a launchpad's own availability. No financial transaction was

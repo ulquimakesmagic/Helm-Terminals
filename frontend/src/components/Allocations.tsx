@@ -39,7 +39,7 @@ function subtract(a: string, b: string): string {
 const sum = (xs: string[]) => xs.reduce((acc, x) => subtract(acc, subtract("0", x || "0")), "0");
 
 export default function Allocations({ launch, wallets, onChanged }: {
-  launch: { id: string; network: string; symbol: string; launchpad: string; mint_address: string | null; dev_wallet_id: string | null; settings?: Record<string, unknown> };
+  launch: { id: string; network: string; symbol: string; launchpad: string; mint_address: string | null; dev_wallet_id: string | null; settings?: Record<string, unknown>; clanker_version?:number };
   wallets: { id: string; address: string; label: string; tokens: number }[];
   onChanged: () => void;
 }) {
@@ -152,7 +152,7 @@ export default function Allocations({ launch, wallets, onChanged }: {
       </Card>
       {v.warnings.map((w) => <Callout key={w} tone="warn">{w}</Callout>)}
       {launch.mint_address && <Disperse launch={launch} wallets={wallets} onDone={() => { load(); onChanged(); }} />}
-      <Protections launchpad={launch.launchpad} params={launch.settings ?? {}} />
+      <Protections launchpad={launch.launchpad} params={launch.settings ?? {}} version={launch.clanker_version} />
     </div>
   );
 }
@@ -213,9 +213,9 @@ function Disperse({ launch, wallets, onDone }: {
   );
 }
 
-function Protections({ launchpad, params }: { launchpad: string; params: Record<string, unknown> }) {
+function Protections({ launchpad, params, version }: { launchpad: string; params: Record<string, unknown>; version?:number }) {
   const [p, setP] = useState<{ items: { id: string; label: string; available: boolean; effect: string; fee: string | null; options?: string[] }[]; summary: string } | null>(null);
-  useEffect(() => { api(`/launchpads/${launchpad}/protections`).then(setP).catch(() => undefined); }, [launchpad]);
+  useEffect(() => { api(`/launchpads/${launchpad}/protections${version?`?version=${version}`:''}`).then(setP).catch(() => undefined); }, [launchpad,version]);
   if (!p) return null;
   return (
     <Card title="Launch protections" icon="shield" sub={p.summary}>
