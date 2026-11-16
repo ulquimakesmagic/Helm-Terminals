@@ -109,6 +109,15 @@ class SolanaRPC:
         res = await self._call("getLatestBlockhash", [{"commitment": "confirmed"}])
         return res["value"]["blockhash"]  # type: ignore[index]
 
+    async def get_block_height(self, commitment: str = 'confirmed') -> int:
+        return int(await self._call('getBlockHeight',[{'commitment':commitment}]))
+
+    async def get_slot(self, commitment: str = 'confirmed') -> int:
+        return int(await self._call('getSlot',[{'commitment':commitment}]))
+
+    async def get_transaction(self, signature: str) -> dict | None:
+        return await self._call('getTransaction',[signature,{'encoding':'json','commitment':'confirmed','maxSupportedTransactionVersion':0}])
+
     async def get_token_balance(self, owner: str, mint: str) -> int:
         res = await self._call(
             "getTokenAccountsByOwner",
@@ -128,6 +137,18 @@ class SolanaRPC:
         raw = base64.b64decode(value["data"][0])
         keys = [Pubkey.from_bytes(raw[i:i + 32]) for i in range(56, len(raw) - 31, 32)]
         return AddressLookupTableAccount(Pubkey.from_string(address), keys)
+
+    async def get_lookup_table_state(self, address: str):
+        from solders.address_lookup_table_account import ADDRESS_LOOKUP_TABLE_ID,AddressLookupTable
+        result=await self._call('getAccountInfo',[address,{'encoding':'base64','commitment':'confirmed'}])
+        value=(result or {}).get('value')
+        if not value:return None
+        if value.get('owner')!=str(ADDRESS_LOOKUP_TABLE_ID):
+            raise RPCError('Lookup table is owned by an unexpected program')
+        try:
+            return AddressLookupTable.deserialize(base64.b64decode(value['data'][0],validate=True))
+        except Exception:
+            raise RPCError('Lookup table state is malformed') from None
 
     async def get_mint_program(self, mint: str) -> Pubkey:
         """The token program that owns a mint: classic SPL Token or Token-2022."""
@@ -481,6 +502,8 @@ async def sign_versioned(
         elif k in refs:
             sigs.append(Signature.from_bytes(await signer.sign_message(refs[k], msg_bytes)))
         elif i < len(existing) and existing[i] != Signature.default():
+            if not existing[i].verify(key,msg_bytes):
+                raise SigningError('invalid existing provider signature')
             sigs.append(existing[i])  # already signed by the launchpad (e.g. a mint key it generated)
         elif allow_missing and i > 0:  # the fee payer (slot 0) must always be ours
             sigs.append(Signature.default())

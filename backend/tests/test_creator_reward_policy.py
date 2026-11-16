@@ -36,12 +36,26 @@ async def test_new_reward_routes_fail_closed_without_collection(client, monkeypa
     assert not _creator_share_terms("printr", {}, CREATOR)["supported"]
     assert not _creator_share_terms("meteora-dbc", {}, CREATOR)["supported"]
     assert not _creator_share_terms("bags", {"quote": {"mint": "other-asset"}})["supported"]
-    for pad in ("pumpfun", "bags", "clanker", "clanker-robinhood"):
+    assert not _creator_share_terms("bags", {})["supported"]
+    assert pc.creator_share('bags')['reward_streams']==['creator','deployer']
+    for pad in ("pumpfun", "clanker", "clanker-robinhood"):
         terms = _creator_share_terms(pad, {})
         assert terms["supported"] and terms["bps"] == 250 and terms["creator_bps"] == 9750
     assert _creator_share_terms("four-meme", {})["collection"] == "not_applicable"
     assert _creator_share_terms("flap-sh", {"tax_rate_pct": 0})["bps"] == 0
     assert not _creator_share_terms("flap-sh", {"tax_rate_pct": 1})["supported"]
+
+
+async def test_bags_credentials_do_not_enable_an_incomplete_combined_reward_route(client,monkeypatch):
+    from .conftest import TEST_OPENAPI
+    monkeypatch.setattr(get_settings(),'bags_api_key',TEST_OPENAPI)
+    pads=(await client.get('/launchpads')).json()
+    bags=next(pad for pad in pads if pad['id']=='bags')
+    assert bags['status']=='setup_required' and bags['setup_kind']=='reward_integration'
+    assert 'both normal creator and separate deployer' in bags['reason']
+    assert not bags['capabilities']['create']
+    assert bags['capabilities']['buy'] and bags['capabilities']['sell']
+    assert bags['capabilities']['claim_mode']=='in-app'
 
 
 async def test_native_reward_receipt_reserves_referral_once_without_signing(client):

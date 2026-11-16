@@ -119,10 +119,14 @@ def creator_share(launchpad: str) -> dict:
     from .pricing import CREATOR_SHARE_BPS
     network = CREATOR_SHARE_LAUNCHPADS.get(launchpad)
     recipient = treasury_for(network) if network else ""
-    native = launchpad in {"pumpfun", "bags", "clanker", "clanker-robinhood", "clanker-bsc"}
+    native = launchpad in {"pumpfun", "clanker", "clanker-robinhood", "clanker-bsc"}
     if launchpad == "pons":
         native = bool(get_settings().pons_rewards_factory_v2)
     supported = native and bool(recipient)
+    if launchpad == 'bags':
+        return {"bps": CREATOR_SHARE_BPS, "recipient": recipient, "supported": False,
+                "collection": "integration_required", "reward_streams": ["creator", "deployer"],
+                "note": "Bags creator-reward integration must cover both normal creator and separate deployer rewards before new launches can be enabled"}
     return {"bps": CREATOR_SHARE_BPS, "recipient": recipient, "supported": supported,
             "collection": "native_split" if supported else "integration_required",
             "note": ("2.5% of creator rewards to Helm; 97.5% to the creator" if supported else

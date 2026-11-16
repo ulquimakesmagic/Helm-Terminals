@@ -103,27 +103,16 @@ def bags_handler(calls: list, mint: str, config_txs: int = 1, bundles=None):
     return handler
 
 
-async def test_bags_launch_is_config_then_launch_with_partner_share():
-    calls: list = []
-    mint = str(Keypair().pubkey())
-    a = BagsAdapter(api_key="k", api_url="https://bags.test/api/v1", partner_wallet="PARTNER", partner_config="PCFG",
-                    client=client_for(bags_handler(calls, mint)))
-    built = await a.build_create_tx(CREATE)
-    assert built.mint == mint and len(built.pre) == 1  # fee-share config lands before the launch
-    cfg = next(b for p, b, _ in calls if p == "/fee-share/config")
-    assert cfg["claimersArray"] == [str(DEV)] and cfg["basisPointsArray"] == [10_000]  # creator keeps 100%
-    assert cfg["partner"] == "PARTNER" and cfg["partnerConfig"] == "PCFG"
-    launch = next(b for p, b, _ in calls if p == "/token-launch/create-launch-transaction")
-    assert launch["initialBuyLamports"] == 500_000_000 and launch["configKey"] == "CFG"
-
-
-async def test_bags_refuses_bundles_and_missing_image():
-    a = BagsAdapter(api_key="k", api_url="https://bags.test/api/v1",
-                    client=client_for(bags_handler([], str(Keypair().pubkey()), bundles=[["x"]])))
-    with pytest.raises(AdapterError, match="bundle"):
-        await a.build_create_tx(CREATE)
-    with pytest.raises(AdapterError, match="image"):
-        await a.build_create_tx(CreateRequest(**{**CREATE.__dict__, "image_bytes": None}))
+@pytest.mark.parametrize('options,image', [({}, b'image'), ({'quote': {'mint': str(Keypair().pubkey())}}, b'image'), ({}, None)])
+async def test_bags_new_creation_is_gated_before_metadata_or_unsigned_config(options,image):
+    calls=[]
+    def unexpected(request):
+        calls.append(request)
+        raise AssertionError('No creation API may run before combined-reward collection is ready')
+    a=BagsAdapter(api_key='k',client=client_for(unexpected))
+    with pytest.raises(AdapterError,match='both creator and deployer'):
+        await a.build_create_tx(CreateRequest(**{**CREATE.__dict__,'options':options,'image_bytes':image}))
+    assert not calls
 
 
 class _Rpc:
@@ -175,35 +164,6 @@ async def test_signing_keeps_a_signature_the_launchpad_already_added():
 
     signed = VersionedTransaction.from_bytes(await sign_versioned(bytes(part), S(), {str(wallet.pubkey()): "ref"}))
     assert signed.verify_with_results() == [True, True]
-
-
-async def test_bags_pair_token_launch_orders_setup_launch_and_cleanup():
-    """Stock-paired launch: lookup table + token creation first, then the launch, then table clean-up."""
-    calls: list = []
-    mint, quote = str(Keypair().pubkey()), str(Keypair().pubkey())
-    tx = lambda n: b58encode(build_unsigned(DEV, [sol_transfer_ix(DEV, DEV, n)], str(Hash.default())))  # noqa: E731
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        path = req.url.path.removeprefix("/api/v1")
-        calls.append((path, json.loads(req.content) if req.headers.get("content-type", "").startswith("application/json") else None))
-        if path == "/token-launch/create-token-info":
-            return httpx.Response(200, json={"success": True, "response": {"tokenMint": mint, "tokenMetadata": "https://ipfs/m"}})
-        if path == "/token-launch/damm-v2/create-transaction":
-            return httpx.Response(200, json={"success": True, "response": {"transactions": [
-                {"type": "LUT_SETUP", "transaction": tx(1)}, {"type": "CREATE_TOKEN", "transaction": tx(2)},
-                {"type": "LAUNCH", "transaction": tx(3)}, {"type": "LUT_DEACTIVATE", "transaction": tx(4)},
-                {"type": "LUT_CLOSE", "transaction": tx(5)}], "launch": {"tokenMint": mint}}})
-        return httpx.Response(404, json={"success": False, "error": "unexpected " + path})
-
-    a = BagsAdapter(api_key="k", api_url="https://bags.test/api/v1", partner_wallet="PARTNER", client=client_for(handler))
-    built = await a.build_create_tx(CreateRequest(**{**CREATE.__dict__, "options": {"quote": {"mint": quote, "symbol": "NVDAx"}}}))
-    lamports = lambda raw: VersionedTransaction.from_bytes(raw).message.instructions[0].data[4:12]  # noqa: E731
-    assert [int.from_bytes(lamports(r), "little") for r in built.pre] == [1, 2]
-    assert int.from_bytes(lamports(built.raw), "little") == 3
-    assert [int.from_bytes(lamports(r), "little") for r in built.post] == [4]  # close is skipped: needs a cooldown
-    assert "/fee-share/config" not in [p for p, _ in calls]  # no fee-share config for pair launches
-    body = next(b for p, b in calls if p == "/token-launch/damm-v2/create-transaction")
-    assert body["quoteMint"] == quote and body["partner"] == "PARTNER" and "initialBuyQuoteAmount" not in body
 
 
 async def test_bags_pair_launch_claims_point_to_bags():
