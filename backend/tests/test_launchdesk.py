@@ -182,7 +182,7 @@ async def test_dispersing_supply_to_a_folder_is_recorded_in_the_plan(client, fak
 async def test_protections_are_honest_about_each_launchpad(client):
     r = (await client.get("/launchpads/clanker/protections")).json()
     items = {i["id"]: i for i in r["items"]}
-    assert items["sniper_fee"]["available"] and "80%" in items["sniper_fee"]["effect"]
+    assert items["sniper_fee"]["available"] and "live factory" in items["sniper_fee"]["effect"]
     assert not items["per_wallet_limit"]["available"] and not items["allowlist"]["available"]
     p = (await client.get("/launchpads/pumpfun/protections")).json()
     assert not any(i["available"] for i in p["items"]) and "no configurable" in p["summary"]

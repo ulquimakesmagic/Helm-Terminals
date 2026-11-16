@@ -14,13 +14,11 @@ GENERIC = [
 
 SPECIFIC = {
     "clanker": [{
-        "id": "sniper_fee", "label": "Descending sniper fee", "available": True, "configurable": True,
-        "options": ["sniper_start_pct", "sniper_decay_s"],
-        "effect": "The first swaps pay a high LP fee (you choose up to 80%) that falls to about 4.17% over the decay "
-                  "time (up to 2 minutes), so bots that buy in the first block pay heavily.",
-        "fee": "Paid by early buyers as LP fees to the reward recipients (you, plus Helm's reward share if set). "
-               "No separate Helm fee.",
-        "source": "Clanker v4 MEV module (ClankerMevDescendingFees)",
+        "id": "sniper_fee", "label": "Factory anti-sniping", "available": True, "configurable": True,
+        "options": ["anti_sniping"],
+        "effect": "Enable or disable V5 launch anti-sniping. The live factory determines the opening total fee and decay window; review them before signing.",
+        "fee": "The extra anti-sniping fee goes to Clanker. Normal tax, creator rewards and Helm trading fees are separate.",
+        "source": "Clanker V5 factory taxPolicy / TaxLaunchHook",
     }],
     "meteora-dbc": [{
         "id": "anti_sniping", "label": "Jupiter Studio anti-sniping", "available": True, "configurable": True,
@@ -32,6 +30,7 @@ SPECIFIC = {
     }],
 }
 SPECIFIC["clanker-robinhood"] = SPECIFIC["clanker"]
+SPECIFIC["clanker-bsc"] = SPECIFIC["clanker"]
 SPECIFIC["tolly"] = [{
     "id": "anti_snipe_max_wallet", "label": "Anti-snipe max wallet", "available": True, "configurable": False,
     "options": [],

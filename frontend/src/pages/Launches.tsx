@@ -16,7 +16,7 @@ interface Launch {
   quote?: { mint: string; symbol: string; name: string } | null;
   id: string; network: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
   imported: boolean; created_at: string; dev_buy_sol: number; description: string; has_image?: boolean;
-  dev_wallet_id?: string | null; socials?: Record<string,string>; settings?: Record<string,unknown>; slippage_pct?: number; draft_revision?: number;
+  dev_wallet_id?: string | null; socials?: Record<string,string>; settings?: Record<string,unknown>; slippage_pct?: number; draft_revision?: number; clanker_version?:number;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
 function optLabel(key: string, o: string | number): string {
@@ -34,6 +34,8 @@ function optLabel(key: string, o: string | number): string {
 interface OptField {
   key: string; type: "number" | "select" | string; label?: string; hint?: string;
   options?: (string | number)[]; default?: unknown; min?: number; max?: number;
+  option_labels?: Record<string,string>;
+  asset_kinds?: Record<string,string>;
 }
 interface PadSchema { fields: OptField[]; socials: string[]; requires_image: boolean; notes: string[] }
 
@@ -69,6 +71,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
   const [quotesError, setQuotesError] = useState("");
   const [reloadSettings, setReloadSettings] = useState(0);
   const [step, setStep] = useState(0);
+  const [pairSearch,setPairSearch]=useState('');
   const [opts, setOpts] = useState<Record<string, unknown>>({});
   const [slippagePct, setSlippagePct] = useState("10");
   const pad = pads.find((p) => p.id === f.launchpad);
@@ -106,6 +109,9 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
   const experience = launchpadExperience(f.launchpad);
   const profile = launchpadForm(f.launchpad);
   const requiresImage = schema.requires_image;
+  const selectedQuoteKind=schema.fields.find(field=>field.key==='clanker_quote')?.asset_kinds?.[String(opts.clanker_quote)];
+  const noCreatorBuy=!!selectedQuoteKind && !['native','stable'].includes(selectedQuoteKind);
+  const selectedPair=f.launchpad.startsWith('clanker') ? (opts.clanker_quote==='native'?chain.native:schema.fields.find(field=>field.key==='clanker_quote')?.option_labels?.[String(opts.clanker_quote)] ?? String(opts.clanker_quote ?? chain.native)) : null;
   const devBuyField = schema.fields.find((x) => x.key === "dev_buy_sol");
   const groups = groupedFields(f.launchpad, schema.fields.filter(field=>field.type !== 'select' || (field.options?.length ?? 0) > 1));
   const validWallets = wallets.filter(w => w.network === chain.id && w.kind === "managed");
@@ -197,11 +203,13 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
       {step === 1 && <>
       <div className="section-heading"><div><h3>{experience.settingsTitle}</h3><p className="muted small">{experience.description}</p></div></div>
       {schemaLoading && <p role="status" className="muted"><Spinner /> Loading this launchpad's controls…</p>}
+      {initial?.launchpad.startsWith('clanker') && initial.clanker_version!==5 && <Callout>New Clanker launches use V5. Saving this undeployed draft replaces the V4 sniper settings with the V5 tax, pair and reward settings below. Live tokens keep their original terms.</Callout>}
       {groups.map(group => <section className="launch-form-section" key={group.title}>
         <h4>{group.title}</h4><p className="muted small">{group.description}</p>
-        <div className="grid g-form">{group.fields.map(x => <Field key={x.key} label={x.label ?? (x.key === "priority_fee_sol" ? "Priority fee (SOL)" : x.key === "slippage_pct" ? "Maximum slippage (%)" : x.key.replace(/_/g, " "))} hint={x.hint}>
-          {x.type === "select" ? <select value={String(opts[x.key] ?? "")} onChange={e => setOpts({ ...opts, [x.key]: x.options?.find(o => String(o) === e.target.value) })}>
-            {(x.options ?? []).map(o => <option key={String(o)} value={String(o)}>{optLabel(x.key, o)}</option>)}
+        {group.fields.some(x=>x.key==='clanker_quote') && <Field label="Find a pair asset" hint="Search by symbol, name or address. Assets with the same symbol remain distinct by address."><input type="search" value={pairSearch} onChange={e=>setPairSearch(e.target.value)} placeholder="ETH, USDC, stock symbol or address"/></Field>}
+        <div className="grid g-form">{group.fields.filter(x=>x.key!=='quote_eligibility' || selectedQuoteKind==='stock').map(x => <Field key={x.key} label={x.label ?? (x.key === "priority_fee_sol" ? "Priority fee (SOL)" : x.key === "slippage_pct" ? "Maximum slippage (%)" : x.key.replace(/_/g, " "))} hint={x.hint}>
+          {x.type === "select" ? <select value={String(opts[x.key] ?? "")} onChange={e => {setOpts({ ...opts, [x.key]: x.options?.find(o => String(o) === e.target.value),...(x.key==='clanker_quote'?{quote_eligibility:'not_confirmed'}:{}) });if(x.key==='clanker_quote' && e.target.value.startsWith('0x'))setF(old=>({...old,dev_buy_sol:'0'}));}}>
+            {(x.options ?? []).filter(o=>x.key!=='clanker_quote'||o===opts.clanker_quote||(String(o)+' '+(x.option_labels?.[String(o)]??'')).toLowerCase().includes(pairSearch.toLowerCase())).map(o => <option key={String(o)} value={String(o)}>{x.option_labels?.[String(o)] ?? optLabel(x.key, o)}</option>)}
           </select> : <input type="number" min={x.min} max={x.max} step="any" value={String(x.key === "slippage_pct" ? slippagePct : opts[x.key] ?? "")} onChange={e => x.key === "slippage_pct" ? setSlippagePct(e.target.value) : setOpts({ ...opts, [x.key]: e.target.value === "" ? "" : +e.target.value })} />}
         </Field>)}</div>
         {group.fields.some(x => x.key === "tax_rate_pct") && <p className="small">{Number(opts.tax_rate_pct) > 0 ? `${opts.tax_rate_pct}% buy tax · ${opts.tax_rate_pct}% sell tax · one year · creator allocation to the dev wallet` : "Standard token · no creator trading tax"}</p>}
@@ -243,7 +251,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
             {validWallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-        {!paired && devBuyField && devBuyField.max !== 0 && <Field label={devBuyField.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy"} hint={devBuyField.hint} style={{ flex: 1 }}><UnitInput type="number" min={devBuyField.min} max={devBuyField.max} step="any" unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
+        {!paired && devBuyField && devBuyField.max !== 0 && <Field label={devBuyField.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy"} hint={noCreatorBuy?'This quote has no verified creator-buy route in Helm. Launch without a creator buy.':devBuyField.hint} style={{ flex: 1 }}><UnitInput disabled={noCreatorBuy} type="number" min={devBuyField.min} max={devBuyField.max} step="any" unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
       </div>
       {validation && <Callout tone="err">{validation}</Callout>}
       {schema.notes.map((note) => <Callout key={note}>{note}</Callout>)}
@@ -255,7 +263,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
         anti-sniping settings above are explained again, with their effect and fees, in the deploy preview.</p>
       <section className="launch-form-section launch-summary" aria-label="Draft summary">
         <div className="row">{!preview && initial?.has_image && !removeImage && <TokenImage launch={initial}/>} {preview && <img src={preview} alt="Token preview" width={40} height={40} style={{ borderRadius: 10, objectFit: "cover" }} />}<div><h3>{f.name.trim() || "Your token"} <span className="muted">{f.symbol ? `$${f.symbol}` : ""}</span></h3><span className="small muted">{chain.name} · {padName(f.launchpad)}</span></div></div>
-        <dl><div><dt>Pair</dt><dd>{quote?.symbol ?? (opts.dbc_quote ? String(opts.dbc_quote) : profile.pair === "Native asset" ? chain.native : profile.pair)}</dd></div><div><dt>{profile.funding}</dt><dd>{paired ? "Not supported for this pair" : `${f.dev_buy_sol || "0"} ${chain.native}`}</dd></div><div><dt>Dev wallet</dt><dd>{validWallets.find(w => w.id === f.dev_wallet_id)?.label || (f.dev_wallet_id ? short(validWallets.find(w => w.id === f.dev_wallet_id)?.address ?? "") : "Choose before deployment")}</dd></div></dl>
+        <dl><div><dt>Pair</dt><dd>{selectedPair ?? quote?.symbol ?? (opts.dbc_quote ? String(opts.dbc_quote) : profile.pair === "Native asset" ? chain.native : profile.pair)}</dd></div><div><dt>{profile.funding}</dt><dd>{paired || noCreatorBuy ? "Not supported for this pair" : `${f.dev_buy_sol || "0"} ${chain.native}`}</dd></div><div><dt>Dev wallet</dt><dd>{validWallets.find(w => w.id === f.dev_wallet_id)?.label || (f.dev_wallet_id ? short(validWallets.find(w => w.id === f.dev_wallet_id)?.address ?? "") : "Choose before deployment")}</dd></div></dl>
         <p className="muted small">Draft only. Network costs, platform fees and reward recipients are reviewed before signing.</p>
       </section>
       </>}

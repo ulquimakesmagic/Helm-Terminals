@@ -1,0 +1,3975 @@
+{
+  "source": "https://docs.clanker.world/references/supported-quote-tokens",
+  "upstream_updated": "2026-11-13",
+  "note": "Discovery snapshot only; every launch rechecks registration and decimals on-chain. Identify assets by chain and address, never symbol alone.",
+  "quotes": {
+    "base": [
+      {
+        "address": "0x0000000000000000000000000000000000000000",
+        "symbol": "ETH",
+        "name": "Ether (ETH)",
+        "decimals": 18,
+        "kind": "native"
+      },
+      {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "symbol": "USDC",
+        "name": "USD Coin (USDC)",
+        "decimals": 6,
+        "kind": "stable"
+      },
+      {
+        "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+        "symbol": "cbBTC",
+        "name": "Coinbase Wrapped BTC (cbBTC)",
+        "decimals": 8,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xcbD06E5A2B0C65597161de254AA074E489dEb510",
+        "symbol": "cbDOGE",
+        "name": "Coinbase Wrapped DOGE (cbDOGE)",
+        "decimals": 8,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xcb585250f852C6c6bf90434AB21A00f02833a4af",
+        "symbol": "cbXRP",
+        "name": "Coinbase Wrapped XRP (cbXRP)",
+        "decimals": 6,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xcb17C9Db87B595717C857a08468793f5bAb6445F",
+        "symbol": "cbLTC",
+        "name": "Coinbase Wrapped LTC (cbLTC)",
+        "decimals": 8,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xcbADA732173e39521CDBE8bf59a6Dc85A9fc7b8c",
+        "symbol": "cbADA",
+        "name": "Coinbase Wrapped ADA (cbADA)",
+        "decimals": 6,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xcb111E6A2a3bde90856D299d61341ac302167D23",
+        "symbol": "cbMEGA",
+        "name": "Coinbase Wrapped MEGA (cbMEGA)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB2000000000000000000008501b13360000cb2EC",
+        "symbol": "cbZEC",
+        "name": "Coinbase Wrapped ZEC (cbZEC)",
+        "decimals": 8,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB200000000000000000000451d033a5000cb479e",
+        "symbol": "cbHYPE",
+        "name": "Coinbase Wrapped Hyperliquid (cbHYPE)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB2000000000000000000004c27f6523082f41D01",
+        "symbol": "Basecat",
+        "name": "Basecat (Basecat)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB200000000000000000000cFbdF64a8706a94a01",
+        "symbol": "BLUECHIP",
+        "name": "BLUE CHIP (BLUECHIP)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB200000000000000000000585fd80C20af698f01",
+        "symbol": "worth",
+        "name": "one life, its worth an attempt (worth)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b",
+        "symbol": "BNKR",
+        "name": "BankrCoin (BNKR)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb",
+        "symbol": "CLANKER",
+        "name": "tokenbot (CLANKER)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf",
+        "symbol": "VVV",
+        "name": "Venice Token (VVV)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0x940181a94A35A4569E4529A3CDfB74e38FD98631",
+        "symbol": "AERO",
+        "name": "Aerodrome (AERO)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
+        "symbol": "MORPHO",
+        "name": "Morpho Token (MORPHO)",
+        "decimals": 18,
+        "kind": "crypto"
+      },
+      {
+        "address": "0xB2000000000000000000004FeB8D277Dd14b08Bb",
+        "symbol": "AALc",
+        "name": "American Airlines Group Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000cf36D05963A3E2205c",
+        "symbol": "AAOIc",
+        "name": "Applied Optoelectronics Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000C2e324d24d7eEcd1fb",
+        "symbol": "AAPLc",
+        "name": "Apple Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000045beafafBE0Dc7664",
+        "symbol": "ABNBc",
+        "name": "Airbnb, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000010718397ACA876A20a",
+        "symbol": "ABSIc",
+        "name": "Absci Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008a494D531D88cF55d6",
+        "symbol": "ACHRc",
+        "name": "Archer Aviation Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000034533Ed3961f222Cd4",
+        "symbol": "ADBEc",
+        "name": "Adobe Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000c33e458d1f892A7917",
+        "symbol": "ADIc",
+        "name": "Analog Devices, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000001775Bd17f2289DE527",
+        "symbol": "AEHRc",
+        "name": "Aehr Test Systems",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006064f8EC027f042294",
+        "symbol": "AEOc",
+        "name": "American Eagle Outfitters, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000896d4cF2f1866d9bCe",
+        "symbol": "AFRMc",
+        "name": "Affirm Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000072B5C2B2D18Ee8A2a5",
+        "symbol": "AIc",
+        "name": "C3.ai, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000476C5a355AbE1a2794",
+        "symbol": "ALABc",
+        "name": "Astera Labs, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000011EEA811eAEdb29156",
+        "symbol": "ALNTc",
+        "name": "Allient Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000009C1A6794874DdAb197",
+        "symbol": "AMATc",
+        "name": "Applied Materials, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000CD7e6b8042cb7c2BB5",
+        "symbol": "AMCc",
+        "name": "AMC Entertainment Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000000d8Ce462E99ee7A47B",
+        "symbol": "AMDc",
+        "name": "Advanced Micro Devices, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000049d38a179C97E33381",
+        "symbol": "AMGNc",
+        "name": "Amgen Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002C8b0e3d7Ff26f81a0",
+        "symbol": "AMKRc",
+        "name": "Amkor Technology, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d9192b6B456483C2E8",
+        "symbol": "AMZNc",
+        "name": "Amazon.com Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000E71D4E45D1421251cb",
+        "symbol": "ANETc",
+        "name": "Arista Networks, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000019641B253b3e2c8A24",
+        "symbol": "ANFc",
+        "name": "Abercrombie & Fitch Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000007Cbdf8fa3861E51721",
+        "symbol": "APLDc",
+        "name": "Applied Digital Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000006f910a0e7BBD3c168",
+        "symbol": "APPc",
+        "name": "AppLovin Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000026215D755356E5043f",
+        "symbol": "ARMc",
+        "name": "Arm Holdings plc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002Cd78D7C981e97c330",
+        "symbol": "ASSTc",
+        "name": "Strive, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000B1a29cF17A1819288a",
+        "symbol": "ASTSc",
+        "name": "AST SpaceMobile, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000cF62D7125cC77D2F96",
+        "symbol": "AURc",
+        "name": "Aurora Innovation, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000Fc737aeA6196aB5a4c",
+        "symbol": "AVGOc",
+        "name": "Broadcom Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000004cc3E96cEb78541d33",
+        "symbol": "AXONc",
+        "name": "Axon Enterprise, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000A640Ec8C1de0EFb484",
+        "symbol": "AXTIc",
+        "name": "AXT Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000Fd10D35a781efB5C2F",
+        "symbol": "BAc",
+        "name": "The Boeing Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000E3e784CDF88Df2959d",
+        "symbol": "BACc",
+        "name": "Bank of America Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000747BFfA52Fe2C2510B",
+        "symbol": "BALLc",
+        "name": "Ball Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000898eD394469DB1845C",
+        "symbol": "BBAIc",
+        "name": "BigBear.ai Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000016f9dfe862feBA122b",
+        "symbol": "BEc",
+        "name": "Bloom Energy Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d2b7D9aeE52F6C6BEf",
+        "symbol": "BIDUc",
+        "name": "Baidu, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000077bbd6469ecFE8c0b4",
+        "symbol": "BIIBc",
+        "name": "Biogen Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000ca7C6D1438e7245eb6",
+        "symbol": "BILIc",
+        "name": "Bilibili Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000535fE96f18204BFD96",
+        "symbol": "BIRDc",
+        "name": "Smartbird, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000082f7FEA8F2eE8f438",
+        "symbol": "BJc",
+        "name": "BJ's Wholesale Club Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000bC4d895DF1eEeD1d06",
+        "symbol": "BKSYc",
+        "name": "BlackSky Technology Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004EC7c19212979672F9",
+        "symbol": "BLNKc",
+        "name": "Blink Charging Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000eA2df44A307CaB279C",
+        "symbol": "BMNRc",
+        "name": "BitMine Immersion Technologies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008c1bAD82Fa061F818a",
+        "symbol": "BNCc",
+        "name": "BNB Standard Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003E5e2892158e25DD7b",
+        "symbol": "BOOTc",
+        "name": "Boot Barn Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000024170488e788CBbCb4",
+        "symbol": "BRK.Bc",
+        "name": "Berkshire Hathaway Inc. Class B",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001ECFAcCd9047D3B544",
+        "symbol": "BROSc",
+        "name": "Dutch Bros Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000c36ce081Dd09e86cA2",
+        "symbol": "BUDc",
+        "name": "Anheuser-Busch InBev SA/NV",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000645c1Ec509E4261682",
+        "symbol": "BXc",
+        "name": "Blackstone Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000801830b13b8E493423",
+        "symbol": "BYNDc",
+        "name": "Beyond Meat, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000084B031036E4dc7515B",
+        "symbol": "BZFDc",
+        "name": "BuzzFeed, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000f215E4C890CFb7176B",
+        "symbol": "CAKEc",
+        "name": "Cheesecake Factory Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000f32d61BA597EDdFbfd",
+        "symbol": "CANc",
+        "name": "Canaan Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005de7f2E0AcA219c070",
+        "symbol": "CATc",
+        "name": "Caterpillar Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000001b6e407239EB31EDCf",
+        "symbol": "CAVAc",
+        "name": "CAVA Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000720133EeDF525f93E2",
+        "symbol": "CBRSc",
+        "name": "Cerebras Systems Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000Da9874B62B55e791b5",
+        "symbol": "CEGc",
+        "name": "Constellation Energy Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004161B4168d03841511",
+        "symbol": "CELHc",
+        "name": "Celsius Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000002451aF655AE942308D",
+        "symbol": "CGNXc",
+        "name": "Cognex Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001cA01a48688eC7D3CC",
+        "symbol": "CHPTc",
+        "name": "ChargePoint Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000A5E12a1842DfcDb118",
+        "symbol": "CHWYc",
+        "name": "Chewy, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000008258e8647CEa5F4A19",
+        "symbol": "CIENc",
+        "name": "Ciena Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000690275843B6e246286",
+        "symbol": "CIFRc",
+        "name": "Cipher Digital Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bf75A42183508f2614",
+        "symbol": "CLFc",
+        "name": "Cleveland-Cliffs Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000055e63C4c1cDC6b7A36",
+        "symbol": "CLOVc",
+        "name": "Clover Health Investments, Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000fa63cFFF5c794dbB95",
+        "symbol": "CLSKc",
+        "name": "CleanSpark, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003bd46dbdE905508B16",
+        "symbol": "CMCSAc",
+        "name": "Comcast Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000E4A60215E10D6D8c2b",
+        "symbol": "CMGc",
+        "name": "Chipotle Mexican Grill, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000A8C925F62e6D194715",
+        "symbol": "COHRc",
+        "name": "Coherent Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000c85a31389D71F3ecfb",
+        "symbol": "COINc",
+        "name": "Coinbase Global Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000A1d16a625A68F38811",
+        "symbol": "COMPc",
+        "name": "Compass, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000eC622942B76a2d3b21",
+        "symbol": "COPc",
+        "name": "ConocoPhillips",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001aaa9010Cd65f82c5E",
+        "symbol": "CORZc",
+        "name": "Core Scientific, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000038e9982fE875b7E066",
+        "symbol": "CPNGc",
+        "name": "Coupang, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000019f6E7C675b73C2e4D",
+        "symbol": "CRCLc",
+        "name": "Circle Internet Group Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006432a3a7991e718DBB",
+        "symbol": "CRMc",
+        "name": "Salesforce, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000431a5C1E48E3b1d130",
+        "symbol": "CROXc",
+        "name": "Crocs, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000A0dE75786C9f8fC58c",
+        "symbol": "CRWDc",
+        "name": "CrowdStrike Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000F111184A74720787E6",
+        "symbol": "CRWVc",
+        "name": "CoreWeave, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000015776Ea82655C4F034",
+        "symbol": "CSCOc",
+        "name": "Cisco Systems, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000Ffb10718f880A48274",
+        "symbol": "CVNAc",
+        "name": "Carvana Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003bf350E420c13e431a",
+        "symbol": "CVXc",
+        "name": "Chevron Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bf391678bf2e38CedB",
+        "symbol": "DASHc",
+        "name": "DoorDash, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000009BBA9A926f19cfF8e7",
+        "symbol": "DAVEc",
+        "name": "Dave Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002C99976e240eD773E6",
+        "symbol": "DDOGc",
+        "name": "Datadog, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000050fE6d1Ef35B02E8fD",
+        "symbol": "DELLc",
+        "name": "Dell Technologies Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000bD75bF439A38bF7DF",
+        "symbol": "DISc",
+        "name": "The Walt Disney Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000428E3a3eebBb20692B",
+        "symbol": "DJTc",
+        "name": "Trump Media & Technology Group Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000009b870441031D4d8A41",
+        "symbol": "DKNGc",
+        "name": "DraftKings Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000CC17EEa8c9495E1499",
+        "symbol": "DNAc",
+        "name": "Ginkgo Bioworks Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005c41b0018612629072",
+        "symbol": "DNUTc",
+        "name": "Krispy Kreme, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000A613D12dEAfBBb1Db7",
+        "symbol": "DUOLc",
+        "name": "Duolingo, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000808E9CCA9ED8e4Da61",
+        "symbol": "EATc",
+        "name": "Brinker International, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000007578836b0Ff7780EB4",
+        "symbol": "EBAYc",
+        "name": "eBay Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000006b7f6966EE0453E251",
+        "symbol": "ELFc",
+        "name": "e.l.f. Beauty, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000FCD9C2A4Ee4A2B5481",
+        "symbol": "EMRc",
+        "name": "Emerson Electric Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000007a90b2D9Ed101035A8",
+        "symbol": "ENPHc",
+        "name": "Enphase Energy, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000BBc68170Eb0b049E42",
+        "symbol": "ENVXc",
+        "name": "Enovix Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000CE4f8fC7ba5cA0359b",
+        "symbol": "Fc",
+        "name": "Ford Motor Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003Fa80315bFd87eFed8",
+        "symbol": "FIGc",
+        "name": "Figma, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000005A41bef59807119850",
+        "symbol": "FIGRc",
+        "name": "Figure Technology Solutions, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000ee6fD7De967ea1A0DC",
+        "symbol": "FIZZc",
+        "name": "National Beverage Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000695b10DD3E1B0EA070",
+        "symbol": "FLNCc",
+        "name": "Fluence Energy, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004fc7a0C25178A0D633",
+        "symbol": "FLYc",
+        "name": "Firefly Aerospace Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000b096f2f6021Ac39617",
+        "symbol": "FSLRc",
+        "name": "First Solar, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000FfADA41C4ed20B8D0F",
+        "symbol": "FUBOc",
+        "name": "FuboTV Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000199aE48796c61909e",
+        "symbol": "FUNc",
+        "name": "Six Flags Entertainment Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001e838D4bEb66cf8FB7",
+        "symbol": "FWDIc",
+        "name": "Forward Industries, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000005550e8506124236271",
+        "symbol": "GAMEc",
+        "name": "GameSquare Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bBA79A25EdfD4B66c0",
+        "symbol": "GAPc",
+        "name": "The Gap, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000F5049c6a6F3a47348d",
+        "symbol": "GEc",
+        "name": "General Electric Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000009C52748e1D1Cbd5fd6",
+        "symbol": "GEMIc",
+        "name": "Gemini Space Station, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000AcccFe56da68b19a0D",
+        "symbol": "GILDc",
+        "name": "Gilead Sciences, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000008C06c1B3E7590ac982",
+        "symbol": "GLWc",
+        "name": "Corning Incorporated",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006de7888c3FffD803ac",
+        "symbol": "GLXYc",
+        "name": "Galaxy Digital Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000007790ed6E48e06eD935",
+        "symbol": "GMEc",
+        "name": "GameStop Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002D0BA3164cc74f58B7",
+        "symbol": "GOOGLc",
+        "name": "Alphabet Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000F0e13d9C1cdfd211C8",
+        "symbol": "GPROc",
+        "name": "GoPro, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000007E032680bAd472032f",
+        "symbol": "GSATc",
+        "name": "Globalstar, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000a82a0C88DD258eD141",
+        "symbol": "GSc",
+        "name": "The Goldman Sachs Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000df14B76C292A32982d",
+        "symbol": "GTLBc",
+        "name": "GitLab Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000b11c7e7295fE11fBa7",
+        "symbol": "HDc",
+        "name": "The Home Depot, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000043a599976181Bcf336",
+        "symbol": "HIMSc",
+        "name": "Hims & Hers Health, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001FaA7Fa5eF4184eDE5",
+        "symbol": "HOGc",
+        "name": "Harley-Davidson, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000006F944897540579D3f2",
+        "symbol": "HOODc",
+        "name": "Robinhood Markets, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000d8aEccF70906AB125d",
+        "symbol": "HPEc",
+        "name": "Hewlett Packard Enterprise Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000009a3602cF5d020afA98",
+        "symbol": "HPQc",
+        "name": "HP Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000f3049F4aa834b23b64",
+        "symbol": "HSAIc",
+        "name": "Hesai Group",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000F327a373aa86Ac86A8",
+        "symbol": "HSYc",
+        "name": "The Hershey Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002601C5C94F435da168",
+        "symbol": "HTZc",
+        "name": "Hertz Global Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000006Ee1C139a723872e09",
+        "symbol": "HUTc",
+        "name": "Hut 8 Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000fbC17101E786511A5E",
+        "symbol": "HYMCc",
+        "name": "Hycroft Mining Holding Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000009DB9ea88c3583B1EC8",
+        "symbol": "IBMc",
+        "name": "International Business Machines Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000077D13D6c79B6C11c5A",
+        "symbol": "IBRXc",
+        "name": "ImmunityBio, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000b387255897C96fA9B1",
+        "symbol": "INFQc",
+        "name": "Infleqtion, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000F6b0417af5F52341FC",
+        "symbol": "INFYc",
+        "name": "Infosys Limited",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004AFF16039bA04bdFBc",
+        "symbol": "INTCc",
+        "name": "Intel Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000989432cD85947EE845",
+        "symbol": "INTUc",
+        "name": "Intuit Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000058F143099d5F79b0ec",
+        "symbol": "IONQc",
+        "name": "IonQ, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bfeaBea0524c94AF03",
+        "symbol": "IRONc",
+        "name": "Disc Medicine, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000002F7Bd112b645574214",
+        "symbol": "ISRGc",
+        "name": "Intuitive Surgical, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000042CBbae483635C3774",
+        "symbol": "ITc",
+        "name": "Gartner, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000B44f193b3fFdF17037",
+        "symbol": "JACKc",
+        "name": "Jack in the Box Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000090658e3f9b29E2f5C2",
+        "symbol": "JNJc",
+        "name": "Johnson & Johnson",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000FDe956536A25725156",
+        "symbol": "JPMc",
+        "name": "JPMorgan Chase & Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000DBa9e310296C1066C0",
+        "symbol": "KLACc",
+        "name": "KLA Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000ffef181DB6dC5ed6A3",
+        "symbol": "KOc",
+        "name": "The Coca-Cola Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000a63E35E673e3776B88",
+        "symbol": "KODKc",
+        "name": "Eastman Kodak Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000A70e43DfF7aCC203B0",
+        "symbol": "KRMNc",
+        "name": "Karman Holdings Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000105A1f43ff3605C5De",
+        "symbol": "KSSc",
+        "name": "Kohl's Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000081050Ac3d4395Df527",
+        "symbol": "LCIDc",
+        "name": "Lucid Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000fab55ad3773F2c8eF1",
+        "symbol": "LEUc",
+        "name": "Centrus Energy Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000db15c02E133a9dAB99",
+        "symbol": "LFMDc",
+        "name": "LifeMD, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000D61eFD9F54A23ef9eB",
+        "symbol": "LIc",
+        "name": "Li Auto Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000eDA6C2c6F11E0F838f",
+        "symbol": "LITEc",
+        "name": "Lumentum Holdings Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000f1a0F91e34892E4718",
+        "symbol": "LLYc",
+        "name": "Eli Lilly & Co",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000C3e498043bb44E8CbF",
+        "symbol": "LOVEc",
+        "name": "The Lovesac Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000034975347FF1848AAb9",
+        "symbol": "LRCXc",
+        "name": "Lam Research Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000989dc22D3656717734",
+        "symbol": "LULUc",
+        "name": "lululemon athletica inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000674E1325DBdF06B309",
+        "symbol": "LUNRc",
+        "name": "Intuitive Machines, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d5c0393796E92FCAB0",
+        "symbol": "LUVc",
+        "name": "Southwest Airlines Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000005717Baa337022c782",
+        "symbol": "LYFTc",
+        "name": "Lyft, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000001347ccD9e83d5Bf3e0",
+        "symbol": "LYVc",
+        "name": "Live Nation Entertainment, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000a310e034E09186Fb2d",
+        "symbol": "MARAc",
+        "name": "MARA Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d2f4cf2f7DEBB244BB",
+        "symbol": "MCDc",
+        "name": "McDonald's Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000086ffFb23cBfbb1F1D8",
+        "symbol": "MDBc",
+        "name": "MongoDB, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000C7d6120C543159aC73",
+        "symbol": "MEDc",
+        "name": "Medifast, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008bC8786B856E61707C",
+        "symbol": "METAc",
+        "name": "Meta Platforms Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000005BCdE0a6926919FEF9",
+        "symbol": "MNSTc",
+        "name": "Monster Beverage Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003958003d801724F9d3",
+        "symbol": "MPc",
+        "name": "MP Materials Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000241fe94fe97FcBf034",
+        "symbol": "MRKc",
+        "name": "Merck & Co., Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000e215e9B76ecBA02468",
+        "symbol": "MRNAc",
+        "name": "Moderna, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000eC3c4c7395Cc609813",
+        "symbol": "MRVLc",
+        "name": "Marvell Technology, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000Ab99cFa739E253872B",
+        "symbol": "MSFTc",
+        "name": "Microsoft Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000004884b426556b92883d",
+        "symbol": "MSTRc",
+        "name": "Strategy Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000441EC9266133F611ef",
+        "symbol": "MTCHc",
+        "name": "Match Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000Fd2f87532B90095211",
+        "symbol": "MUc",
+        "name": "Micron Technology Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001BCf8E5022d7f61919",
+        "symbol": "MVISc",
+        "name": "MicroVision, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000005B1E5aD3c6aeaBedDd",
+        "symbol": "NDSNc",
+        "name": "Nordson Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003AA0410688bAf4Da88",
+        "symbol": "NEMc",
+        "name": "Newmont Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000058B8c947e44011dFE6",
+        "symbol": "NFLXc",
+        "name": "Netflix Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002D2B5dc53c61f1bA06",
+        "symbol": "NIOc",
+        "name": "NIO Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000071F6c75C5892b09Beb",
+        "symbol": "NKEc",
+        "name": "NIKE, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000069d694d397b9388dAC",
+        "symbol": "NNEc",
+        "name": "NANO Nuclear Energy Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005ac674f707E357409c",
+        "symbol": "NOKc",
+        "name": "Nokia Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000082Cd2C7801305808Df",
+        "symbol": "NOWc",
+        "name": "ServiceNow, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000054a4a3659B55272125",
+        "symbol": "NTLAc",
+        "name": "Intellia Therapeutics, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000C597c476FCf9Aed3a8",
+        "symbol": "NVAXc",
+        "name": "Novavax Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000078ee7ce2fE4908108C",
+        "symbol": "NVDAc",
+        "name": "NVIDIA Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008D5328e9208773dC58",
+        "symbol": "NVOc",
+        "name": "Novo Nordisk A/S",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002a0EC8F8861cE98983",
+        "symbol": "NVTSc",
+        "name": "Navitas Semiconductor Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000009188EDFd2FCc8cc81e",
+        "symbol": "OKLOc",
+        "name": "Oklo Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002570652530A5E0F771",
+        "symbol": "OKTAc",
+        "name": "Okta, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000085367ee92c15B5F613",
+        "symbol": "ONc",
+        "name": "ON Semiconductor Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000e7137cA231c5e35f25",
+        "symbol": "ONDSc",
+        "name": "Ondas Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003086b1355bd43e25Da",
+        "symbol": "OPADc",
+        "name": "Offerpad Solutions Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000259694B27Bf052E7d7",
+        "symbol": "OPENc",
+        "name": "Opendoor Technologies Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000fE6b283199e6BD432d",
+        "symbol": "OPRAc",
+        "name": "Opera Limited",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000347AFbA223D7B6b63C",
+        "symbol": "ORCLc",
+        "name": "Oracle Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000314B9f5F580168766a",
+        "symbol": "OUSTc",
+        "name": "Ouster, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008b934a18e189efe90f",
+        "symbol": "PANWc",
+        "name": "Palo Alto Networks, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006D02167C4864e72bD2",
+        "symbol": "PATHc",
+        "name": "UiPath, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000c8A7223510467D8563",
+        "symbol": "PDDc",
+        "name": "PDD Holdings Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000EF65AFE26a07bab24e",
+        "symbol": "PENGc",
+        "name": "Penguin Solutions, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006d1bC7Faa266Eb099D",
+        "symbol": "PEPc",
+        "name": "PepsiCo, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000018FE7eC7d6DfeeB528",
+        "symbol": "PFEc",
+        "name": "Pfizer Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000c25611C4BdA138d298",
+        "symbol": "PGc",
+        "name": "The Procter & Gamble Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000087d144F2C70cd1A5F6",
+        "symbol": "PLAYc",
+        "name": "Dave & Buster\u2019s Entertainment, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000cB6B2f4e33f0471556",
+        "symbol": "PLc",
+        "name": "Planet Labs PBC",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000011b20aebe0Bd567F1c",
+        "symbol": "PLNTc",
+        "name": "Planet Fitness, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000007d16372840dF4dAbbe",
+        "symbol": "PLTRc",
+        "name": "Palantir Technologies Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000C6dbAe193C95C4E056",
+        "symbol": "PLUGc",
+        "name": "Plug Power Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000008FC2A8C23cf5937b66",
+        "symbol": "PMc",
+        "name": "Philip Morris International Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000a0390525880C1ac72B",
+        "symbol": "PRc",
+        "name": "Permian Resources Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000009272A491812842Aa84",
+        "symbol": "PTONc",
+        "name": "Peloton Interactive, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000E1b0b17fD671771813",
+        "symbol": "PUMPc",
+        "name": "ProPetro Holding Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000065ca0F772a5502E976",
+        "symbol": "PURRc",
+        "name": "Hyperliquid Strategies Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000450ad3abE5d4846c6E",
+        "symbol": "PYPLc",
+        "name": "PayPal Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000068987dacde1dB79Cd4",
+        "symbol": "PZZAc",
+        "name": "Papa John\u2019s International, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000d46361d597f543d06",
+        "symbol": "QBTSc",
+        "name": "D-Wave Quantum Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005672D78eFF30D24665",
+        "symbol": "QCOMc",
+        "name": "Qualcomm Incorporated",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003963C3bEAA3eba9bfc",
+        "symbol": "QNTc",
+        "name": "Quantinuum Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bD938fa95e3E20c5A1",
+        "symbol": "QSc",
+        "name": "QuantumScape Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000CA425ab42e07C35bC3",
+        "symbol": "QUBTc",
+        "name": "Quantum Computing Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000000Cd31253817b36f88a",
+        "symbol": "QXOc",
+        "name": "QXO, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005bd7AE89b9E6189Bb5",
+        "symbol": "RBLXc",
+        "name": "Roblox Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000B6354bC256DbCD93a8",
+        "symbol": "RBRKc",
+        "name": "Rubrik, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000a67C3271F0584F6C1D",
+        "symbol": "RCATc",
+        "name": "Red Cat Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000066242d4067724cB7A1",
+        "symbol": "RDDTc",
+        "name": "Reddit, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000cd7dFaef0423F1f103",
+        "symbol": "RDWc",
+        "name": "Redwire Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000006377b3C06A3e3e9ae5",
+        "symbol": "REGNc",
+        "name": "Regeneron Pharmaceuticals, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000C22fFF2785Bb27b39A",
+        "symbol": "RGTIc",
+        "name": "Rigetti Computing, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000080bAE0f654B5cC762C",
+        "symbol": "RHc",
+        "name": "RH",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000bd0C7627b663c581A6",
+        "symbol": "RIOTc",
+        "name": "Riot Platforms, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003e4249C65bd6c037d9",
+        "symbol": "RIVNc",
+        "name": "Rivian Automotive, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000e8E50CBbb9a3861a3C",
+        "symbol": "RKLBc",
+        "name": "Rocket Lab Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000000D3176ee4af1102d",
+        "symbol": "RKTc",
+        "name": "Rocket Companies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000252C42b75F49DacF59",
+        "symbol": "ROKc",
+        "name": "Rockwell Automation, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004AA2B559CA0a0bbF5D",
+        "symbol": "ROOTc",
+        "name": "Root, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000020790305A981E88a67",
+        "symbol": "RRc",
+        "name": "Richtech Robotics Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000e6Eb8A05D09d73DAD5",
+        "symbol": "RTXc",
+        "name": "RTX Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000F28146Eb28ea2835B",
+        "symbol": "RUMc",
+        "name": "RUM Group Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000b1b9200405Fb52A8cF",
+        "symbol": "RUNc",
+        "name": "Sunrun Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000501Ef81F911eB57656",
+        "symbol": "RXRXc",
+        "name": "Recursion Pharmaceuticals, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000e410ae30ABDdA3Aee0",
+        "symbol": "SAMc",
+        "name": "The Boston Beer Company, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000017BB66E9301E913A99",
+        "symbol": "SANc",
+        "name": "Banco Santander, S.A.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000da6F64c306234127E0",
+        "symbol": "SAPc",
+        "name": "SAP SE",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000559eC0BEdaacf436eA",
+        "symbol": "SBETc",
+        "name": "Sharplink, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000C3dE197eAC6faA1e64",
+        "symbol": "SBUXc",
+        "name": "Starbucks Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003088798F6d0722AaAC",
+        "symbol": "SEc",
+        "name": "Sea Limited",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001A114de6d32433F3C0",
+        "symbol": "SERVc",
+        "name": "Serve Robotics Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000C1F8aCD3c4496a762",
+        "symbol": "SEZLc",
+        "name": "Sezzle Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000b57f99Acec3A7490D0",
+        "symbol": "SGc",
+        "name": "Sweetgreen, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000000D9947c759429e7fE5",
+        "symbol": "SHAZc",
+        "name": "SharonAI Holdings Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000002B9AC07a0544688079",
+        "symbol": "SIDUc",
+        "name": "Sidus Space, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000187f7071D6E321a7d2",
+        "symbol": "SKHYc",
+        "name": "SK hynix Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000dF3EB2AF7316B29122",
+        "symbol": "SLDPc",
+        "name": "Solid Power, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000000C431e2a7c0CE7Ea31",
+        "symbol": "SLSc",
+        "name": "SELLAS Life Sciences Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000065F11d53A1e442bB84",
+        "symbol": "SMCIc",
+        "name": "Super Micro Computer, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001409f816682b7772b7",
+        "symbol": "SMPLc",
+        "name": "The Simply Good Foods Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000978546Fe604b8dcbC6",
+        "symbol": "SMRc",
+        "name": "NuScale Power Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003F265aB1f74Dd89AC0",
+        "symbol": "SNAPc",
+        "name": "Snap Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000397293Cb8cda9a10c5",
+        "symbol": "SNDKc",
+        "name": "Sandisk Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004AcDC9A922FCfBCc7f",
+        "symbol": "SNOWc",
+        "name": "Snowflake Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000003eF37a7c863DC1482A",
+        "symbol": "SOFIc",
+        "name": "SoFi Technologies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000a26326a922FFA87f6C",
+        "symbol": "SONYc",
+        "name": "Sony Group Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000002137743D4a01Fe4e88",
+        "symbol": "SOUNc",
+        "name": "SoundHound AI, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d65c9253b025Af8C56",
+        "symbol": "SPCEc",
+        "name": "Virgin Galactic Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000007b9fcbd005511aCBd5",
+        "symbol": "SPCXc",
+        "name": "Space Exploration Technologies Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000964b7F3f335d7e70B5",
+        "symbol": "SRPTc",
+        "name": "Sarepta Therapeutics, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000001AC12227a8aE0Ef3Ac",
+        "symbol": "STZc",
+        "name": "Constellation Brands, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003FE90a64263B7F9E74",
+        "symbol": "SWBIc",
+        "name": "Smith & Wesson Brands, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000047984EcaE84db5fcF9",
+        "symbol": "SYMc",
+        "name": "Symbotic Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000e0B9460c97F38f412F",
+        "symbol": "TAPc",
+        "name": "Molson Coors Beverage Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000A49b5EED0c1CF792BA",
+        "symbol": "TDOCc",
+        "name": "Teladoc Health, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000004217B9b4f6f6aCb7B8",
+        "symbol": "TEAMc",
+        "name": "Atlassian Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d033253ABB1104107b",
+        "symbol": "TEMc",
+        "name": "Tempus AI, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000006BC65AF32d24870A2d",
+        "symbol": "TERc",
+        "name": "Teradyne, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000c715439d0CC5A8c67d",
+        "symbol": "TGTc",
+        "name": "Target Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000b8f841940325DB6B2c",
+        "symbol": "TKOc",
+        "name": "TKO Group Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000049B9fC3b3c8C9402ff",
+        "symbol": "TKRc",
+        "name": "The Timken Company",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000000A22ac22D031B657DA",
+        "symbol": "TRONc",
+        "name": "Tron Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000001e800a7f5189430cD0",
+        "symbol": "TSLAc",
+        "name": "Tesla Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000008baF7bb82e4C37743f",
+        "symbol": "TTDc",
+        "name": "The Trade Desk, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000007292D3D91c6b559058",
+        "symbol": "TTMIc",
+        "name": "TTM Technologies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000f720C26062Bc3067Da",
+        "symbol": "TTWOc",
+        "name": "Take-Two Interactive Software, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000A15628dCEA6934EDE0",
+        "symbol": "TWSTc",
+        "name": "Twist Bioscience Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000879A74C76C73a27d71",
+        "symbol": "UAAc",
+        "name": "Under Armour, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000cAE20cb1446462e24c",
+        "symbol": "UBERc",
+        "name": "Uber Technologies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000902F48CBa1f39149F7",
+        "symbol": "Uc",
+        "name": "Unity Software Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000349ef3Aa93a0897476",
+        "symbol": "ULc",
+        "name": "Unilever Plc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000053d000bAC95662D1e4",
+        "symbol": "ULTAc",
+        "name": "Ulta Beauty, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000003aE0817C304acBB1DE",
+        "symbol": "UMACc",
+        "name": "Unusual Machines, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000c367d37d07150182A2",
+        "symbol": "UNHc",
+        "name": "UnitedHealth Group Incorporated",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000007A8a3Ab2d3b319036D",
+        "symbol": "UPSTc",
+        "name": "Upstart Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000D80D163781a37A20F6",
+        "symbol": "USARc",
+        "name": "USA Rare Earth, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000009426B660396eBCf343",
+        "symbol": "USDEc",
+        "name": "StablecoinX Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000063376b142C0764B489",
+        "symbol": "VALEc",
+        "name": "Vale S.A.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000054b11Fd279a4f7D4EF",
+        "symbol": "Vc",
+        "name": "Visa Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000979eF4Dd6A001b58b1",
+        "symbol": "VKTXc",
+        "name": "Viking Therapeutics, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000004F13a2441D3C82eE54",
+        "symbol": "VOYGc",
+        "name": "Voyager Technologies, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000051B531471096C5CAf6",
+        "symbol": "VPGc",
+        "name": "Vishay Precision Group, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000b2E8dBA585B1ffB158",
+        "symbol": "VRTc",
+        "name": "Vertiv Holdings Co",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000B92922f6d0c592a456",
+        "symbol": "VRTXc",
+        "name": "Vertex Pharmaceuticals Incorporated",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000079DC24fe2FBD09110f",
+        "symbol": "VSTc",
+        "name": "Vistra Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000a9dabFD3F0c5f21304",
+        "symbol": "VSXYc",
+        "name": "Victoria's Secret & Co.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000FEC679b39992F67627",
+        "symbol": "VVVc",
+        "name": "Valvoline Inc",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000089BC72C3E637a02AdB",
+        "symbol": "Wc",
+        "name": "Wayfair Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008fde21a1F5c69FeC0b",
+        "symbol": "WDCc",
+        "name": "Western Digital Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000044E3CD7a0E1028E57a",
+        "symbol": "WENc",
+        "name": "Wendy's Co",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000c6F4B26Bd2BE77F18D",
+        "symbol": "WGSc",
+        "name": "GeneDx Holdings Corp.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000281C973bf2555dD94B",
+        "symbol": "WINGc",
+        "name": "Wingstop Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000DfA6C77AEa5329D187",
+        "symbol": "WKHSc",
+        "name": "Workhorse Group Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb2000000000000000000008a7508619c717A7106",
+        "symbol": "WMTc",
+        "name": "Walmart Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000008Df9Bc22Db1d7dA2a5",
+        "symbol": "WOLFc",
+        "name": "Wolfspeed, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000b5e07d13B2D68D60Dd",
+        "symbol": "WOOFc",
+        "name": "Petco Health and Wellness Company, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000e88EFe88D8aDE3f0dA",
+        "symbol": "WRDc",
+        "name": "WeRide Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000d2f94f19Aa759f4690",
+        "symbol": "WTIc",
+        "name": "W\\&T Offshore, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000432a1d2Bd864ACEc82",
+        "symbol": "WULFc",
+        "name": "TeraWulf Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000089221e238277d52515",
+        "symbol": "WWc",
+        "name": "WW International, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb20000000000000000000065F7d0D6aac5fD4Bfd",
+        "symbol": "XOMc",
+        "name": "ExxonMobil Holdings Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB200000000000000000000115bf2283265FB04Db",
+        "symbol": "XXIc",
+        "name": "Twenty One Capital, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000067C8C151f24E1c9924",
+        "symbol": "XYZc",
+        "name": "Block, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000613C15F118DF2b189B",
+        "symbol": "YETIc",
+        "name": "YETI Holdings, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000005C8324136dE0f4134a",
+        "symbol": "YUMc",
+        "name": "YUM! Brands, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb200000000000000000000e2C4CB0F18B68Cc776",
+        "symbol": "ZBRAc",
+        "name": "Zebra Technologies Corporation",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB2000000000000000000000E63b7B0b6BC5B9213",
+        "symbol": "ZMc",
+        "name": "Zoom Communications, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB20000000000000000000076A288B15B61Ec78F6",
+        "symbol": "ZSc",
+        "name": "Zscaler, Inc.",
+        "decimals": 8,
+        "kind": "stock"
+      }
+    ],
+    "bsc": [
+      {
+        "address": "0x0000000000000000000000000000000000000000",
+        "symbol": "BNB",
+        "name": "BNB (BNB)",
+        "decimals": 18,
+        "kind": "native"
+      },
+      {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "name": "USD Coin (USDC)",
+        "decimals": 18,
+        "kind": "stable"
+      },
+      {
+        "address": "0x431a3BEE82E2ca41e49895CbECE5bB0F76A89b7A",
+        "symbol": "AAPLB",
+        "name": "Apple",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec",
+        "symbol": "BABAB",
+        "name": "Alibaba",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x3548Da95a9eFFE481e8604664d75e95821e557F5",
+        "symbol": "BMNRB",
+        "name": "BitMine Immersion Technologies",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4902C5ebc598265Ed2212b559B042De8a5Eeec3f",
+        "symbol": "BNCB",
+        "name": "CEA Industries",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF2ec508422174Ee564de98187db9359D318AFB6b",
+        "symbol": "DJTB",
+        "name": "Trump Media & Technology Group Corp",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4af1D41cd9dD950dcA43984b43aaA2A8702714Ac",
+        "symbol": "FLNCB",
+        "name": "Fluence Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x46cEeFDa28Dd7207059ed19B0acdc026955bb15C",
+        "symbol": "GMEB",
+        "name": "GameStop",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x3F53De71c126BdaBAe20f9cD64848d317f6C3238",
+        "symbol": "GOOGLB",
+        "name": "Alphabet",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xA394dCEa3fd3847fD793afBFd163E2e3858B7c65",
+        "symbol": "HOODB",
+        "name": "Robinhood",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5fd86da9B05abE396fe9d02a4A213A7c00556503",
+        "symbol": "MRNAB",
+        "name": "Moderna",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x80106cb3EAD06659A5ad19DF39D9b4733863B9b0",
+        "symbol": "MSFTB",
+        "name": "Microsoft",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xE87afb3076AeB0f9B14E368DE8145ae6a2826A14",
+        "symbol": "MSTRB",
+        "name": "Strategy Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xD6829Ea836b6FA224d099D40E54B31262f874631",
+        "symbol": "NFLXB",
+        "name": "Netflix",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x02Fca66C1D1aFB4E2A7884261eB00F63598a7436",
+        "symbol": "NVDAB",
+        "name": "NVIDIA Corp",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x205812CdBed920aFf76C6580abD681a46D11efc7",
+        "symbol": "QQQB",
+        "name": "Invesqo QQQ",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xCA750eF65f295BBECd685Abf54e82CAf297BDB61",
+        "symbol": "SKHYB",
+        "name": "SK Hynix",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xd97d097a89113fa59b76c572E5b2Eb647E8eefaf",
+        "symbol": "SOXLB",
+        "name": "Semicon Bull 3X ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xE28Cd11C99AF2df76bb8aDA4Cd0ef3904378280F",
+        "symbol": "SOXSB",
+        "name": "Direxion Semiconductor Bear 3X ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xbe9D156892E55e7154BcD3cB0FEA677F9D3103E1",
+        "symbol": "SPCXB",
+        "name": "SpaceX",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7138b48df7D98D7e3cc221BfE7192D0a178182D8",
+        "symbol": "SPYB",
+        "name": "SPY",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5b1910eAaD6450E50f816082Aa078C41F10C292f",
+        "symbol": "TSLAB",
+        "name": "Tesla, Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      }
+    ],
+    "robinhood": [
+      {
+        "address": "0x0000000000000000000000000000000000000000",
+        "symbol": "ETH",
+        "name": "Ether (ETH)",
+        "decimals": 18,
+        "kind": "native"
+      },
+      {
+        "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+        "symbol": "USDG",
+        "name": "Global Dollar (USDG)",
+        "decimals": 6,
+        "kind": "stable"
+      },
+      {
+        "address": "0x521Cf887E6531c6F667b5BC4D896E5d9bfE8EB2E",
+        "symbol": "AAOI",
+        "name": "Applied Optoelectronics",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+        "symbol": "AAPL",
+        "name": "Apple",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x3139D77Ace0cbAA5bDfD38bD1F1911a794AF0B0e",
+        "symbol": "ABCL",
+        "name": "Abcellera Biologics",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x232B8ed6377BE97813853B0Ac104c4Cda8378d1B",
+        "symbol": "ADBE",
+        "name": "Adobe",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5F604fBA1162193A4388A5DFa56F556f3E133cC2",
+        "symbol": "AEHR",
+        "name": "Aehr",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xfAf9cb261B5FCC1f404Bb10CD39C5c6C1974E612",
+        "symbol": "AEIS",
+        "name": "Advanced Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x748c32c3ca24eDf31ea597Db1F3d330a7a6DA3Dc",
+        "symbol": "ALAB",
+        "name": "Astera Labs, Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x36046893810a7E7fCE501229d57dc3FC8c8716d0",
+        "symbol": "AMAT",
+        "name": "Applied Materials",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x99D9D8663545151603863C5AcbD6FC3218899009",
+        "symbol": "AMBA",
+        "name": "Ambarella",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x05a3d1Cd21d0C88145E82600E62e7E496e0F222B",
+        "symbol": "AMC",
+        "name": "AMC Entertainment",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+        "symbol": "AMD",
+        "name": "AMD",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xDd356AA38F40A7b7076755aC854B6FBb1F0D305B",
+        "symbol": "AMKR",
+        "name": "Amkor Technology",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+        "symbol": "AMZN",
+        "name": "Amazon",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x28bABD556b60E53663B8615036479a29c2CDd1Bf",
+        "symbol": "ANET",
+        "name": "Arista",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb8DBf92F9741c9ac1c32115E78581f23509916FD",
+        "symbol": "APLD",
+        "name": "Applied Digital",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xA249BAF1063Af884807C1E1400AEf7784836917E",
+        "symbol": "APP",
+        "name": "AppLovin",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x47F93d52cBeC7C6D2CfC080e154002370a60dAEA",
+        "symbol": "ASML",
+        "name": "ASML Holding NV",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1AF6446f07eb1d97c546AFC8c9544cBDF3AD5137",
+        "symbol": "ASTS",
+        "name": "AST SpaceMobile",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x373C06c4f7BDe527D7Dae4BA169E42b55E393CeD",
+        "symbol": "AUR",
+        "name": "Aurora Innovation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF6290b5e7C26502e2dA514C31509849718EA76A5",
+        "symbol": "AVAV",
+        "name": "AeroVironment",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x156E175DD063a8cE274C50654eF40e0032b3fbcF",
+        "symbol": "AVGO",
+        "name": "Broadcom",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xC27dBD474aF5181c5A8777903690D8D262D12648",
+        "symbol": "AXON",
+        "name": "Axon",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x141eEa040c2250eEc0314e336975e81f85f6585e",
+        "symbol": "AXTI",
+        "name": "AXT",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4D21483a44Bf67a86b77E3dA301411880797D452",
+        "symbol": "BA",
+        "name": "Boeing",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
+        "symbol": "BABA",
+        "name": "Alibaba",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x48E39E56aCdbA37b09020C0b734A613C9a2f100A",
+        "symbol": "BB",
+        "name": "Blackberry",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x822CC93fFD030293E9842c30BBD678F530701867",
+        "symbol": "BE",
+        "name": "Bloom Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x2F62fC9fAbb470C690f141c28340eD832bB27020",
+        "symbol": "BND",
+        "name": "Vanguard Total Bond Market ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xceF9027c7d6985b85f0BA431125073529A947A68",
+        "symbol": "BULL",
+        "name": "Webull",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5c90450Bbb4273D7b2f17CF6917AEB237A569679",
+        "symbol": "CBRS",
+        "name": "Cerebras Systems",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9651342CeA770aE9a2969Ba2A52611523146aef9",
+        "symbol": "CCL",
+        "name": "Carnival Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xaE517A2903E68bd929Dfd15be875F8369D53e94a",
+        "symbol": "CEG",
+        "name": "Constellation Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x8cF07C5A878945185d327aAa6e33FAa95F95e7bF",
+        "symbol": "CELH",
+        "name": "Celsius",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x44f6D488021f8233B9416294d1FE9b1fEe28382d",
+        "symbol": "CIEN",
+        "name": "Ciena",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x62200915e7DEab1eC7f79fb246daDbB80eACdDd0",
+        "symbol": "CLOV",
+        "name": "Clover Health Investments",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xBf449977089c718C004a66C554B26B94ef3Ad4De",
+        "symbol": "CLS",
+        "name": "Celestica",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xcBB95BBF36099d34dA091dc6Fa6F49EfA257Cee3",
+        "symbol": "CLSK",
+        "name": "CleanSpark",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x92F9F459F1a9a5AD266b182BE7Bffd1C6c666894",
+        "symbol": "COHR",
+        "name": "Coherent",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+        "symbol": "COIN",
+        "name": "Coinbase",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4EA005168D7F09a7A0Ba9D1DEf21a479950E44C2",
+        "symbol": "COST",
+        "name": "Costco",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+        "symbol": "CRCL",
+        "name": "Circle Internet Group",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4D67253bc223e6b0e104F1084c1fb2b669dDC41b",
+        "symbol": "CRDO",
+        "name": "Credo Technology Group",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xd95B44124e475743a7589e68F3D74008A5536D44",
+        "symbol": "CRM",
+        "name": "Salesforce",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xea72Ecca2d0f6bFA1394DBBCff85b52CD4233931",
+        "symbol": "CRWD",
+        "name": "CrowdStrike Holdings",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5f10A1C971B69e47e059e1dC91901B59b3fB49C3",
+        "symbol": "CRWV",
+        "name": "CoreWeave",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF543967EEBB6f1917992eF0E68De63ab07a5a0dA",
+        "symbol": "CSCO",
+        "name": "Cisco Systems",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x63D5a3b6939a33f1e75d8Bcd85759858239600DB",
+        "symbol": "CTSH",
+        "name": "Cognizant",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xa4f319104089FE321dc8093C6E707d4fE190A988",
+        "symbol": "CVNA",
+        "name": "Carvana",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x27c99fBde9D0d2AA4f4Bfb4943f237843DdF6958",
+        "symbol": "DDOG",
+        "name": "Datadog",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x941AE714EC6D8130c7B75d67160Ca08f1e7d11Dd",
+        "symbol": "DELL",
+        "name": "Dell",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1D11f0496982706C5e14A514D4E79F2e6BdE4516",
+        "symbol": "DJT",
+        "name": "Trump Media & Technology Group",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xc02f12B9fe9E707079EC0d546f3050d3F6C1F8bD",
+        "symbol": "DOCN",
+        "name": "DigitalOcean",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x39EC44Bee4F6A116c6F9B8De566848a985C53C60",
+        "symbol": "ELF",
+        "name": "e.l.f. Beauty",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1c690498150252222C275A5CEd69d3A6b1f52D5E",
+        "symbol": "EWT",
+        "name": "iShares MSCI Taiwan Capped ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7f0aBeF0C07280F82c6a08ead09dEd6BAE2C13Fc",
+        "symbol": "EWY",
+        "name": "iShares MSCI South Korea fund",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x25C288E6D899b9BC30160965aD9644c67e73bE0C",
+        "symbol": "F",
+        "name": "Ford Motor",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xa48F22A46C0F1C46CA7D111CB6c137c271987180",
+        "symbol": "FICO",
+        "name": "Fair Isaac",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x41F4267525a8AFf329540eF24fD83d9044758B33",
+        "symbol": "FIG",
+        "name": "Figma",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9ECe29A4A2397C0a35fb5fA8EE2b9509130a98cc",
+        "symbol": "FISV",
+        "name": "Fiserv",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x93Dbb1d2Dc5D63F4abACFF30485273f538Df68Ac",
+        "symbol": "FIX",
+        "name": "Comfort Systems",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x282e87451E10fA6679BC7D76C69BE44cD3fC777C",
+        "symbol": "FLNC",
+        "name": "Fluence Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x03BC731Ffb162cdd7B98D3C6542bFC291126075d",
+        "symbol": "FLY",
+        "name": "Firefly Aerospace Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x3FB8976980d486084b2eb4a404BD12e72823958f",
+        "symbol": "FTNT",
+        "name": "Fortinet",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xeB30663bDFf0622Ef4e4E5cBb4E975F19f33f51D",
+        "symbol": "FUTU",
+        "name": "Futu Holdings",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x63b814DDBd6BF339f25Fed8c36158a008D5B373e",
+        "symbol": "GE",
+        "name": "General Electric",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x94B8AAE43A1cCc08Aa64B7D1F29b4D920aF4a0C9",
+        "symbol": "GEV",
+        "name": "GE Vernova",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xC9a981FEE1F9DEc688bb123ccDeCc63D0deBFC4e",
+        "symbol": "GLD",
+        "name": "SPDR Gold Trust",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7c04E6A3368F2A1DE3874f0e80d2e0A1a9915da6",
+        "symbol": "GLW",
+        "name": "Corning",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x2D427692E928fa156ec22acfaBaFA0447C5805B7",
+        "symbol": "GLXY",
+        "name": "Galaxy Digital Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
+        "symbol": "GME",
+        "name": "GameStop",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+        "symbol": "GOOGL",
+        "name": "Alphabet Class A",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xEB61c0Ed490A367d4E3631cCf8a74B3bfc7E775D",
+        "symbol": "HII",
+        "name": "Huntington Ingalls",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xCceE82fE024c36fA15E1005edE3E9e4787e23D09",
+        "symbol": "HIMS",
+        "name": "Hims & Hers Health",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x59dd09d4900C2E4B5F75b7c0d4E6796fcc234Cb1",
+        "symbol": "HPE",
+        "name": "HP Enterprise",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xAEa445c5F3DB1a462998ccC422A875A361ee5d99",
+        "symbol": "HWM",
+        "name": "Howmet Aerospace",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x980dcf6766FA79f5Cf0c4AAdb3ab477ff15a9619",
+        "symbol": "IBM",
+        "name": "IBM",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7c148F74ac7445D1F28366b7FcDC6792a9Fcd0Cf",
+        "symbol": "IBRX",
+        "name": "ImmunityBio,",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xACEF2e09adb47aD6aBeBAD9fF06689E60615C2B6",
+        "symbol": "INDA",
+        "name": "iShares MSCI India ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB853bC83a753342a4f8320ea680b4B1E84118D21",
+        "symbol": "INFQ",
+        "name": "Infleqtion",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xf1953DAB6FaD537488d5A022361FfAa8B4c95eC6",
+        "symbol": "INOD",
+        "name": "Innodata",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+        "symbol": "INTC",
+        "name": "Intel",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x56d23beE5f41A7120170b0c603Dae30128e460e9",
+        "symbol": "INTU",
+        "name": "Intuit",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x558378E000D634A36593E338eBacdd6207640EfE",
+        "symbol": "IONQ",
+        "name": "IonQ",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF0AB0c93bE6F41369d302e55db1A96b3c430212D",
+        "symbol": "IREN",
+        "name": "IREN Limited",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xEAf2512dFC1bEAc608F8794B3793CD4E02894Aa6",
+        "symbol": "JBL",
+        "name": "Jabil Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x03DfbBE0AC4E7bCDaFd08eD41A400326B77D8c80",
+        "symbol": "JNJ",
+        "name": "Johnson & Johnson",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb334C5cE741B80B5B671F47F5C269Cb193fe8E24",
+        "symbol": "JOBY",
+        "name": "Joby Aviation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x96b933C74eCB4A0926b9210cef7b743EF46be2E9",
+        "symbol": "KLAC",
+        "name": "KLA",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x12e3c047bf9AeCAF9dDC98c05C31BFD1dd043993",
+        "symbol": "KSS",
+        "name": "Kohls Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7FD06a4d81cCfA3F351394E144d5191874C31313",
+        "symbol": "KTOS",
+        "name": "Kratos Defense & Security Solutions",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x48d60243c66437c6ac3c2495Be94747aEd5Dfe25",
+        "symbol": "LHX",
+        "name": "L3Harris",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x8eF20885F94e3D9bc7eB3080279188Bd5ED7c08C",
+        "symbol": "LITE",
+        "name": "Lumentum",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x8005d266423c7ea827372c9c864491e5786600ea",
+        "symbol": "LLY",
+        "name": "Eli Lilly",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x329fcACEb9AD6F9580DD5F643fed0646900D043c",
+        "symbol": "LMT",
+        "name": "Lockheed",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x57b0030166DB0C31690d1A5aA167e2e26e2C29a4",
+        "symbol": "LRCX",
+        "name": "Lam Research Corp",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4e62068525Ab11FE768e29dfD00ef909B9803016",
+        "symbol": "LULU",
+        "name": "Lululemon",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xa5D4968421bA94814Be3B136b15cf422101aC1a3",
+        "symbol": "LUNR",
+        "name": "Intuitive Machines",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xDdf2266b79abf0B48898959B0ed6E6adf512be74",
+        "symbol": "MDB",
+        "name": "MongoDB",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+        "symbol": "META",
+        "name": "Meta Platforms",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xc6Cbad1016b38B797610c25E1dc7D95988B1f362",
+        "symbol": "MOD",
+        "name": "Modine",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x52D50D0280AD1054b43f052bD70a49a212A1b128",
+        "symbol": "MPWR",
+        "name": "Monolithic Power Systems",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x43B07D15cE533bEc5476d70C22a78a1B2B662155",
+        "symbol": "MRNA",
+        "name": "Moderna",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x62fd0668e10D8B72339BE2DCF7643001688ff13B",
+        "symbol": "MRVL",
+        "name": "Marvell Technology",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+        "symbol": "MSFT",
+        "name": "Microsoft",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xec262a75e413fAfD0dF80480274532C79D42da09",
+        "symbol": "MSTR",
+        "name": "Strategy Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xC93f4d80e268AB922e871bd169156C3CC41894e6",
+        "symbol": "MTSI",
+        "name": "MACOM",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
+        "symbol": "MU",
+        "name": "Micron Technology",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x48961813349333209994750ffA89b3c5C22eC969",
+        "symbol": "MXL",
+        "name": "MaxLinear",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xf7181b63Fdb858558A74ba96BC42732684cd7965",
+        "symbol": "NAVN",
+        "name": "Navan",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9D9c6684F596F66a64C030B93A886D51Fd4D7931",
+        "symbol": "NBIS",
+        "name": "Nebius Group",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x116F00968269B7bfbaD4109cE591d6E74c0601d4",
+        "symbol": "NET",
+        "name": "Cloudflare, Inc. Class A common stock",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8",
+        "symbol": "NFLX",
+        "name": "Netflix",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xBEF75684C43c4ea7BD18Dd532a2244674Ee8b926",
+        "symbol": "NNE",
+        "name": "Nano Nuclear Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x0C3260aF4B8f13a69c4c2dFb84fD667890CDFa14",
+        "symbol": "NOW",
+        "name": "ServiceNow",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x408c14038a04f7bD235329E26d2bf569ee20e250",
+        "symbol": "NU",
+        "name": "Nu",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+        "symbol": "NVDA",
+        "name": "NVIDIA",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xbE6702d7b70315376dC48a3293f24f0982F86386",
+        "symbol": "NVTS",
+        "name": "Navitas Semiconductor",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x8B2f88497f15A18E9D4FFa1a8fFB8538399aE774",
+        "symbol": "OKLO",
+        "name": "Oklo",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xbBD09F72b025360FeE5C928053Dca6248d35be54",
+        "symbol": "ON",
+        "name": "ON Semiconductor",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x8ff63eAeEe3fE54Ba450c4F5538064Ec5A893Aef",
+        "symbol": "ONTO",
+        "name": "Onto Innovation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb0992820E760d836549ba69BC7598b4af75dEE03",
+        "symbol": "ORCL",
+        "name": "Oracle",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x40E7a279850e443f582059ae5dC1c3b6563E6395",
+        "symbol": "OUST",
+        "name": "Ouster",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1Cdad396DB64BDa184d5182A97Dd9B3C62100b7D",
+        "symbol": "P",
+        "name": "Everpure",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB039597eD45CBa7B6E2fb9E8BE51802969CEe5Be",
+        "symbol": "PANW",
+        "name": "Palo Alto Networks",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xfb2664f07B6Aadd29ea7a59D8859b1AeB8645cDa",
+        "symbol": "PATH",
+        "name": "UiPath",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9b23573b156B52565012F5cE02CDF60AFBaa70Be",
+        "symbol": "PENG",
+        "name": "Penguin Solutions",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7066A64c24e4206CD62E83bf198c1E7EB361F51e",
+        "symbol": "PFE",
+        "name": "Pfizer",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xAA4d64474c172010aB57719cb9951E6142a100d3",
+        "symbol": "PL",
+        "name": "Planet Labs",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+        "symbol": "PLTR",
+        "name": "Palantir Technologies",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xcf6B2D875361be807EAfa57458c80f28521F9333",
+        "symbol": "POET",
+        "name": "POET Technologies",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x237c16D66590F67B886d978ACD362EAeaD8B18c7",
+        "symbol": "POWL",
+        "name": "Powell Industries",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4189F0c66EBBB0bfeF1C31f763131361EF32f77C",
+        "symbol": "PR",
+        "name": "Permian Resources",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9Ab02Ead789b6903c3c44d0ED32F9c707CDF12FD",
+        "symbol": "PWR",
+        "name": "Quanta",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xC583c60aeF9Dc401Da72cEC1B404743a93cea1Cc",
+        "symbol": "QBTS",
+        "name": "D-Wave Quantum Inc. Common Stock",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x0f17206447090e464C277571124dD2688E48AEA9",
+        "symbol": "QCOM",
+        "name": "Qualcomm",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+        "symbol": "QQQ",
+        "name": "Invesco QQQ",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x59818904ab4cE163b3cE4FfB64f2D6Ca02c434B4",
+        "symbol": "QUBT",
+        "name": "Quantum Computing",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF0C4BF4C582cb3836e98394b1d4e7B7281101bE8",
+        "symbol": "RBLX",
+        "name": "Roblox",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xFDE6b5d9BB419B10C23268c74e369AbFF39C0460",
+        "symbol": "RCAT",
+        "name": "Red Cat",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x05b37Fb53A299a1b874A619e1c4C404D52C36F4C",
+        "symbol": "RDDT",
+        "name": "Reddit",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x92Ef19E82bD8fF36661DE838D5eaE7e5CEF0EfFE",
+        "symbol": "RDW",
+        "name": "Redwire",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x284358abc07F9359f19f4b5b4aC91901Be2597Ba",
+        "symbol": "RGTI",
+        "name": "Rigetti Computing",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB1BF26c1D20ff267A4f93550d1E0d06ac40a114B",
+        "symbol": "RIVN",
+        "name": "Rivian Automotive",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x3b14C39E89D60D627b42a1A4CA45b5bb45Fc12e2",
+        "symbol": "RKLB",
+        "name": "Rocket Lab Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x756Bc80af765C82da966a788858d65aDF14f3793",
+        "symbol": "RUN",
+        "name": "Sunrun",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x95052ddcd5DC25641657424A8Cf04834997E1730",
+        "symbol": "SATS",
+        "name": "EchoStar",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xd63ABB2C13d7a8421a8017a712802053568e3C1D",
+        "symbol": "SCHD",
+        "name": "Schwab US Dividend Equity ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
+        "symbol": "SGOV",
+        "name": "iShares 0-3 Month Treasury Bond",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF53F66751B1Eff985311b693531E3290F600c410",
+        "symbol": "SHOP",
+        "name": "Shopify",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xBE274710Bf3d9567e1B290eF6a5F9f90ca016FD8",
+        "symbol": "SHY",
+        "name": "iShares 1-3 Year Treasury Bond ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x77E655E37F4d913fB9540e0d541D824171a60e81",
+        "symbol": "SIMO",
+        "name": "Silicon Motion",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x84CAb63bc87912E71ad199ff14A0bA45de68FeF8",
+        "symbol": "SKHY",
+        "name": "SK hynix Inc. American Depositary Shares",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x285b231728c7E4333799183DF1094d775246a535",
+        "symbol": "SLS",
+        "name": "SELLAS Life Sciences",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+        "symbol": "SLV",
+        "name": "iShares Silver Trust",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xc01aA1fECeC0605b13bc84874ff7256C0f5F562a",
+        "symbol": "SMCI",
+        "name": "Super Micro Computer",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x072f979c2CAc8e1391B0162a87Fee094bF8744a0",
+        "symbol": "SMH",
+        "name": "VanEck Semiconductor ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x1Eebee7F74517e0279dFb09d25B0407bEEc3FDd6",
+        "symbol": "SMR",
+        "name": "NuScale Power",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF6589F11Bc40b669e584073F428B05562F568733",
+        "symbol": "SNAP",
+        "name": "Snap",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+        "symbol": "SNDK",
+        "name": "Sandisk Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xBa0CAB75495255d0cB58E22B648bFED4ECD1F47E",
+        "symbol": "SNOW",
+        "name": "Snowflake",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x98E75885157C80992A8D41b696D8c9C6Fb30A926",
+        "symbol": "SOFI",
+        "name": "SoFi Technologies",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x6E3Dfd9f7e1649BaA14D25cac18C94d62dB10A54",
+        "symbol": "SOUN",
+        "name": "SoundHound AI",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x75742c18BC1f1C5c5f448f4C9D9C6F66dafAAa38",
+        "symbol": "SOXX",
+        "name": "iShares Semiconductor ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+        "symbol": "SPCX",
+        "name": "Space Exploration Technologies Corp. Class A Common Stock",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xAd622320e520de39e72d41EF07438C3Fd3354875",
+        "symbol": "SPMO",
+        "name": "Invesco S\\&P 500 Momentum ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+        "symbol": "SPY",
+        "name": "SPDR S\\&P 500 ETF Trust",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xb1969f6604CA1AE7a2cD3F1827876e914594CA2D",
+        "symbol": "TE",
+        "name": "T1 Energy",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5B97476b922F3305131B8f0B9D333172E87f4aaE",
+        "symbol": "TEAM",
+        "name": "Atlassian Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xB1CC0EC7Db69Cf43539119814df40071b9d61793",
+        "symbol": "TEM",
+        "name": "Tempus AI",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x2778C5024D5cA2CdB0f8eAD671ffc69963AdCD9C",
+        "symbol": "TER",
+        "name": "Teradyne",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x89776d4Cd68193597A2fC132cfaC1fDe36CCeA8a",
+        "symbol": "TSEM",
+        "name": "Tower Semiconductor",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+        "symbol": "TSLA",
+        "name": "Tesla",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
+        "symbol": "TSM",
+        "name": "Taiwan Semiconductor Manufacturing",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x0b5fb4031cae9163db10B169Ee72685F0EdC8545",
+        "symbol": "TTD",
+        "name": "Trade Desk",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x5e81213613b6B86EaB4c6c50d718d34359459786",
+        "symbol": "TTWO",
+        "name": "Take-Two Interactive Software",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x0E6e67Ba88e7b5d9B67636A215c76779B948dE79",
+        "symbol": "UMC",
+        "name": "United Microelectronics",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xcF364ea52787e289De6F32077834056E3E70D6A8",
+        "symbol": "UNH",
+        "name": "UnitedHealth",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xf23250dac154D05Bb671CB0d0eBEf3c635c79CE2",
+        "symbol": "UPS",
+        "name": "UPS",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
+        "symbol": "USAR",
+        "name": "USA Rare Earth",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+        "symbol": "USO",
+        "name": "United States Oil Fund",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x6006ed4B2F94110851ff7509D97D034f0EeD9226",
+        "symbol": "VICR",
+        "name": "Vicor",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xFA78C12E6488814A0262E4e802749a4a737d5fB7",
+        "symbol": "VRT",
+        "name": "Vertiv",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x26dCbfb34FC83CAbD6990f449674efDc6097fF85",
+        "symbol": "VSAT",
+        "name": "ViaSat",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x561e2a49212b7cCF47f2744Ccb83e200722fADBc",
+        "symbol": "VST",
+        "name": "Vistra",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x0594134DF3f171a354D9C85eBD65b7A6148F6D09",
+        "symbol": "VTI",
+        "name": "Vanguard Morningstar Total Stock Market ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x82DA4646242e1D962e96e932269Dc644c94a9CaA",
+        "symbol": "WDAY",
+        "name": "Workday",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xF52597345A8Edf418bc4071b4a35112472277D3e",
+        "symbol": "WDC",
+        "name": "Western Digital",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x348Be1A8663f15edDe5CDf8A96BB69078f7aB6Fd",
+        "symbol": "WULF",
+        "name": "TeraWulf",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x9e7ABD3C9139D14E4c86DcE0e455AAB7A0C2FB3E",
+        "symbol": "WYFI",
+        "name": "WhiteFiber, Inc.",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x15Cd20759CE7F3285c29A319dE2D1A2e098c6f43",
+        "symbol": "XLK",
+        "name": "State Street Technology Select Sector SPDR ETF",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xA8eB3BCcbf2017eE7CBfb652eB51CF2E1B153289",
+        "symbol": "XNDU",
+        "name": "Xanadu Quantum",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0xf9B46d3D1B22199D4D1025a9cEDB540A33F1a2d5",
+        "symbol": "XOM",
+        "name": "ExxonMobil Holdings Corporation",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x44c4F142009036cF477eD2d09932051843137CF1",
+        "symbol": "ZM",
+        "name": "Zoom",
+        "decimals": 18,
+        "kind": "stock"
+      },
+      {
+        "address": "0x7dc013eB55e436f30d7ED1AFE4E36d6e45e3c3f7",
+        "symbol": "ZS",
+        "name": "Zscaler",
+        "decimals": 18,
+        "kind": "stock"
+      }
+    ]
+  }
+}

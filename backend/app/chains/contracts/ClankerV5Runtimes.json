@@ -1,0 +1,23 @@
+{
+  "source": "SDK 5.1.0 addresses checked against chain IDs and observed deployed bytecode on 2026-11-16; SHA-256",
+  "networks": {
+    "base": {
+      "factory": "376305a3cd76a8f22397ce446cd21407c8579707e3f45c81853cdaf8348c0d66",
+      "hook": "2a4df2b13846154b7efb640fa690503f0073942055aff5ef3375e8afaca60410",
+      "escrow": "3c7b1a05313a2427632009cff6d07491e7be4ddba3e37457b5ac3a7a52fc3ea1",
+      "token_deployer": "87b6c2e47488408936c64baee89895c23bdea51a57dca5652a7b5e8c26eee4cc"
+    },
+    "bsc": {
+      "factory": "baedeac50cab992836911da69b8bd08269e98d219c52e60a422a084928129cf5",
+      "hook": "1dcb6baa8cce9cb522c2e0cd3ac4ce791ddab66df584d26e68e1b6a275b54dd1",
+      "escrow": "7041e57e23d6fa8163f133d7a92c97b12b3924f5a140614dd4ab8227ae65c5dd",
+      "token_deployer": "87b6c2e47488408936c64baee89895c23bdea51a57dca5652a7b5e8c26eee4cc"
+    },
+    "robinhood": {
+      "factory": "5956ca5985fdd471c81e6b89e115c29bfb6348c4f08da30a6f56409bdf840bae",
+      "hook": "cda73b07dfa956aacdec1dff232dfdfa94f3385360db6ee893755e9d48e7875b",
+      "escrow": "af1284dcf55ee76818aecad1dcdbfa4dd217be761d059c238ea7ab3fa5d2878b",
+      "token_deployer": "87b6c2e47488408936c64baee89895c23bdea51a57dca5652a7b5e8c26eee4cc"
+    }
+  }
+}

@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..chains.base import AdapterError, ClaimRequest, CreateRequest
-from ..chains.evm import EVM_CHAINS, WEI, EvmRPCUnavailable, shared_evm
+from ..chains.evm import EVM_CHAINS, WEI, EvmRPCError, EvmRPCUnavailable, shared_evm
 from ..chains.registry import IMPLEMENTED, get_adapter, is_evm, is_evm_network, is_extra, list_launchpads, needs_setup
 from ..chains.solana import (
     LAMPORTS_PER_SOL, RPCError, RPCUnavailable, SolanaRPC, build_unsigned, create_ata_idempotent_ix, token_burn_checked_ix,
@@ -56,6 +56,7 @@ def _launch_out(l: Launch) -> dict:
         "has_image": l.image_blob is not None, "created_at": l.created_at.isoformat(),
         "draft_revision": int((l.launchpad_params or {}).get("draft_revision", 0)),
         "slippage_pct": (l.launchpad_params or {}).get("slippage_pct", 10),
+        "clanker_version": (l.launchpad_params or {}).get('clanker_version',4) if l.launchpad.startswith('clanker') else None,
         "quote": (l.launchpad_params or {}).get("quote"),
         "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
@@ -112,6 +113,10 @@ async def quote_assets(launchpad_id: str):
         raise HTTPException(404, "unknown launchpad")
     adapter = get_adapter(launchpad_id)
     if is_evm(adapter):
+        if hasattr(adapter,'quote_info'):
+            from ..chains.clanker_v5 import QUOTES
+            return {'assets':[{**q,'mint':q['address'],'pool':'Clanker V5 Uniswap V4 pool'} for q in QUOTES[adapter.network]],
+                    'notice':'Discovery snapshot; quote registration and decimals are rechecked on-chain. Stock-token pairs require issuer eligibility confirmation.'}
         chain = EVM_CHAINS[adapter.network]
         return {"assets": [{"mint": "0x0000000000000000000000000000000000000000", "symbol": chain["native"],
                             "name": chain["name"], "decimals": 18, "kind": "native", "pool": "Bonding curve"}],
@@ -130,7 +135,11 @@ async def quote_assets(launchpad_id: str):
 async def launchpad_options(launchpad_id: str):
     if launchpad_id not in IMPLEMENTED:
         raise HTTPException(404, "launchpad not available yet (see /launchpads for the roadmap)")
-    schema = get_adapter(launchpad_id).options_schema()
+    adapter = get_adapter(launchpad_id)
+    try:
+        schema = await adapter.live_options_schema() if hasattr(adapter,'live_options_schema') else adapter.options_schema()
+    except (AdapterError, EvmRPCError, EvmRPCUnavailable) as error:
+        raise HTTPException(503, 'Current launchpad policy is unavailable; retry before creating a draft') from error
     # Preserve historical tax-token decoding in the adapter. New launches expose
     # only the zero-tax routes until creator-reward collection is implemented.
     if launchpad_id in {"flap-sh", "flap-sh-robinhood"}:
@@ -224,6 +233,12 @@ async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enf
             if f.get("max") is not None and v > f["max"]:
                 raise HTTPException(400, f"{f.get('label', k)} must be at most {f['max']}")
         params[k] = v
+    if body.launchpad.startswith('clanker'):
+        if warnings:=adapter.deploy_warnings(body.dev_buy_sol,params):
+            raise HTTPException(400,warnings[0])
+        params['clanker_version']=5
+        quote=adapter.quote_info(params)
+        params['quote']={'mint':quote['address'],'symbol':quote['symbol'],'name':quote['name'],'decimals':quote['decimals']}
     if body.quote_mint and body.quote_mint != SOL_QUOTE["mint"]:
         if body.launchpad != "bags":
             raise HTTPException(400, "pairing with a token other than SOL is only available on Bags")
@@ -306,6 +321,9 @@ async def clone_launch(body: CloneBody, user: User = Depends(current_user), db: 
                dev_wallet_id=body.dev_wallet_id,
                launchpad_params={"slippage_pct": 10.0, "cloned_from": {"network": network, "address": body.mint,
                                                                       "copied": meta["copied"]}})
+    adapter=get_adapter(body.launchpad)
+    if hasattr(adapter,'quote_info'):
+        l.launchpad_params={**l.launchpad_params,'clanker_version':5}
     db.add(l)
     await log_activity(db, user.id, "launch.created", "launch", l.id,
                        {"launchpad": body.launchpad, "cloned_from": {"network": network, "address": body.mint}})
@@ -383,6 +401,8 @@ async def update_draft(launch_id: str, body: UpdateDraft, user: User = Depends(c
     if body.image_b64 is not None or body.remove_image:
         launch.image_blob = None if body.remove_image else image
     launch.dev_wallet_id, launch.dev_buy_sol = body.dev_wallet_id, body.dev_buy_sol
+    if options.get('clanker_version')==5:
+        params={key:value for key,value in params.items() if key not in ('sniper_start_pct','sniper_decay_s')}
     launch.launchpad_params = {**params, **options, 'draft_revision': revision + 1}
     links = (await db.execute(select(LaunchWallet).where(LaunchWallet.launch_id == launch.id))).scalars().all()
     for link in links:
@@ -1088,9 +1108,20 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
                 raise HTTPException(400, f"Pons claim is not ready: {e}") from e
         else:
             claim_summary["claim_scope"] = "All Pons rewards for this wallet, across launches; no Helm deduction."
-    pf = build_preflight("claim_fees", claim_summary)
+    claim_warnings=[]
+    if l.launchpad.startswith('clanker') and (l.launchpad_params or {}).get('clanker_version')==5:
+        try:
+            preview=await adapter.prepare_claim(ClaimRequest(wallet_pubkey=w.address,mint=l.mint_address,options=dict(l.launchpad_params or {})))
+        except (AdapterError,EvmRPCError,EvmRPCUnavailable) as error:
+            raise HTTPException(503,'Clanker reward state could not be verified; retry before claiming') from error
+        claim_summary.update(claim_scope=preview.notes['claim_scope'],claim_currency=preview.notes['currency'])
+        if not preview.steps:
+            claim_warnings.append('No Clanker V5 rewards are available for this wallet in the pair currency')
+    pf = build_preflight("claim_fees", claim_summary,claim_warnings)
     if not body.confirm:
         return pf
+    if claim_warnings:
+        raise HTTPException(400,claim_warnings[0])
     job, created = await begin_spend(db, user, body, pf, "claim_fees", l.id, pf["preflight"])
     if created and is_evm(adapter):
         async def work(session, j):
@@ -1125,6 +1156,49 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
+
+
+@router.post('/launches/{launch_id}/claim-dividends')
+async def claim_dividends(launch_id: str, body: ClaimBody, user: User = Depends(current_user),
+                          db: AsyncSession = Depends(get_db), ex: Executor = Depends(get_executor)):
+    if (prior := await find_replay(db,user,body)):
+        return prior
+    launch=await _owned_launch(db,user,launch_id)
+    wallet=await owned_wallet(db,user,body.wallet_id)
+    adapter=get_adapter(launch.launchpad)
+    if launch.status!='live' or not launch.mint_address:
+        raise HTTPException(409,'Launch is not live')
+    if wallet.network!=launch.network:
+        raise HTTPException(400,'Choose a managed wallet on this launch’s chain')
+    if not hasattr(adapter,'prepare_dividend_claim') or (launch.launchpad_params or {}).get('clanker_version')!=5:
+        raise HTTPException(400,'Holder-dividend claims are available for Clanker V5 tokens')
+    request=ClaimRequest(wallet_pubkey=wallet.address,mint=launch.mint_address,options=dict(launch.launchpad_params or {}))
+    try:
+        preview=await adapter.prepare_dividend_claim(request)
+    except (AdapterError,EvmRPCError,EvmRPCUnavailable) as error:
+        raise HTTPException(400,str(error)) from error
+    warnings=[] if preview.steps else ['No payable holder dividends are available for this wallet']
+    summary={'launch_id':launch.id,'wallet':wallet.address,'mint':launch.mint_address,'network':launch.network,
+        'platform_fee':'none',**preview.notes,'dividend_contract':preview.steps[0].to if preview.steps else None}
+    if preview.steps:
+        from ..services.evm_exec import EvmCall,GAS_HEADROOM
+        step=preview.steps[0];sender=ex.evm(launch.network)
+        gas=int(await sender.estimate(wallet.address,EvmCall(step.to,step.data,step.value))*GAS_HEADROOM)
+        summary['max_gas']=await sender.max_gas_cost(gas)/WEI
+    pf=build_preflight('claim_dividends',summary,warnings)
+    if not body.confirm:
+        return pf
+    if warnings:
+        raise HTTPException(400,warnings[0])
+    job,created=await begin_spend(db,user,body,pf,'claim_dividends',launch.id,pf['preflight'])
+    if created:
+        async def work(session,j):
+            plan=await adapter.prepare_dividend_claim(request)
+            if not plan.steps or plan.steps[0].to.lower()!=summary['dividend_contract'].lower() or plan.notes!=preview.notes:
+                raise AdapterError('Dividend terms changed; review the claim again')
+            await run_evm_plan(session,ex,j,wallet,'claim_dividends',plan)
+        await run_job(job.id,work)
+    return {'job_id':job.id,'status':job.status}
 
 
 class BurnBody(SpendConfirm):
@@ -1420,10 +1494,19 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     coin = EVM_CHAINS[l.network]["native"]
     params = {key: value for key, value in (l.launchpad_params or {}).items()
               if key not in {"helm_creator_share", "pons_rewards", "flap_commission_receiver"}}
-    gas = await sender.max_gas_cost(EVM_DEPLOY_GAS)
+    gas = await sender.max_gas_cost(getattr(adapter,'deploy_gas_limit',EVM_DEPLOY_GAS))
     dev_buy = int(round(l.dev_buy_sol * WEI))
     launch_fee = 0
-    if hasattr(adapter, "launch_fee"):
+    launch_terms = None
+    if hasattr(adapter,'launch_terms'):
+        if params.get('clanker_version')!=5:
+            raise HTTPException(409,'Clanker now uses V5 for new launches. Edit and save this undeployed draft to review the new tax and reward settings')
+        try:
+            launch_terms=await adapter.launch_terms(params)
+            launch_fee=int(launch_terms['native_launch_fee_raw'])
+        except (AdapterError,EvmRPCError,EvmRPCUnavailable) as error:
+            raise HTTPException(503,str(error)) from error
+    elif hasattr(adapter, "launch_fee"):
         try:
             launch_fee = await adapter.launch_fee()
         except Exception:
@@ -1459,13 +1542,15 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         "dev_wallet": dev.address, "dev_buy_sol": l.dev_buy_sol, "max_gas": gas / WEI,
         "platform_fee": "none on deploy", "helm_creator_share": share,
     }
+    if launch_terms:
+        summary['clanker_v5_terms']=launch_terms
     if rewards:
         summary["pons_rewards"] = rewards
         summary["reward_terms"] = ("97.5% creator / 2.5% Helm, including creator tax. Native ETH only. The recipients "
             "are permanent in Helm's splitter; recipient transfers and buyback controls are unavailable. "
             "Pons retains a timelocked power to redirect future rewards. First claim also deploys the splitter.")
     if hasattr(adapter, "deploy_notes"):
-        summary.update(adapter.deploy_notes({**params, "helm_creator_share": share}))
+        summary.update(adapter.deploy_notes({**params, "helm_creator_share": share,**({'clanker_v5_terms':launch_terms} if launch_terms else {})}))
     if hasattr(adapter, "deploy_warnings"):
         warnings += adapter.deploy_warnings(l.dev_buy_sol, params)
     if launch_fee:
@@ -1501,6 +1586,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             if funding and not await _fund_first(session, ex, j, launch, funding, dev, need_raw, prior_status):
                 return
             opts = {**params, "helm_creator_share": share}
+            if launch_terms:
+                opts['clanker_v5_terms']=launch_terms
             if rewards:
                 opts["pons_rewards"] = rewards
             if l.launchpad.startswith("flap-sh"):

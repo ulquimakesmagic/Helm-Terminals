@@ -36,7 +36,7 @@ FEE_PATHS = [
     {"id": "trade_fee_evm_dex", "label": "2.5% EVM trading fee", "setting": "trade_fee_bps_evm_dex",
      "networks": list(EVM_CHAINS), "supported": True, "lands": "received", "how": "2.5% of trade notional, including bonding curves; referral share is 30% of the fee."},
     {"id": "creator_rewards", "label": "2.5% creator-reward share", "setting": "creator_share_bps",
-     "networks": ["solana", "base", "robinhood"], "supported": True, "lands": "configured", "how": "2.5% of creator rewards on new Helm launches. Collection readiness is launchpad-specific; historical immutable splits retain their beneficiaries."},
+     "networks": ["solana", "base", "bsc", "robinhood"], "supported": True, "lands": "configured", "how": "2.5% of creator rewards on new Helm launches. Collection readiness is launchpad-specific; historical immutable splits retain their beneficiaries."},
 ]
 
 # Fixed in HelmPonsRewards / HelmRewardsSplitter (HELM_BPS = 600). Existing splitters' addresses derive from that
@@ -44,7 +44,7 @@ FEE_PATHS = [
 PONS_SHARE_BPS = 600
 
 CREATOR_SHARE_LAUNCHPADS = {
-    "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood",
+    "pumpfun": "solana", "bags": "solana", "clanker": "base", "clanker-robinhood": "robinhood", "clanker-bsc":"bsc",
     "pons": "robinhood",
 }
 
@@ -119,7 +119,7 @@ def creator_share(launchpad: str) -> dict:
     from .pricing import CREATOR_SHARE_BPS
     network = CREATOR_SHARE_LAUNCHPADS.get(launchpad)
     recipient = treasury_for(network) if network else ""
-    native = launchpad in {"pumpfun", "bags", "clanker", "clanker-robinhood"}
+    native = launchpad in {"pumpfun", "bags", "clanker", "clanker-robinhood", "clanker-bsc"}
     if launchpad == "pons":
         native = bool(get_settings().pons_rewards_factory_v2)
     supported = native and bool(recipient)

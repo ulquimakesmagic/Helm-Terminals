@@ -68,7 +68,7 @@ export function explorerUrl(network: string | null | undefined, type: "account" 
 
 export const PAD_NAMES: Record<string, string> = {
   pumpfun: "Pump.fun", letsbonk: "LetsBonk", "meteora-dbc": "Meteora DBC", bags: "Bags", printr: "Printr",
-  surge: "Surge", anoncoin: "Anoncoin", stonkfun: "Stonk.fun", clanker: "Clanker", bankr: "Bankr",
+  surge: "Surge", anoncoin: "Anoncoin", stonkfun: "Stonk.fun", clanker: "Clanker", "clanker-bsc":"Clanker", bankr: "Bankr",
   "four-meme": "Four.meme", "flap-sh": "Flap.sh", "flap-sh-base": "Flap.sh", "flap-sh-robinhood": "Flap.sh", "clanker-robinhood": "Clanker", pons: "Pons", "uniswap-v2": "Uniswap V2",
   sunpump: "SunPump", "meme-cooking": "Meme.Cooking", tolly: "Tolly", gaspump: "GasPump",
 };

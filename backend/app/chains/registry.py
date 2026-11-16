@@ -4,7 +4,7 @@ from ..config import get_settings
 from .bags import BagsAdapter
 from .evm import shared_evm
 from .flap import FlapAdapter
-from .clanker import ClankerAdapter
+from .clanker_v5 import ClankerV5Adapter
 from .fourmeme import FourMemeAdapter
 from .meteora_dbc import MeteoraDbcAdapter
 from .pons import PonsAdapter
@@ -45,7 +45,7 @@ def _flap(launchpad_id: str, network: str):
 def _clanker(launchpad_id: str, network: str):
     def make():
         # Helm's reward share and its recipient come from the live platform settings (see platform_config).
-        return ClankerAdapter(launchpad_id, network, shared_evm(network))
+        return ClankerV5Adapter(launchpad_id, network, shared_evm(network))
     return make
 
 
@@ -65,6 +65,7 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                                      get_settings().jupiter_api_url or "https://api.jup.ag")
                    if get_settings().jupiter_api_key else None),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood"),
+               "clanker-bsc": _clanker("clanker-bsc", "bsc"),
                # TRON, NEAR and Arc (see chains/extra_pads.py and services/extra_launch.py)
                "sunpump": SunPump, "tolly": Tolly,
                "meme-cooking": lambda: MemeCooking(Pinata(get_settings().pinata_jwt) if get_settings().pinata_jwt
