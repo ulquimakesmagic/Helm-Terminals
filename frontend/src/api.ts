@@ -18,6 +18,15 @@ export function setToken(t: string | null) {
 }
 export const hasToken = () => token !== null;
 
+/** Owner-only draft images use a bearer header, never credentials in image URLs. */
+export async function launchImage(id: string): Promise<Blob> {
+  const response = await fetch(`${BASE}/launches/${encodeURIComponent(id)}/image`, {
+    headers: token ? {Authorization: `Bearer ${token}`} : {}, cache: 'no-store',
+  });
+  if (!response.ok) throw new ApiError(response.status, 'Token image unavailable');
+  return response.blob();
+}
+
 /** Owner-only media uses the same memory-only bearer, never a token in a URL. */
 export async function performanceMedia(file?: File, remove = false): Promise<Blob | any> {
   const response = await fetch(BASE + "/profile/performance/media", {

@@ -16,6 +16,7 @@ interface Launch {
   quote?: { mint: string; symbol: string; name: string } | null;
   id: string; network: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
   imported: boolean; created_at: string; dev_buy_sol: number; description: string; has_image?: boolean;
+  dev_wallet_id?: string | null; socials?: Record<string,string>; settings?: Record<string,unknown>; slippage_pct?: number; draft_revision?: number;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
 function optLabel(key: string, o: string | number): string {
@@ -49,11 +50,12 @@ function toBase64(file: File): Promise<string> {
 
 const EMPTY_FORM = { launchpad: "pumpfun", name: "", symbol: "", description: "", twitter: "", telegram: "", website: "", dev_wallet_id: "", dev_buy_sol: "0" };
 
-function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; onClose: () => void }) {
+export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pads: Pad[]; wallets: W[]; onClose: () => void; initial?: Launch; onSaved?: (launch:Launch)=>void }) {
   const nav = useNavigate();
-  const [f, setF] = useState(EMPTY_FORM);
+  const [f, setF] = useState(initial ? {...EMPTY_FORM, launchpad:initial.launchpad,name:initial.name,symbol:initial.symbol,description:initial.description,dev_wallet_id:initial.dev_wallet_id ?? '',dev_buy_sol:String(initial.dev_buy_sol),twitter:initial.socials?.twitter ?? '',telegram:initial.socials?.telegram ?? '',website:initial.socials?.website ?? ''} : EMPTY_FORM);
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [quotes, setQuotes] = useState<QuoteAsset[]>([]);
@@ -78,11 +80,11 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
     setQuoteMint(""); setEligible(false); setQuotes([]); setNotice(null);
     setSchemaLoading(true); setSchemaReady(false); setError(""); setQuotesError(""); setQuotesLoading(false);
     setSchema({ fields: [], socials: [], requires_image: false, notes: [] }); setOpts({});
-    if (pad?.status !== "available") { setSchemaLoading(false); return; }
-    if (f.launchpad === "bags") {
+    if (pad?.status !== "available" && !initial) { setSchemaLoading(false); return; }
+    if (f.launchpad === "bags" && !initial?.quote) {
     setQuotesLoading(true);
     api<{ assets: QuoteAsset[]; notice: string | null; error?: string }>(`/launchpads/${f.launchpad}/quote-assets`)
-      .then((r) => { if (active) { setQuotes(r.assets); setNotice(r.notice); setQuoteMint(r.assets[0]?.mint ?? ""); if (r.error || !r.assets.length) setQuotesError("Bags pair assets are unavailable. Retry before creating a draft."); } })
+      .then((r) => { if (active) { setQuotes(r.assets); setNotice(r.notice); setQuoteMint(r.assets[0]?.mint ?? ""); if (!r.assets.length) setQuotesError("Bags pair assets are unavailable. Retry before creating a draft."); } })
       .catch((e) => { if (active) setQuotesError(`Pair assets could not be loaded: ${errMsg(e)}`); })
       .finally(() => { if (active) setQuotesLoading(false); });
     }
@@ -90,11 +92,11 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
       if (!active) return;
       const fields = r.fields ?? [];
       setSchema({ fields, socials: r.socials ?? [], requires_image: !!r.requires_image, notes: r.notes ?? [] });
-      setOpts(Object.fromEntries(fields.filter((x) => !["dev_buy_sol", "slippage_pct"].includes(x.key)).map((x) => [x.key, x.default])));
+      setOpts(Object.fromEntries(fields.filter((x) => !["dev_buy_sol", "slippage_pct"].includes(x.key)).map((x) => [x.key, initial?.settings?.[x.key] ?? x.default])));
       const buy = fields.find((x) => x.key === "dev_buy_sol");
       const slip = fields.find((x) => x.key === "slippage_pct");
-      setF((old) => ({ ...old, dev_buy_sol: String(buy?.default ?? 0) }));
-      setSlippagePct(String(slip?.default ?? 10));
+      setF((old) => ({ ...old, dev_buy_sol: String(initial?.dev_buy_sol ?? buy?.default ?? 0) }));
+      setSlippagePct(String(initial?.slippage_pct ?? slip?.default ?? 10));
       setSchemaReady(true);
       setSchemaLoading(false);
     }).catch((e) => { if (active) { setSchemaLoading(false); setError(`Could not load ${padName(f.launchpad)} settings: ${errMsg(e)}`); } });
@@ -110,8 +112,8 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
   const values = { ...opts, dev_buy_sol: paired ? 0 : f.dev_buy_sol, slippage_pct: slippagePct };
   const validation = schemaReady ? validateLaunchFields(schema.fields, values) : null;
   const blocked = !schemaReady || schemaLoading || quotesLoading || !!quotesError || !!validation;
-  const tokenReady = !!f.name.trim() && !!f.symbol.trim() && (!requiresImage || !!image) && (!image || image.size <= 2_000_000);
-  const ready = tokenReady && !blocked && pad?.status === "available" && (!paired || eligible);
+  const tokenReady = !!f.name.trim() && !!f.symbol.trim() && (!requiresImage || !!image || !!initial?.has_image && !removeImage) && (!image || image.size <= 2_000_000);
+  const ready = tokenReady && !blocked && (!!initial || pad?.status === "available") && (!paired || eligible);
   const pickPad = (id:string) => { if (id !== f.launchpad) { setSchemaReady(false); setF(old => ({...old,launchpad:id})); setStep(0); } };
   useEffect(() => {
     setF(old => old.dev_wallet_id && !wallets.some(w => w.id === old.dev_wallet_id && w.network === chain.id && w.kind === "managed") ? { ...old, dev_wallet_id: "" } : old);
@@ -129,11 +131,11 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
 
   async function create() {
     setError("");
-    if (blocked || busy || pad?.status !== "available") return;
+    if (!ready || busy) return;
     if (image && image.size > 2_000_000) { setError("Image must be 2 MB or smaller."); return; }
     setBusy(true);
     try {
-      const l = await api<Launch>("/launches", { body: {
+      const l = await api<Launch>(initial ? `/launches/${initial.id}` : "/launches", { method:initial?'PATCH':'POST',body: {
         launchpad: f.launchpad, name: f.name.trim(), symbol: f.symbol.trim(), description: f.description,
         socials: { twitter: f.twitter, telegram: f.telegram, website: f.website },
         dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: paired ? 0 : +f.dev_buy_sol || 0,
@@ -141,23 +143,24 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
         image_b64: image ? await toBase64(image) : null,
         quote_mint: paired ? quoteMint : null, eligibility_confirmed: paired ? eligible : false,
         options: opts,
+        ...(initial ? {expected_revision:initial.draft_revision ?? 0,remove_image:removeImage && !image}:{}),
       } });
-      nav(`/launches/${l.id}`);
+      if(initial){onSaved?.(l);onClose();}else nav(`/launches/${l.id}`);
     } catch (e) { setError(errMsg(e)); setBusy(false); }
   }
 
   return (
-    <Modal wide title={experience.title} sub={`${chain.name} · ${experience.mode}. Save a draft, then review transactions before signing.`} onClose={onClose} lock={busy}
+    <Modal wide title={initial?'Edit draft':experience.title} sub={`${chain.name} · ${experience.mode}. Save a draft, then review transactions before signing.`} onClose={onClose} lock={busy}
       foot={<>
         <span className="muted small grow">{schemaLoading ? "Loading launchpad settings…" : `Step ${step+1} of 3 · No transaction is sent`}</span>
         <button className="btn ghost" disabled={busy} onClick={onClose}>Cancel</button>
         {step > 0 && <button type="button" className="btn secondary" disabled={busy} onClick={()=>setStep(step-1)}>Back</button>}
-        {step < 2 ? <button type="button" className="btn" disabled={busy || schemaLoading || (step === 0 ? !tokenReady : !ready)} onClick={()=>setStep(step+1)}>{step === 0 ? "Continue" : "Review draft"}<Icon name="arrowright" size={15}/></button> : <button className="btn" disabled={busy || !ready} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}Create draft</button>}
+        {step < 2 ? <button type="button" className="btn" disabled={busy || schemaLoading || (step === 0 ? !tokenReady : !ready)} onClick={()=>setStep(step+1)}>{step === 0 ? "Continue" : "Review draft"}<Icon name="arrowright" size={15}/></button> : <button className="btn" disabled={busy || !ready} onClick={create}>{busy ? <Spinner /> : <Icon name="check" size={15} />}{initial?'Save draft':'Create draft'}</button>}
       </>}>
       {error && <Callout tone="err">{error}</Callout>}
       {quotesError && <Callout tone="err">{quotesError}</Callout>}
       {(!schemaReady && !schemaLoading && pad?.status === "available" || quotesError) && <button className="btn ghost" onClick={() => setReloadSettings(n => n + 1)}>Retry launchpad settings</button>}
-      <div className="launch-route"><ChainSelect value={chain.id} includeAll={false} label="Launch network" networks={ALL_CHAIN_ORDER.filter(n=>pads.some(p=>p.network===n && p.status==='available'))} onChange={network=>{const next=pads.find(p=>p.network===network && p.status==='available');if(next)pickPad(next.id);}}/><Field label="Launchpad"><select aria-label="Launchpad" value={f.launchpad} onChange={e=>pickPad(e.target.value)}>{pads.filter(p=>p.network===chain.id).map(p=><option key={p.id} value={p.id} disabled={p.status!=='available'}>{padName(p.id)}{p.status!=='available'?' · unavailable':''}</option>)}</select></Field></div>
+      {initial ? <div className="row small"><ChainLabel network={chain.id}/><span>·</span><PadLabel pad={initial.launchpad}/><span className="muted">Original launch route</span></div> : <div className="launch-route"><ChainSelect value={chain.id} includeAll={false} label="Launch network" networks={ALL_CHAIN_ORDER.filter(n=>pads.some(p=>p.network===n && p.status==='available'))} onChange={network=>{const next=pads.find(p=>p.network===network && p.status==='available');if(next)pickPad(next.id);}}/><Field label="Launchpad"><select aria-label="Launchpad" value={f.launchpad} onChange={e=>pickPad(e.target.value)}>{pads.filter(p=>p.network===chain.id).map(p=><option key={p.id} value={p.id} disabled={p.status!=='available'}>{padName(p.id)}{p.status!=='available'?' · unavailable':''}</option>)}</select></Field></div>}
       <nav className="launch-steps" aria-label="Launch steps">{['Token','Launch settings','Review'].map((label,index)=><button key={label} type="button" aria-current={step===index?'step':undefined} disabled={busy || index>step && !(index===1?tokenReady:ready)} onClick={()=>setStep(index)}><span>{index+1}</span>{label}</button>)}</nav>
       {step === 0 && <>
       <div className="launch-identity">
@@ -165,7 +168,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
           <input type="file" aria-label="Token artwork" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
           {preview ? (
             <img src={preview} alt="" style={{ width: 112, height: 112, borderRadius: 18, objectFit: "cover", border: "1px solid var(--line-2)" }} />
-          ) : (
+          ) : initial?.has_image && !removeImage ? <TokenImage launch={initial} size={112}/> : (
             <div style={{ width: 112, height: 112, borderRadius: 18, border: "1.5px dashed var(--line-2)", display: "grid", placeItems: "center", color: "var(--muted)", textAlign: "center", fontSize: 11.5 }}>
               <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />{requiresImage ? <b className="warn-t">required</b> : "max 2 MB"}</div></div>
             </div>
@@ -181,6 +184,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
           </div>
         </div>
       </div>
+      {(image || initial?.has_image && !removeImage) && <button type="button" className="btn sm ghost" onClick={()=>{setImage(null);setRemoveImage(true);}}>Remove artwork</button>}
       <Field label="Description" extra={`${f.description.length}/500`}>
         <textarea value={f.description} onChange={set("description")} rows={3} maxLength={500} placeholder="What is this token about?" />
       </Field>
@@ -234,7 +238,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
       <h4>{devBuyField && devBuyField.max !== 0 ? profile.funding : 'Launch wallet'}</h4>
       <div className="launch-funding">
         <Field label="Launch wallet" style={{ flex: 2 }} hint={validWallets.length === 0 ? `Create a managed ${chain.name} wallet on the Wallets page first.` : f.launchpad === 'meme-cooking' ? 'Creates the auction. An optional deposit participates in the auction; it is not an immediate token purchase.' : f.launchpad === 'uniswap-v2' ? 'Creates the token and pool, and supplies the starting liquidity. This is not a creator trade.' : 'Signs this launch. Network and launchpad costs are shown before you confirm deployment.'}>
-          <select value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
+          <select aria-label="Launch wallet" value={f.dev_wallet_id} onChange={set("dev_wallet_id")}>
             <option value="">Choose later…</option>
             {validWallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
@@ -250,7 +254,7 @@ function CreateLaunch({ pads, wallets, onClose }: { pads: Pad[]; wallets: W[]; o
       <p className="muted small">After creating the draft, plan the token's allocation and vesting in its Launchdesk. Any
         anti-sniping settings above are explained again, with their effect and fees, in the deploy preview.</p>
       <section className="launch-form-section launch-summary" aria-label="Draft summary">
-        <div className="row">{preview && <img src={preview} alt="Token preview" width={40} height={40} style={{ borderRadius: 10, objectFit: "cover" }} />}<div><h3>{f.name.trim() || "Your token"} <span className="muted">{f.symbol ? `$${f.symbol}` : ""}</span></h3><span className="small muted">{chain.name} · {padName(f.launchpad)}</span></div></div>
+        <div className="row">{!preview && initial?.has_image && !removeImage && <TokenImage launch={initial}/>} {preview && <img src={preview} alt="Token preview" width={40} height={40} style={{ borderRadius: 10, objectFit: "cover" }} />}<div><h3>{f.name.trim() || "Your token"} <span className="muted">{f.symbol ? `$${f.symbol}` : ""}</span></h3><span className="small muted">{chain.name} · {padName(f.launchpad)}</span></div></div>
         <dl><div><dt>Pair</dt><dd>{quote?.symbol ?? (opts.dbc_quote ? String(opts.dbc_quote) : profile.pair === "Native asset" ? chain.native : profile.pair)}</dd></div><div><dt>{profile.funding}</dt><dd>{paired ? "Not supported for this pair" : `${f.dev_buy_sol || "0"} ${chain.native}`}</dd></div><div><dt>Dev wallet</dt><dd>{validWallets.find(w => w.id === f.dev_wallet_id)?.label || (f.dev_wallet_id ? short(validWallets.find(w => w.id === f.dev_wallet_id)?.address ?? "") : "Choose before deployment")}</dd></div></dl>
         <p className="muted small">Draft only. Network costs, platform fees and reward recipients are reviewed before signing.</p>
       </section>

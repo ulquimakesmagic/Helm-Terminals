@@ -148,7 +148,7 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
     if any(wallet.network != l.network for wallet in wallets):
         raise HTTPException(400, "Select wallets on the token's network")
     from .charges import trade_terms
-    fee_terms = await trade_terms(db, l.network)
+    fee_terms = await trade_terms(db, l.network, user)
     if l.launchpad == "meme-cooking" and params.get("meme_id") is None:
         raise HTTPException(409, "this launch's Meme.Cooking auction isn't known yet; refresh once it has confirmed")
     for w in wallets:
@@ -180,7 +180,7 @@ async def trade(l: Launch, body, user, db, ex, wallets: list[Wallet], adapter) -
         "amount_unit": f"{unit(l.network)} per wallet" if body.side == "buy" else
         ("% of each wallet's deposit" if l.launchpad == "meme-cooking" else "% of each wallet's tokens"),
         "wallets": [w.address for w, _ in plans], "slippage_pct": body.slippage_pct,
-        "platform_fee": "2.5% of the trade notional; 30% of the fee goes to your referrer when applicable",
+        "platform_fee": f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else "2.5% of the trade notional; 30% of the fee goes to your referrer when applicable",
         "trade_fee_terms": fee_terms,
         "per_wallet": [p.summary for _, p in plans]}, warnings)
     pf["preflight"]["estimates"] = [p.display for _, p in plans]

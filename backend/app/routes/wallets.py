@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 from typing import Literal
+from decimal import Decimal
 
 ERC20_TRANSFER_GAS = 90_000
 
@@ -578,9 +579,10 @@ class WithdrawBody(SpendConfirm):
     wallet_ids: list[str] = Field(min_length=1, max_length=50)
     destination: str
     all: bool = True
-    amount_sol: float | None = Field(default=None, gt=0, allow_inf_nan=False)  # native coin per wallet (asset="native")
+    amount_sol: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False, max_digits=78, decimal_places=36)
     asset: Literal["native", "stable"] = "native"  # "stable": the chain's dollar stablecoin (USDC, USDG)
-    amount: float | None = Field(default=None, gt=0, allow_inf_nan=False)  # stablecoin per wallet (asset="stable")
+    amount: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False, max_digits=78, decimal_places=36)
+    fee_wallet_id: str | None = Field(default=None, max_length=32)
 
 
 @router.post("/wallets/fund")
@@ -640,21 +642,37 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
         raise HTTPException(400, "withdraw from one network at a time")
     if not valid_address_for(network, body.destination):
         raise HTTPException(400, f"invalid {network} destination address")
+    if any(w.address.lower() == body.destination.lower() if network != 'solana' else w.address == body.destination for w in wallets):
+        raise HTTPException(400, 'The destination cannot also be a source wallet; use consolidation to gather funds')
     if body.asset == "stable":
         return await _withdraw_stable(body, user, db, ex, wallets)
+    if len(wallets) > 1 and body.fee_wallet_id in body.wallet_ids:
+        raise HTTPException(400, 'Choose a fee wallet outside the source wallets for a native-coin batch withdrawal')
     if network in EVM_CHAINS:
         return await _withdraw_evm(body, user, db, ex, wallets)
     plan = []
+    warnings, committed, balances = [], {}, {}
+    from ..services.sol_transfer_support import plan as sol_fee_plan, describe as describe_payer
     for w in wallets:
         bal = await rpc.get_balance(w.address)
-        lamports = max(bal - TX_FEE_RESERVE, 0) if body.all else int((body.amount_sol or 0) * LAMPORTS_PER_SOL)
-        plan.append((w, lamports, bal))
-    warnings = [f"{w.address} has too little SOL to send {lam / LAMPORTS_PER_SOL:.4f}" for w, lam, bal in plan
-                if lam <= 0 or lam + TX_FEE_RESERVE > bal]
+        from .distribute import _to_raw
+        principal = 0 if body.all else _to_raw(body.amount_sol or 0, 9)
+        payer, fee, issues = await sol_fee_plan(db, ex, user, w, {'kind':'native'}, [body.destination],
+            fee_wallet_id=body.fee_wallet_id, principal=principal, committed=committed, cache=balances,
+            exclude_ids={source.id for source in wallets})
+        lamports = max(bal - (fee if payer.id == w.id else 0), 0) if body.all else principal
+        plan.append((w, lamports, bal, payer, fee))
+        warnings += issues
+        if lamports <= 0 or lamports + (fee if payer.id == w.id else 0) > bal:
+            warnings.append(f'{w.address} has too little SOL for this transfer')
     warnings += two_fa_warnings(user, "withdraw")
     pf = build_preflight("withdraw", {
         "destination": body.destination,
-        "from": [{"address": w.address, "sol": lam / LAMPORTS_PER_SOL} for w, lam, _ in plan],
+        "network": 'solana',
+        "from": [{"address": w.address, "sol": lam / LAMPORTS_PER_SOL, 'amount_raw':str(lam),'decimals':9} for w, lam, _, _, _ in plan],
+        'fee_payers': [describe_payer(w, payer) for w, _, _, payer, _ in plan],
+        'network_fees_max': sum(fee for _, _, _, _, fee in plan) / LAMPORTS_PER_SOL,
+        'network_fee_coin': 'SOL',
         "platform_fee": "none",
     }, warnings)
     if not body.confirm:
@@ -665,14 +683,15 @@ async def withdraw(body: WithdrawBody, user: User = Depends(current_user), db: A
     if created:
         async def work(session, j):
             results = []
-            for w, lam, _ in plan:
+            from ..services.sol_token_send import refs_for
+            for w, lam, _, payer, _ in plan:
                 blockhash = await ex.rpc.get_latest_blockhash()
                 raw = build_unsigned(
-                    Pubkey.from_string(w.address),
+                    Pubkey.from_string(payer.address),
                     [sol_transfer_ix(Pubkey.from_string(w.address), Pubkey.from_string(body.destination), lam)],
                     blockhash,
                 )
-                res = await submit_tracked(ex, j, w, "withdraw", raw, {w.address: w.signer_ref or ""})
+                res = await submit_tracked(ex, j, w, "withdraw", raw, refs_for(w, payer))
                 await _record(session, j, w, "withdraw", res, None)
                 results.append(res)
             _finish(j, results)
@@ -746,6 +765,7 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     plan: list[tuple[Wallet, int, Wallet | None]] = []  # (source, raw amount, fee payer on Solana)
     warnings: list[str] = []
     fees_paid_by = []
+    funding = []
     try:
         if network == "solana":
             # The destination must be a wallet that can sign for its USDC later: an on-curve address that is
@@ -769,7 +789,7 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
                     continue
                 need = SOL_FEE + (ATA_RENT if needs_account and gas_total == 0 else 0)
                 gas_total += need
-                choice = await choose_fee_payer(db, ex.rpc, user.id, w, need, committed=committed, cache=balance_cache)
+                choice = await choose_fee_payer(db, ex.rpc, user.id, w, need, committed=committed, cache=balance_cache, explicit_id=body.fee_wallet_id)
                 if choice.wallet is None:
                     warnings.append(f"{w.label or w.address[:8]} needs about {need / LAMPORTS_PER_SOL:.6f} SOL for the "
                                     "network fee, and none of your other Solana wallets has enough to pay it. "
@@ -781,7 +801,8 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
             fees, fee_coin = gas_total / LAMPORTS_PER_SOL, "SOL"
         else:
             sender = ex.evm(network)
-            gas = await sender.max_gas_cost(ERC20_TRANSFER_GAS)
+            from ..services.gas_funding import allowance
+            gas = await allowance(ex, network, ERC20_TRANSFER_GAS)
             coin = EVM_CHAINS[network]["native"]
             for w in wallets:
                 bal = int(await sender.rpc.erc20_balance(a["token"], w.address))
@@ -789,10 +810,10 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
                 if raw <= 0 or raw > bal:
                     warnings.append(f"{w.label or w.address[:8]} has {bal / 10**d:,.6g} {sym}, "
                                     + ("nothing to withdraw." if raw <= 0 else f"less than {raw / 10**d:,.6g}."))
-                elif (native := int(await sender.rpc.get_balance(w.address))) < gas:
-                    warnings.append(f"{w.label or w.address[:8]} needs about {(gas - native) / WEI:.6f} more {coin} "
-                                    f"for gas to send {sym}. Fund it with {coin} first (Fund from cash works too).")
                 plan.append((w, raw, None))
+            from ..services.gas_funding import plan as gas_plan
+            funding, issues = await gas_plan(db, ex, user, [(w, gas, 0) for w, raw, _ in plan if raw > 0], body.fee_wallet_id)
+            warnings += issues
             fees, fee_coin = gas * len(wallets) / WEI, coin
     except HTTPException:
         raise
@@ -801,8 +822,10 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
     warnings += two_fa_warnings(user, "withdraw")
     pf = build_preflight("withdraw", {
         "network": network, "destination": body.destination, "coin": sym, "asset": sym, "token": a["token"],
-        "from": [{"address": w.address, "amount": raw / 10**d} for w, raw, _ in plan],
-        "network_fees_max": fees, "network_fee_coin": fee_coin, "fees_paid_by": fees_paid_by,
+        "from": [{"address": w.address, "amount": raw / 10**d, 'amount_raw':str(raw),'decimals':d} for w, raw, _ in plan],
+        "network_fees_max": fees + sum(int(leg['funding_fee_max_raw']) for leg in funding) / WEI,
+        "network_fee_coin": fee_coin, "fees_paid_by": fees_paid_by,
+        "fee_funding": funding,
         "platform_fee": "none",
     }, warnings)
     if not body.confirm:
@@ -815,6 +838,11 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
             j.status = "submitted"
             await session.commit()
             results = []
+            if funding:
+                from ..services.gas_funding import execute
+                results = await execute(session, ex, j, funding)
+                if any(r.status != 'confirmed' for r in results):
+                    _finish(j, results); await session.commit(); return
             for w, raw, payer in plan:
                 if network == "solana":
                     tx = build_token_send(w.address, payer.address, [(body.destination, raw)], a["token"], d,
@@ -836,19 +864,25 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
     network = wallets[0].network
     sender = ex.evm(network)
     coin = EVM_CHAINS[network]["native"]
-    gas = await sender.max_gas_cost()
+    from ..services.gas_funding import allowance
+    gas = await allowance(ex, network, 21_000)
     plan = []
     for w in wallets:
         bal = await sender.rpc.get_balance(w.address)
-        amount = await sender.spendable(w.address) if body.all else int(round((body.amount_sol or 0) * WEI))
+        from .distribute import _to_raw
+        amount = (bal if body.fee_wallet_id and body.fee_wallet_id != w.id else await sender.spendable(w.address)) if body.all else _to_raw(body.amount_sol or 0, 18)
         plan.append((w, amount, bal))
     warnings = [f"{w.address} has too little {coin} to send {amt / WEI:.6f}" for w, amt, bal in plan
-                if amt <= 0 or amt + gas > bal]
+                if amt <= 0 or amt > bal]
+    from ..services.gas_funding import plan as gas_plan
+    funding, issues = await gas_plan(db, ex, user, [(w, gas, amount) for w, amount, _ in plan], body.fee_wallet_id)
+    warnings += issues
     warnings += two_fa_warnings(user, "withdraw")
     pf = build_preflight("withdraw", {
         "network": network, "destination": body.destination, "coin": coin,
-        "from": [{"address": w.address, "amount": amt / WEI} for w, amt, _ in plan],
+        "from": [{"address": w.address, "amount": amt / WEI, 'amount_raw':str(amt),'decimals':18} for w, amt, _ in plan],
         "max_gas_each": gas / WEI, "platform_fee": "none",
+        'fee_funding': funding,
     }, warnings)
     if not body.confirm:
         return pf
@@ -858,6 +892,11 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
     if created:
         async def work(session, j):
             results = []
+            if funding:
+                from ..services.gas_funding import execute
+                results = await execute(session, ex, j, funding)
+                if any(r.status != 'confirmed' for r in results):
+                    _finish(j, results); await session.commit(); return
             for w, amt, _ in plan:
                 res = await send_evm_tracked(sender, j, w, "withdraw", EvmCall(to=body.destination, value=amt))
                 await _record(session, j, w, "withdraw", res, None)
@@ -932,14 +971,14 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
         (s.get("swapInfo") or {}).get("label") or "pool" for s in q.get("routePlan") or [])) or "Jupiter"
     impact = float(q.get("priceImpactPct") or 0)
     from ..services.charges import trade_terms
-    fee_terms = await trade_terms(db, w.network)
+    fee_terms = await trade_terms(db, w.network, user)
     warnings = []
-    needed = amount_raw + amount_raw * 250 // 10_000
+    needed = amount_raw + amount_raw * fee_terms['bps'] // 10_000
     if body.input_mint == "native":
         if await rpc.get_balance(w.address) < needed + 10_000_000:
-            warnings.append("Keep the swap amount, its 2.5% fee and SOL for network costs in this wallet.")
+            warnings.append("Keep the swap amount, its applicable Helm fee and SOL for network costs in this wallet.")
     elif await rpc.get_token_balance(w.address, in_mint) < needed:
-        warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
+        warnings.append("Keep the input amount plus its applicable Helm fee in this wallet.")
     if impact >= 0.1:
         warnings.append(f"price impact is {impact * 100:.1f}% — check the route before confirming")
     warnings += two_fa_warnings(user, "swap")
@@ -948,7 +987,7 @@ async def _swap_solana(body: SwapBody, user: User, db: AsyncSession, rpc: Solana
         "input": f"{body.amount:g} {in_meta['symbol']}",
         "output": f"at least {min_out:g} {out_meta['symbol']}",
         "approved_minimum_raw": bounds["minimum_raw"], "slippage": f"{body.slippage_pct:g}%",
-        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
+        "platform_fee": f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else "2.5% of the input amount, paid in the input asset after the swap confirms",
         "trade_fee_terms": fee_terms,
     }, warnings)
     pf["preflight"].update(estimated_output=f"{out_amount:g} {out_meta['symbol']}",
@@ -1033,7 +1072,7 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                                     slippage_pct=body.slippage_pct)
 
     from ..services.charges import trade_terms
-    fee_terms = await trade_terms(db, w.network)
+    fee_terms = await trade_terms(db, w.network, user)
     from ..services.quote_approval import issue, verify, relay_bounds, check_relay_bounds
     scope = {"purpose": "swap", "wallet_id": w.id, "input": in_cur, "output": out_cur,
              "amount_raw": str(amount_raw), "slippage_pct": body.slippage_pct}
@@ -1052,9 +1091,9 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
     try:
         gas = await fee_reserve(ex, net, 2, ROUTE_GAS)
         native_bal = await sender.rpc.get_balance(w.address) / WEI
-        need = gas + (body.amount * 1.025 if body.input_mint == "native" else 0)
-        if body.input_mint != "native" and await sender.rpc.erc20_balance(in_cur, w.address) < amount_raw + amount_raw * 250 // 10_000:
-            warnings.append("Keep the input amount plus its 2.5% fee in this wallet.")
+        need = gas + (body.amount * (1 + fee_terms['bps'] / 10_000) if body.input_mint == "native" else 0)
+        if body.input_mint != "native" and await sender.rpc.erc20_balance(in_cur, w.address) < amount_raw + amount_raw * fee_terms['bps'] // 10_000:
+            warnings.append("Keep the input amount plus its applicable Helm fee in this wallet.")
         if native_bal < need:
             warnings.append(f"{w.label or w.address[:8]} needs about {need:.6f} {native_coin(net)} on "
                             f"{chain_name(net)} for network fees" + (" plus the amount" if body.input_mint == "native" else "") + ".")
@@ -1072,7 +1111,7 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
                              if summary and summary.get("receive_estimate") is not None else None),
         "route": "Relay routing", "slippage": f"{body.slippage_pct:g}%",
         "quote": summary, "provider": "Relay (relay.link)",
-        "platform_fee": "2.5% of the input amount, paid in the input asset after the swap confirms",
+        "platform_fee": f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else "2.5% of the input amount, paid in the input asset after the swap confirms",
         "trade_fee_terms": fee_terms,
     }, warnings)
     if not body.confirm:

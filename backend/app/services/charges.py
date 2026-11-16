@@ -56,16 +56,17 @@ async def attach_launch_fee(pf, db, user, ex, launch, wallet, body):
     summary.update(launch_fee_payment=terms, helm_fees=summary.get("helm_fees", "Free launch"),
                    platform_fee="Free launch")
     if launch.dev_buy_sol > 0 and launch.launchpad != "uniswap-v2":
-        agreed = await trade_terms(db, launch.network)
+        agreed = await trade_terms(db, launch.network, user)
         symbol, decimals = native_asset(launch.network)
         basis = int(Decimal(str(launch.dev_buy_sol)) * 10 ** decimals)
         summary.update(trade_fee_terms=agreed, initial_buy_fee={"wallet_id": wallet.id,
-            "basis_raw": str(basis), "amount_raw": str(basis * TRADE_BPS // 10_000),
+            "basis_raw": str(basis), "amount_raw": str(basis * agreed['bps'] // 10_000),
             "asset": symbol, "decimals": decimals, "destination": agreed["destination"],
             "policy": POLICY_VERSION, "network": launch.network,
-            "note": "2.5% of the initial developer buy, due only when deployment and that buy confirm. Launch exemptions do not waive trading fees."})
-        summary["helm_fees"] += "; 2.5% of the initial developer buy"
-        summary["platform_fee"] += "; 2.5% initial-buy trading fee"
+            "note": "No Helm trading fee for this account" if agreed['bps'] == 0 else "2.5% of the initial developer buy, due only when deployment and that buy confirm."})
+        summary["helm_fees"] += "; no initial-buy trading fee" if agreed['bps'] == 0 else "; 2.5% of the initial developer buy"
+        summary["platform_fee"] += "; no initial-buy trading fee" if agreed['bps'] == 0 else "; 2.5% initial-buy trading fee"
+    summary['draft_revision'] = int((launch.launchpad_params or {}).get('draft_revision', 0))
     result = build_preflight("deploy", summary, [*pf["preflight"].get("warnings", []), *warnings])
     result["launch_fee_approval"] = approval
     return result
@@ -205,33 +206,41 @@ async def pay_launch(db, ex, job, launch):
 
 async def charge_trade(db, ex, job, wallet, basis_raw, *, token=None, asset=None, decimals=None):
     """Collect 2.5% of a confirmed trade's actual input/output basis. A failed fee remains visible."""
+    agreed = (job.params or {}).get("trade_fee_terms") or {}
+    bps = int(agreed.get('bps', TRADE_BPS))
+    if bps == 0:
+        from .executor import SubmitResult
+        return SubmitResult(None, 'confirmed')
+    if bps != TRADE_BPS:
+        raise ValueError('Invalid approved trading-fee rate')
     if basis_raw <= 0:
         from .executor import SubmitResult
         return SubmitResult(None, "failed", "The trade's fee basis could not be verified")
     await pc.refresh(db)
     symbol, native_decimals = native_asset(wallet.network)
-    agreed = (job.params or {}).get("trade_fee_terms") or {}
     destination = agreed.get("destination") or pc.treasury_for(wallet.network)
     from ..deps import valid_address_for
     from .executor import SubmitResult
     if not destination or not valid_address_for(wallet.network, destination):
         return SubmitResult(None, "failed", "The trading-fee treasury is not configured")
-    raw = basis_raw * TRADE_BPS // 10_000
+    raw = basis_raw * bps // 10_000
     if raw == 0:
         return SubmitResult(None, "confirmed")  # sub-base-unit fees round down; no fictional income.
     terms = {"network": wallet.network, "destination": destination, "amount_raw": str(raw),
              "asset": asset or symbol, "token": token, "decimals": decimals if decimals is not None else native_decimals,
-             "basis_raw": str(basis_raw), "bps": TRADE_BPS, "policy": POLICY_VERSION}
+             "basis_raw": str(basis_raw), "bps": bps, "policy": POLICY_VERSION}
     return await collect(db, ex, job, wallet, "trade", terms, f"trade:{job.id}:{wallet.id}")
 
 
-async def trade_terms(db, network):
+async def trade_terms(db, network, user=None):
     await pc.refresh(db)
     from ..deps import valid_address_for
     destination = pc.treasury_for(network)
-    if not destination or not valid_address_for(network, destination):
+    from .trade_policy import policy_for
+    policy = await policy_for(db, user) if user is not None else {'bps': TRADE_BPS, 'reason': None}
+    if policy['bps'] and (not destination or not valid_address_for(network, destination)):
         raise HTTPException(503, "The 2.5% trading-fee treasury is not configured for this network")
-    return {"bps": TRADE_BPS, "destination": destination, "referral_share_bps": REFERRAL_BPS,
+    return {"bps": policy['bps'], "exemption_reason": policy['reason'], "destination": destination, "referral_share_bps": REFERRAL_BPS,
             "network": network, "policy": POLICY_VERSION}
 
 

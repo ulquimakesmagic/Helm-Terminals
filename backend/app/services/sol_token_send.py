@@ -58,7 +58,7 @@ class PayerChoice:
 async def choose_fee_payer(db: AsyncSession, rpc, user_id: str, sender: Wallet, need_lamports: int,
                            prefer: list[Wallet] = (), exclude_ids: set[str] = frozenset(),
                            committed: dict[str, int] | None = None,
-                           cache: dict[str, int] | None = None) -> PayerChoice:
+                           cache: dict[str, int] | None = None, explicit_id: str | None = None) -> PayerChoice:
     """Who pays `need_lamports` of fees/rent for a transaction `sender` signs.
 
     The sender pays if it can (keeping its account rent-exempt). Otherwise the first wallet that can, in this
@@ -77,6 +77,19 @@ async def choose_fee_payer(db: AsyncSession, rpc, user_id: str, sender: Wallet, 
             cache[w.address] = int(await rpc.get_balance(w.address))
         bal = cache[w.address]
         return bal - committed.get(w.id, 0) - SOL_RENT_MIN
+
+    if explicit_id:
+        from fastapi import HTTPException
+        payer = await db.get(Wallet, explicit_id)
+        if payer is None or payer.user_id != user_id:
+            raise HTTPException(404, 'Fee wallet not found')
+        if payer.kind != 'managed' or payer.network != 'solana':
+            raise HTTPException(400, 'Choose one of your managed Solana wallets to pay fees')
+        available = await spare(payer)
+        if available < need_lamports:
+            return PayerChoice(None, payer.id == sender.id, available)
+        committed[payer.id] = committed.get(payer.id, 0) + need_lamports
+        return PayerChoice(payer, payer.id == sender.id, available)
 
     own_spare = await spare(sender)
     if own_spare >= need_lamports:

@@ -34,7 +34,28 @@ def test_alembic_bootstraps_a_fresh_database(tmp_path):
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "users" in tables and "transactions" in tables and "alembic_version" in tables
         version = db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert version == "42c9a01f0006"
+        assert version == "42c9a01f0007"
+
+
+def test_username_migration_preserves_historical_ownership_and_attribution(tmp_path):
+    path=tmp_path/'usernames.db'
+    url=f'sqlite+aiosqlite:///{path.as_posix()}'
+    run_alembic(url,'upgrade','42c9a01f0006')
+    with sqlite3.connect(path) as db:
+        for uid in ('first','second'):
+            db.execute("INSERT INTO users (id,email,password_hash,totp_enabled,created_at) VALUES (?,?,?,0,'2026-11-16')",(uid,uid+'@example.com','fixture-not-a-password'))
+        for uid,handle in [('first','captain_long_name_01'),('second','taken')]:
+            db.execute("INSERT INTO profiles (id,user_id,display_name,handle,bio,x_handle,telegram_handle,website,avatar_hue,is_public,updated_at) VALUES (?,?,?,?,'','','','',0,0,'2026-11-16')",(uid,uid,uid,handle))
+        db.execute("INSERT INTO referrals (id,owner_user_id,code,uses,max_uses) VALUES ('legacy','first','TAKEN',7,1000)")
+        db.execute("INSERT INTO referral_links (id,referred_user_id,referrer_user_id,code,created_at) VALUES ('attribution','second','first','TAKEN','2026-11-16')")
+    run_alembic(url,'upgrade','head')
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT owner_user_id,uses FROM referrals WHERE code='TAKEN'").fetchone()==('first',7)
+        assert db.execute("SELECT owner_user_id FROM referrals WHERE code='CAPTAIN_LONG_NAME_01'").fetchone()==('first',)
+        assert db.execute("SELECT referrer_user_id,code FROM referral_links WHERE id='attribution'").fetchone()==('first','TAKEN')
+    run_alembic(url,'downgrade','42c9a01f0006')
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT code FROM referrals WHERE code='CAPTAIN_LONG_NAME_01'").fetchone()
 
 
 def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
@@ -58,7 +79,7 @@ def test_existing_create_all_schema_can_be_adopted_without_data_loss(tmp_path):
     with sqlite3.connect(path) as db:
         row = db.execute("SELECT key FROM auth_failures WHERE id='keep-me'").fetchone()
         assert row == ("redacted-test-key",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0006"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0007"
 
 
 def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
@@ -81,7 +102,7 @@ def test_upgrade_preserves_data_and_downgrade_does_not_recertify_fees(tmp_path):
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT status FROM revenue_events WHERE id='old-fee'").fetchone() == ("pending",)
     with sqlite3.connect(backup) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0006"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "42c9a01f0007"
 
 
 def test_retirement_cancels_pending_work_preserves_submitted_receipts_and_never_reactivates(tmp_path):

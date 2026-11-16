@@ -11,6 +11,7 @@ def public_pricing() -> dict:
     return {"version": POLICY_VERSION, "launch_usd": LAUNCH_USD, "trade_bps": TRADE_BPS,
             "creator_share_bps": CREATOR_SHARE_BPS, "route_fee_bps": 0, "referral_share_bps": REFERRAL_BPS,
             "admin_launches_free": True, "launch_exemptions_available": False,
+            "admin_trades_free": True, "trade_exemptions_available": True,
             "launch_payment": "none",
             "launch_credit": "No launch payment required",
             "pro_infrastructure": "planned_optional", "third_party_costs": "Network gas and launchpad fees are separate"}

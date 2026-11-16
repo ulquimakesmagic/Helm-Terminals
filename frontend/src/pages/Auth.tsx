@@ -175,7 +175,7 @@ export default function Auth() {
                 {mode === "register" && (
                   <Field label="Referral code" extra="optional">
                     <input className="mono" name="referral" value={ref} onChange={(e) => setRef(e.target.value.toUpperCase())}
-                      placeholder="e.g. 43E9C262" maxLength={16} autoComplete="off" spellCheck={false} />
+                      placeholder="Inviter's username" maxLength={32} autoComplete="off" spellCheck={false} />
                   </Field>
                 )}
               </>

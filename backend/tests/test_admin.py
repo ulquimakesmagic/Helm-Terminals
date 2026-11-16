@@ -13,7 +13,7 @@ from app.services import platform_config as pc
 
 
 from .conftest import OWNER_EMAIL, SOL, enable_2fa, signup, totp_code
-from .test_api import confirm, live_launch, sol_transfers
+from .test_api import confirm, live_launch, sol_transfers, username_code
 
 PW = "correct-horse-battery"
 PW_BAD = "wrong-password"  # a fake password that must never be accepted
@@ -249,7 +249,7 @@ async def test_trade_fee_goes_to_the_admin_treasury_and_only_helms_part_is_reven
                              headers=hb)).status_code == 200
     # a referred trader: 30% of the fee is the referrer's, owed to them because they set no payout address
     ha = await signup(client, "kol@example.com")
-    code = (await client.post("/referrals", json={}, headers=ha)).json()["code"]
+    code = await username_code(client,ha)
     await client.post("/auth/register", json={"email": "fan@example.com", "password": PW, "referral_code": code})
     tok = (await client.post("/auth/login", json={"email": "fan@example.com", "password": PW})).json()["token"]
     hf = {"Authorization": f"Bearer {tok}"}

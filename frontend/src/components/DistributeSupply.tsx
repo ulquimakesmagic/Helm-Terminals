@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, fmt, short } from "../api";
 import { Callout, Field, Icon, Modal, UnitInput } from "./ui";
 import type { SpendRequest } from "./Distribute";
+import FeeWalletSelect from './FeeWalletSelect';
+import SplitChoice, {SplitMode} from './SplitChoice';
 
 interface Wal { id: string; network: string; address: string; kind: string; label: string; folder_id: string | null }
 interface Folder { id: string; name: string; wallet_count?: number }
@@ -22,7 +24,10 @@ export default function DistributeSupply({ launch, wallets, devWalletId, attache
   const [hub, setHub] = useState("");
   const [targetMode, setTargetMode] = useState<"attached" | "folder">(attachedIds.length ? "attached" : "folder");
   const [each, setEach] = useState<Record<string,string>>({});
-  const [split, setSplit] = useState<"total" | "percent" | "custom">("total");
+  const [split, setSplit] = useState<SplitMode>('total');
+  const [weights,setWeights]=useState<Record<string,string>>({});
+  const [seed,setSeed]=useState(()=>crypto.randomUUID());
+  const [feeWallet,setFeeWallet]=useState('');
   const [total, setTotal] = useState("");
   const [percent, setPercent] = useState("100");
 
@@ -34,11 +39,11 @@ export default function DistributeSupply({ launch, wallets, devWalletId, attache
   const targets = onChain.filter((w) => (targetMode === "attached" ? attachedIds.includes(w.id) : !!folderId && w.folder_id === folderId) && w.id !== hub);
   const folder = folders.find((f) => f.id === folderId);
   const label = (w: Wal) => `${w.label || "Wallet"} · ${short(w.address)}`;
-  const ready = !!hub && targets.length > 0 && (split === "custom" ? targets.every(w => Number.isFinite(+each[w.id]) && +each[w.id] > 0) : split === "total" ? +total > 0 : +percent > 0 && +percent <= 100);
+  const ready = !!hub && targets.length > 0 && targets.length<=50 && (split === "custom" ? targets.every(w => Number.isFinite(+each[w.id]) && +each[w.id] > 0) : split === 'percent' ? +percent > 0 && +percent <= 100 : +total > 0 && (split!=='weighted' || targets.every((w,i)=>Number.isInteger(+(weights[w.id] ?? i+1)) && +(weights[w.id] ?? i+1)>0 && +(weights[w.id] ?? i+1)<=10000)));
 
   function review() {
-    const body: Record<string, unknown> = { from_wallet_id: hub, to_wallet_ids: targets.map((w) => w.id), asset: launch.mint_address };
-    if (split === "custom") { body.split = "custom"; body.amounts = targets.map(w => each[w.id]); } else if (split === "total") body.total = total; else body.percent = percent;
+    const body: Record<string, unknown> = { from_wallet_id: hub, to_wallet_ids: targets.map((w) => w.id), asset: launch.mint_address,fee_wallet_id:feeWallet || null };
+    if (split === "custom") { body.split = "custom"; body.amounts = targets.map(w => each[w.id]); } else if (split === 'percent') body.percent=percent; else {body.total=total;if(split==='weighted')Object.assign(body,{split,weights:targets.map((w,i)=>+(weights[w.id] ?? i+1))});if(split==='random')Object.assign(body,{split,split_seed:seed});}
     onReview({
       title: `Distribute $${launch.symbol} to ${targets.length} wallets`,
       path: "/wallets/disperse", network: launch.network, body,
@@ -65,19 +70,19 @@ export default function DistributeSupply({ launch, wallets, devWalletId, attache
       </Field>}
       {targetMode === "folder" && folders.length === 0 && <Callout icon="info">You have no wallet folders yet. Create one on the Wallets page first.</Callout>}
       {folderId && targets.length === 0 && <Callout tone="warn">No managed wallets from “{folder?.name}” on this chain (or the folder only holds the source wallet).</Callout>}
-      {targets.length > 0 && <p className="muted small">{targets.length} recipient wallet{targets.length === 1 ? "" : "s"}{targetMode === "folder" ? ` in “${folder?.name}”` : " attached to this launch"}. {split === "custom" ? "Set an explicit amount for each recipient." : "The total is split equally."}</p>}
+      {targets.length > 0 && <p className="muted small">{targets.length} recipient wallet{targets.length === 1 ? "" : "s"}{targetMode === "folder" ? ` in “${folder?.name}”` : " attached to this launch"}. {split === "custom" ? "Set an explicit amount for each recipient." : ['weighted','random'].includes(split)?'Variable allocations are shown before confirmation.':'The total is split equally.'}</p>}
+      {targets.length>50 && <Callout tone="warn">Choose up to 50 recipients per distribution.</Callout>}
       <Field label="Split">
-        <div className="seg full" role="group" aria-label="Split mode">
-          <button type="button" className={split === "total" ? "on" : ""} onClick={() => setSplit("total")}>Even · fixed total</button>
-          <button type="button" className={split === "custom" ? "on" : ""} onClick={() => setSplit("custom")}>Custom amounts</button>
-          <button type="button" className={split === "percent" ? "on" : ""} onClick={() => setSplit("percent")}>Even · % of balance</button>
-        </div>
+        <SplitChoice value={split} onChange={setSplit}/>
       </Field>
-      {split === "custom" ? <div className="stack">{targets.map(w => <Field key={w.id} label={label(w)}><UnitInput unit={launch.symbol} value={each[w.id] ?? ""} inputMode="decimal" onChange={e => setEach(old => ({...old,[w.id]:e.target.value}))} /></Field>)}</div> : split === "total"
-        ? <Field label={`Total ${launch.symbol} to split`} hint={targets.length ? `${fmt((+total || 0) / targets.length, 6)} ${launch.symbol} each` : undefined}>
+      {split === "custom" ? <div className="split-recipient-list">{targets.map(w => <Field key={w.id} label={label(w)}><UnitInput unit={launch.symbol} value={each[w.id] ?? ""} inputMode="decimal" onChange={e => setEach(old => ({...old,[w.id]:e.target.value}))} /></Field>)}</div> : split !== "percent"
+        ? <Field label={`Total ${launch.symbol} to split`} hint={split==='total' && targets.length ? `${fmt((+total || 0) / targets.length, 6)} ${launch.symbol} each` : 'The exact total is preserved. Review every recipient before confirming.'}>
             <UnitInput unit={launch.symbol} value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" /></Field>
         : <Field label="Share of the source wallet's token balance">
             <UnitInput unit="%" value={percent} onChange={(e) => setPercent(e.target.value)} inputMode="decimal" /></Field>}
+      {split==='weighted' && <div className="split-recipient-list">{targets.map((w,i)=><Field key={w.id} label={`${label(w)} · weight`}><input type="number" min={1} max={10000} step={1} value={weights[w.id] ?? String(i+1)} onChange={e=>setWeights(old=>({...old,[w.id]:e.target.value}))}/></Field>)}</div>}
+      {split==='random' && <button type="button" className="btn sm secondary" onClick={()=>setSeed(crypto.randomUUID())}>Reroll split</button>}
+      <FeeWalletSelect network={launch.network} wallets={wallets} value={feeWallet} onChange={setFeeWallet}/>
       <Callout icon="info">Receiving wallets are attached to the launch, so its supply-transparency panel keeps counting this supply as yours. Allocation locks are checked in review.</Callout>
     </Modal>
   );

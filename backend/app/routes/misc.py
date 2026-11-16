@@ -96,13 +96,12 @@ async def portfolio(fresh: bool = False, user: User = Depends(current_user), db:
 
 @router.post("/referrals", status_code=201)
 async def create_referral(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    existing = (await db.execute(select(func.count(Referral.id)).where(Referral.owner_user_id == user.id))).scalar_one()
-    if existing >= get_settings().referral_max_codes_per_user:
-        raise HTTPException(429, "you have reached the referral-code limit")
-    r = Referral(owner_user_id=user.id, code=secrets.token_hex(4).upper(), max_uses=get_settings().referral_code_max_uses)
-    db.add(r)
-    await db.commit()
-    return {"code": r.code}
+    from ..services.referral_codes import ensure_username_code
+    alias = await ensure_username_code(db, user)
+    if alias:
+        await db.commit()
+        return {'code': alias.code.lower()}
+    raise HTTPException(409, 'Set a username in Profile to use it as your referral code')
 
 
 async def referral_summary(db: AsyncSession, user: User) -> dict:
@@ -111,7 +110,13 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
     s = get_settings()
     await pc.refresh(db)
     fee_bps = pc.bps("trade_fee_bps_solana")
+    from ..models import Profile
+    profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one_or_none()
+    username = profile.handle if profile else None
+    # Older profiles acquire their alias through the explicit POST or a profile edit.
     codes = (await db.execute(select(Referral).where(Referral.owner_user_id == user.id))).scalars().all()
+    primary = next((c for c in codes if username and c.code.upper() == username.upper()), None)
+    codes.sort(key=lambda c: c.id != (primary.id if primary else None))
     referred = (await db.execute(select(func.count(ReferralLink.id)).where(
         ReferralLink.referrer_user_id == user.id))).scalar_one()
     rows = (await db.execute(select(FeeRecord.referral_status, func.coalesce(func.sum(FeeRecord.referral_lamports), 0))
@@ -134,7 +139,8 @@ async def referral_summary(db: AsyncSession, user: User) -> dict:
     payout = (await db.execute(select(PayoutAddress).where(
         PayoutAddress.user_id == user.id, PayoutAddress.network == "solana"))).scalar_one_or_none()
     return {
-        "codes": [{"code": c.code, "uses": c.uses, "max_uses": c.max_uses} for c in codes],
+        "username": username, 'username_code': username if primary else None,
+        "codes": [{"code": c.code.lower() if primary and c.id == primary.id else c.code, "uses": c.uses, "max_uses": c.max_uses} for c in codes],
         "referred_users": referred,
         "earned_sol": earnings.get(("solana", "SOL", 9), {}).get("paid_raw", 0) / LAMPORTS_PER_SOL,
         "owed_sol": earnings.get(("solana", "SOL", 9), {}).get("owed_raw", 0) / LAMPORTS_PER_SOL,

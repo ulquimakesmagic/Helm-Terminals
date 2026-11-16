@@ -54,6 +54,8 @@ def _launch_out(l: Launch) -> dict:
         "symbol": l.symbol, "description": l.description, "socials": l.socials, "mint_address": l.mint_address,
         "dev_wallet_id": l.dev_wallet_id, "dev_buy_sol": l.dev_buy_sol, "imported": l.imported,
         "has_image": l.image_blob is not None, "created_at": l.created_at.isoformat(),
+        "draft_revision": int((l.launchpad_params or {}).get("draft_revision", 0)),
+        "slippage_pct": (l.launchpad_params or {}).get("slippage_pct", 10),
         "quote": (l.launchpad_params or {}).get("quote"),
         "cloned_from": _cloned_from(l),
         "deployed_at": l.deployed_at.isoformat() if l.deployed_at else None,
@@ -84,8 +86,8 @@ def _cloned_from(l: Launch) -> dict | None:
     return None
 
 
-async def _owned_launch(db: AsyncSession, user: User, launch_id: str) -> Launch:
-    l = await db.get(Launch, launch_id)
+async def _owned_launch(db: AsyncSession, user: User, launch_id: str, *, lock=False) -> Launch:
+    l = (await db.execute(select(Launch).where(Launch.id == launch_id).with_for_update())).scalar_one_or_none() if lock else await db.get(Launch, launch_id)
     if not l or l.user_id != user.id:
         raise HTTPException(404, "launch not found")
     return l
@@ -187,11 +189,10 @@ def _clean_socials(socials: dict) -> dict:
     return out
 
 
-@router.post("/launches", status_code=201)
-async def create_launch(body: CreateLaunch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enforce_ready=True):
     if body.launchpad not in IMPLEMENTED:
         raise HTTPException(400, f"launchpad '{body.launchpad}' is not implemented yet")
-    if (reason := needs_setup(body.launchpad)):
+    if enforce_ready and (reason := needs_setup(body.launchpad)):
         raise HTTPException(400, reason)
     image = None
     if body.image_b64:
@@ -243,6 +244,12 @@ async def create_launch(body: CreateLaunch, user: User = Depends(current_user), 
         dev = await owned_wallet(db, user, body.dev_wallet_id)
         if dev.network != network:
             raise HTTPException(400, f"dev wallet is on {dev.network} but {body.launchpad} launches on {network}")
+    return network, image, params
+
+
+@router.post("/launches", status_code=201)
+async def create_launch(body: CreateLaunch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    network, image, params = await _draft_values(body, user, db)
     l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
                description=body.description, image_blob=image, socials=_clean_socials(body.socials), dev_wallet_id=body.dev_wallet_id,
                dev_buy_sol=body.dev_buy_sol, launchpad_params=params)
@@ -337,6 +344,66 @@ async def list_launches(status: str | None = None, user: User = Depends(current_
 @router.get("/launches/{launch_id}")
 async def get_launch(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     return _launch_out(await _owned_launch(db, user, launch_id))
+
+
+class UpdateDraft(CreateLaunch):
+    expected_revision: int = Field(default=0, ge=0)
+    remove_image: bool = False
+
+
+@router.patch('/launches/{launch_id}')
+async def update_draft(launch_id: str, body: UpdateDraft, user: User = Depends(current_user),
+                       db: AsyncSession = Depends(get_db)):
+    launch = (await db.execute(select(Launch).where(Launch.id == launch_id, Launch.user_id == user.id)
+                              .with_for_update())).scalar_one_or_none()
+    if launch is None:
+        raise HTTPException(404, 'launch not found')
+    if launch.status not in ('draft', 'failed') or launch.mint_address or launch.deployed_at:
+        raise HTTPException(409, 'Only an undeployed draft can be edited')
+    sent = (await db.execute(select(Transaction.id).join(Job, Transaction.job_id == Job.id).where(
+        Job.launch_id == launch.id, Transaction.signature.is_not(None)).limit(1))).first()
+    running = (await db.execute(select(Job.id).where(Job.launch_id == launch.id,
+        Job.status.in_(('pending', 'submitted'))).limit(1))).first()
+    if sent or running or (launch.launchpad_params or {}).get('evm_deploy_tx'):
+        raise HTTPException(409, 'This draft has submitted execution; reconcile it before making changes')
+    params = launch.launchpad_params or {}
+    revision = int(params.get('draft_revision', 0))
+    if body.expected_revision != revision:
+        raise HTTPException(409, 'This draft changed. Reopen it before saving your edits')
+    if body.launchpad != launch.launchpad:
+        raise HTTPException(400, 'Keep this draft on its original launchpad; create a new draft to change routes')
+    network, image, options = await _draft_values(body, user, db, enforce_ready=False)
+    if network != launch.network:
+        raise HTTPException(409, 'The launchpad network changed; create a fresh draft')
+    # Only mutable draft fields change. Provider identity and historical execution terms never get overwritten.
+    launch.name, launch.symbol = body.name.strip(), body.symbol.strip().upper()
+    if not launch.name or not launch.symbol:
+        raise HTTPException(400, 'Name and ticker are required')
+    launch.description, launch.socials = body.description, _clean_socials(body.socials)
+    if body.image_b64 is not None or body.remove_image:
+        launch.image_blob = None if body.remove_image else image
+    launch.dev_wallet_id, launch.dev_buy_sol = body.dev_wallet_id, body.dev_buy_sol
+    launch.launchpad_params = {**params, **options, 'draft_revision': revision + 1}
+    links = (await db.execute(select(LaunchWallet).where(LaunchWallet.launch_id == launch.id))).scalars().all()
+    for link in links:
+        link.role = 'dev' if link.wallet_id == launch.dev_wallet_id else 'holder'
+    if launch.dev_wallet_id and all(link.wallet_id != launch.dev_wallet_id for link in links):
+        db.add(LaunchWallet(launch_id=launch.id, wallet_id=launch.dev_wallet_id, role='dev'))
+    launch.status = 'draft'
+    await log_activity(db, user.id, 'launch.updated', 'launch', launch.id, {'draft_revision': revision + 1})
+    await db.commit()
+    return _launch_out(launch)
+
+
+@router.get('/launches/{launch_id}/image')
+async def private_launch_image(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    from fastapi import Response
+    launch = await _owned_launch(db, user, launch_id)
+    kind = _image_type(launch.image_blob) if launch.image_blob else None
+    if kind is None:
+        raise HTTPException(404, 'image not found')
+    return Response(launch.image_blob, media_type=kind, headers={'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff'})
 
 
 class AttachWallets(BaseModel):
@@ -525,7 +592,7 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
                  ex: Executor = Depends(get_executor)):
     if (prior := await find_replay(db, user, body)):
         return prior
-    l = await _owned_launch(db, user, launch_id)
+    l = await _owned_launch(db, user, launch_id, lock=True)
     if l.status not in ("draft", "failed"):
         raise HTTPException(409, f"launch is {l.status}")
     if not l.dev_wallet_id:
@@ -541,7 +608,9 @@ async def deploy(launch_id: str, body: DeployBody, user: User = Depends(current_
     if is_evm(adapter):
         return await _deploy_evm(l, body, user, db, ex, dev, adapter)
     bal = await rpc.get_balance(dev.address)
-    need = l.dev_buy_sol * 1.025 + MIN_DEPLOY_BUFFER_SOL
+    from ..services.trade_policy import policy_for
+    policy = await policy_for(db, user)
+    need = l.dev_buy_sol * (1 + policy['bps'] / 10_000) + MIN_DEPLOY_BUFFER_SOL
     need_raw = int(need * LAMPORTS_PER_SOL)
     warnings = []
     funding = None
@@ -723,7 +792,7 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
     s = get_settings()
     plan = await fee_plan_for(db, user, l.network)
     warnings = []
-    if not plan.active:
+    if plan.bps and not plan.active:
         warnings.append("The 2.5% trading-fee treasury is not configured; trading is temporarily unavailable.")
     if body.side == "buy":
         fee_sol = body.amount * plan.bps / 10_000 if plan.active else 0.0
@@ -753,7 +822,7 @@ async def trade(launch_id: str, body: TradeBody, user: User = Depends(current_us
         "amount_unit": "SOL per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "platform_fee": fee_note,
-        "trade_fee_terms": {"bps": 250, "destination": plan.platform_wallet, "network": l.network},
+        "trade_fee_terms": {"bps": plan.bps, "destination": plan.platform_wallet, "network": l.network, "exemption_reason": plan.exemption_reason},
     }, warnings)
     if not body.confirm:
         return pf
@@ -1106,6 +1175,7 @@ class SendBody(SpendConfirm):
     wallet_id: str
     recipient: str
     percent: float = Field(gt=0, le=100)
+    fee_wallet_id: str | None = Field(default=None, max_length=32)
 
 
 @router.post("/launches/{launch_id}/send")
@@ -1118,6 +1188,8 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
     if not l.mint_address:
         raise HTTPException(409, "launch has no mint yet")
     w = await owned_wallet(db, user, body.wallet_id)
+    if w.network != l.network:
+        raise HTTPException(400, 'The sending wallet must be on the token network')
     _core_only(w.network)
     if l.network in EVM_CHAINS:
         if not valid_address_for(l.network, body.recipient):
@@ -1127,15 +1199,27 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
         raise HTTPException(400, "invalid recipient address")
     raw_bal = await rpc.get_token_balance(w.address, l.mint_address)
     _, decimals = await rpc.get_token_supply(l.mint_address)
-    amount = int(raw_bal * body.percent / 100)
+    amount = int(raw_bal) * int(round(body.percent * 100)) // 10_000
     warnings = [] if amount > 0 else ["Nothing to send: token balance is zero."]
     from ..services.allocations import lock_warning
 
     if (msg := await lock_warning(db, l, w, int(raw_bal), amount, decimals)):
         warnings.append(msg)
+    program = await rpc.get_mint_program(l.mint_address)
+    from ..services.sol_transfer_support import plan as sol_fee_plan, describe as describe_payer
+    payer, fee, issues = await sol_fee_plan(db, ex, user, w,
+        {'kind':'token','token':l.mint_address,'decimals':decimals,'program':program},
+        [body.recipient], fee_wallet_id=body.fee_wallet_id)
+    warnings += issues
+    recipient = Pubkey.from_string(body.recipient)
+    if not recipient.is_on_curve() or await rpc.account_owner(body.recipient) not in (None, '11111111111111111111111111111111'):
+        warnings.append('Use the recipient wallet address, not a token account or program address')
     warnings += two_fa_warnings(user, "send_tokens")
     pf = build_preflight("send_tokens", {"launch_id": l.id, "from": w.address, "to": body.recipient,
                                          "mint": l.mint_address, "tokens": amount / 10**decimals,
+                                         'amount_raw':str(amount), 'decimals':decimals,
+                                         'network':'solana','network_fees_max':fee / LAMPORTS_PER_SOL,
+                                         'fee_payers':[describe_payer(w,payer)],
                                          "platform_fee": "none"}, warnings)
     if not body.confirm:
         return pf
@@ -1144,12 +1228,10 @@ async def send_tokens(launch_id: str, body: SendBody, user: User = Depends(curre
     job, created = await begin_spend(db, user, body, pf, "send_tokens", l.id, pf["preflight"])
     if created:
         async def work(session, j):
-            owner, dest = Pubkey.from_string(w.address), Pubkey.from_string(body.recipient)
-            mint = Pubkey.from_string(l.mint_address)
-            ixs = [create_ata_idempotent_ix(owner, dest, mint),
-                   token_transfer_checked_ix(owner, dest, mint, amount, decimals)]
-            raw = build_unsigned(owner, ixs, await ex.rpc.get_latest_blockhash())
-            await run_single(session, ex, j, w, "send_tokens", raw, {w.address: w.signer_ref or ""})
+            from ..services.sol_token_send import build_token_send, refs_for
+            raw = build_token_send(w.address,payer.address,[(body.recipient,amount)],l.mint_address,
+                                   decimals,program,await ex.rpc.get_latest_blockhash())
+            await run_single(session, ex, j, w, "send_tokens", raw, refs_for(w,payer))
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
@@ -1347,7 +1429,9 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
         except Exception:
             raise HTTPException(503, "The launchpad fee could not be verified. Refresh before confirming a launch.") from None
     bal = await sender.rpc.get_balance(dev.address)
-    developer_trade_fee = dev_buy * 250 // 10_000 if l.launchpad != "uniswap-v2" else 0
+    from ..services.trade_policy import policy_for
+    policy = await policy_for(db, user)
+    developer_trade_fee = dev_buy * policy['bps'] // 10_000 if l.launchpad != "uniswap-v2" else 0
     need_raw = dev_buy + developer_trade_fee + launch_fee + gas
     warnings = []
     funding = None
@@ -1494,14 +1578,16 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
     warnings = []
     from ..services import platform_config as pc
     await pc.refresh(db)
-    if not pc.treasury_for(l.network):
+    from ..services.charges import trade_terms
+    fee_terms = await trade_terms(db, l.network, user)
+    if fee_terms['bps'] and not pc.treasury_for(l.network):
         warnings.append("The trading-fee treasury is not configured on this network.")
     if getattr(user, "channel", "web") == "bot":
         warnings.append(f"Trading on {EVM_CHAINS[l.network]['name']} from Telegram isn't enabled yet. Use the web app.")
     gas = await sender.max_gas_cost(EVM_TRADE_GAS)
     if body.side == "buy":
         for w in wallets:
-            if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI * 1.025)) + gas:
+            if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI * (1 + fee_terms['bps'] / 10_000))) + gas:
                 warnings.append(f"{w.address} has too little {coin} for a {body.amount} {coin} buy plus gas.")
     else:
         warnings += await _sell_lock_warnings(db, l, wallets, body.amount,
@@ -1512,8 +1598,8 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
         "amount_unit": f"{coin} per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "max_gas_each": gas / WEI,
-        "trade_fee_terms": {"bps": 250, "destination": pc.treasury_for(l.network), "network": l.network},
-        "platform_fee": "2.5% of each buy or the native proceeds of each sell; 30% of the fee is owed to your referrer when applicable",
+        "trade_fee_terms": fee_terms,
+        "platform_fee": f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else "2.5% of each buy or the native proceeds of each sell; 30% of the fee is owed to your referrer when applicable",
     }, warnings)
     if not body.confirm:
         return pf
@@ -1537,6 +1623,8 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
 
     from ..chains.base import EvmPlan, EvmStep
     from ..chains.flap import selector
+    if w.network != l.network:
+        raise HTTPException(400, 'The source wallet must be on the token network')
 
     erpc = ex.evm(l.network).rpc
     raw_bal = await erpc.erc20_balance(l.mint_address, w.address)
@@ -1555,6 +1643,11 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
         summary = {"launch_id": l.id, "network": l.network, "wallet": w.address, "mint": l.mint_address,
                    "tokens": amount / 10 ** meta["decimals"], "percent": body.percent,
                    "burn_address": to, "irreversible": True, "platform_fee": "none"}
+    from ..services.gas_funding import plan as gas_plan, allowance
+    gas = await allowance(ex, l.network, 90_000)
+    funding, issues = await gas_plan(db, ex, user, [(w, gas, 0)], getattr(body, 'fee_wallet_id', None))
+    warnings += issues
+    summary.update(fee_funding=funding, amount_raw=str(amount), decimals=meta['decimals'], max_gas=gas / WEI)
     pf = build_preflight(kind, summary, warnings)
     if not body.confirm:
         return pf
@@ -1565,7 +1658,14 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
         data = selector("transfer(address,uint256)") + abi_encode(["address", "uint256"], [to, amount])
 
         async def work(session, j):
-            await run_evm_plan(session, ex, j, w, kind, EvmPlan([EvmStep(kind, l.mint_address, data)]))
+            from ..services.gas_funding import execute
+            from ..services.executor import _finish
+            funded = await execute(session, ex, j, funding)
+            if any(result.status != 'confirmed' for result in funded):
+                _finish(j, funded); await session.commit(); return
+            result = await run_evm_plan(session, ex, j, w, kind, EvmPlan([EvmStep(kind, l.mint_address, data)]))
+            if funded:
+                _finish(j, [*funded, result]); await session.commit()
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
