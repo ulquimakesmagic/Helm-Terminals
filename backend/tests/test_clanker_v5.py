@@ -5,6 +5,7 @@ import json
 
 from eth_abi import encode,decode
 import pytest
+from sqlalchemy import select
 
 from app.chains import clanker_v5 as v5
 from app.chains.base import AdapterError,CreateRequest,ClaimRequest
@@ -191,6 +192,9 @@ async def test_registry_draft_edit_and_stale_factory_terms_require_new_approval(
         launch=await client.post('/launches',headers=headers,json=body)
         assert launch.status_code==201,launch.text
         assert launch.json()['clanker_version']==5
+        allocation=await client.get('/launches/'+launch.json()['id']+'/allocations',headers=headers)
+        assert allocation.status_code==200,allocation.text
+        assert allocation.json()['supply']=='1000000000' and 'V5 factory' in allocation.json()['supply_source']
         from app.routes import launches
         async def metadata(*args):
             return {'name':'Cloned token','symbol':'CLONE','description':'Fixture','image':None,'socials':{},'copied':['name','symbol']}
@@ -286,3 +290,19 @@ async def test_replica_lag_retries_whole_snapshot_and_never_masks_contract_error
         return await original(method,params)
     node.call=reverted
     with pytest.raises(EvmRPCError,match='LaunchClosed'):await adapter.launch_terms({})
+
+
+async def test_old_draft_allocation_plan_is_never_silently_rescaled(client):
+    from app.db import get_sessionmaker
+    from app.models import Launch,LaunchAllocation,User
+    from app.routes.allocations import supply_of
+    headers=await signup(client,main=False)
+    async with get_sessionmaker()() as db:
+        user=(await db.execute(select(User))).scalars().first()
+        launch=Launch(user_id=user.id,network='base',launchpad='clanker',name='V4 draft',symbol='OLD',status='draft',launchpad_params={})
+        db.add(launch);await db.flush()
+        db.add(LaunchAllocation(launch_id=launch.id,user_id=user.id,category='liquidity',recipient='',amount='100000000000',unlock='immediate'))
+        await db.commit();launch_id=launch.id
+        assert (await supply_of(launch,None))[0]==100_000_000_000
+    response=await client.patch('/launches/'+launch_id,headers=headers,json={'launchpad':'clanker','name':'New','symbol':'NEW','expected_revision':0})
+    assert response.status_code==409 and 'allocation plan' in response.text

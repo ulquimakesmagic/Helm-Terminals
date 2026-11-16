@@ -4,7 +4,9 @@ New Clanker drafts use V5 on Base, BNB Chain and Robinhood Chain. Existing V4
 tokens keep their original pools, recipient allocations and V4 claim execution.
 Undeployed V4 drafts must be edited and saved before a V5 deployment is reviewed.
 Cloned Clanker drafts start on V5; a live or previously submitted token is never
-reset to a fresh draft.
+reset to a fresh draft. V5 draft allocations read the live factory supply. A V4
+draft with an existing allocation plan requires a fresh V5 draft, so its old
+100-billion-token plan and locks cannot silently become a different supply.
 
 ## Supported launch flow
 

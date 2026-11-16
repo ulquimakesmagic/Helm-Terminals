@@ -390,6 +390,11 @@ async def update_draft(launch_id: str, body: UpdateDraft, user: User = Depends(c
         raise HTTPException(409, 'This draft changed. Reopen it before saving your edits')
     if body.launchpad != launch.launchpad:
         raise HTTPException(400, 'Keep this draft on its original launchpad; create a new draft to change routes')
+    if launch.launchpad.startswith('clanker') and params.get('clanker_version',4)!=5:
+        from ..models import LaunchAllocation
+        allocated=(await db.execute(select(LaunchAllocation.id).where(LaunchAllocation.launch_id==launch.id).limit(1))).first()
+        if allocated:
+            raise HTTPException(409,'This V4 draft has an allocation plan for a different supply. Create a fresh V5 draft to preserve the original plan')
     network, image, options = await _draft_values(body, user, db, enforce_ready=False)
     if network != launch.network:
         raise HTTPException(409, 'The launchpad network changed; create a fresh draft')

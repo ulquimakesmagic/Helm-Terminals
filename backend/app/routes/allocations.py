@@ -47,6 +47,13 @@ async def supply_of(l: Launch, ex: Executor) -> tuple[Decimal | None, int | None
             return Decimal(int(raw)) / (Decimal(10) ** d), d, "on-chain"
         except Exception:
             return None, None, "unavailable: the chain couldn't be read right now"
+    if l.launchpad.startswith('clanker') and (l.launchpad_params or {}).get('clanker_version')==5:
+        from ..chains.registry import get_adapter
+        try:
+            terms=await asyncio.wait_for(get_adapter(l.launchpad).launch_terms(dict(l.launchpad_params or {}),validate=False),10)
+            return Decimal(terms['supply_raw'])/Decimal(10**18),18,'Clanker V5 factory launchSupply'
+        except Exception:
+            return None,None,'unavailable: Clanker V5 factory supply could not be verified'
     if l.launchpad in DRAFT_SUPPLY:
         return Decimal(DRAFT_SUPPLY[l.launchpad]), None, f"{l.launchpad}'s fixed supply"
     return None, None, "set by the launchpad at deploy; the plan reconciles once the token exists"
