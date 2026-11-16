@@ -74,7 +74,12 @@ def _launch_out(l: Launch) -> dict:
 
 def _settings(l: Launch) -> dict:
     """The launchpad-specific settings chosen for this launch, for display in its Launchdesk."""
-    keys = {f["key"] for f in get_adapter(l.launchpad).options_schema().get("fields", [])
+    adapter=get_adapter(l.launchpad)
+    schema=adapter.options_schema()
+    if l.launchpad.startswith('clanker') and (l.launchpad_params or {}).get('clanker_version',4)==4:
+        from ..chains.clanker import ClankerAdapter
+        schema=ClankerAdapter.options_schema(adapter)
+    keys = {f["key"] for f in schema.get("fields", [])
             if f.get("key") not in ("dev_buy_sol", "slippage_pct")}
     return {k: v for k, v in (l.launchpad_params or {}).items() if k in keys}
 
@@ -152,13 +157,13 @@ async def launchpad_options(launchpad_id: str):
 
 
 @router.get("/launchpads/{launchpad_id}/protections")
-async def launchpad_protections(launchpad_id: str):
+async def launchpad_protections(launchpad_id: str, version: int | None = None):
     """Anti-sniping and fair-launch settings this launchpad really offers through Helm (and the ones it doesn't)."""
     if launchpad_id not in IMPLEMENTED:
         raise HTTPException(404, "launchpad not available yet (see /launchpads for the roadmap)")
     from ..services.protections import protections_for
 
-    return protections_for(launchpad_id)
+    return protections_for(launchpad_id,version)
 
 
 class CreateLaunch(BaseModel):

@@ -207,6 +207,10 @@ async def test_registry_draft_edit_and_stale_factory_terms_require_new_approval(
             legacy=await db.get(Launch,clone.json()['id'])
             legacy.launchpad_params={**legacy.launchpad_params,'clanker_version':4,'sniper_start_pct':80,'sniper_decay_s':120}
             await db.commit()
+        legacy_view=(await client.get('/launches/'+clone.json()['id'],headers=headers)).json()
+        assert legacy_view['settings']['sniper_start_pct']==80 and legacy_view['clanker_version']==4
+        protections=(await client.get('/launchpads/clanker/protections?version=4')).json()
+        assert protections['items'][0]['label']=='Historical V4 sniper fee'
         migrated=await client.patch('/launches/'+clone.json()['id'],headers=headers,json={**body,'expected_revision':0})
         assert migrated.status_code==200 and migrated.json()['clanker_version']==5,migrated.text
         async with get_sessionmaker()() as db:

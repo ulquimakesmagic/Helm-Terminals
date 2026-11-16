@@ -48,8 +48,14 @@ SPECIFIC["meme-cooking"] = [{
 }]
 
 
-def protections_for(launchpad: str) -> dict:
+def protections_for(launchpad: str, version: int | None = None) -> dict:
     specific = SPECIFIC.get(launchpad, [])
+    if launchpad.startswith('clanker') and version==4:
+        specific=[{'id':'sniper_fee','label':'Historical V4 sniper fee','available':True,'configurable':False,
+            'options':['sniper_start_pct','sniper_decay_s'],
+            'effect':'This token keeps its original V4 descending sniper fee and decay schedule. V5 factory policy does not change it.',
+            'fee':'Historical V4 LP fees follow the original on-chain reward recipients.',
+            'source':'Clanker V4 launch configuration'}]
     items = list(specific) + [
         {"id": gid, "label": label, "available": False, "configurable": False,
          "effect": f"Not offered by {launchpad} through Helm's integration.", "fee": None, "source": None}
