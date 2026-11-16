@@ -113,15 +113,15 @@ function Telegram() {
   const bot = linkCode?.bot_username || tg?.bot_username;
   return (
     <Card title="Telegram terminal" icon="telegram" sub={bot ? `@${bot}` : undefined}
-      actions={tg?.enabled && <span className={`badge ${tg.linked ? "good" : ""}`}><span className="dot" />{tg.linked ? "Linked" : "Not linked"}</span>}>
+      actions={tg && <span className={`badge ${tg.linked ? "good" : ""}`}><span className="dot" />{tg.linked ? "Linked" : "Not linked"}</span>}>
       <div className="stack">
         {!tg ? <Loading rows={2} /> : !tg.enabled ? (
-          <Callout>The Telegram bot isn't configured on this server yet.</Callout>
+          <Callout>{tg.linked ? 'Your Telegram link is saved. Chat access is not enabled on this server yet.' : 'Telegram access is not enabled on this server yet.'} Use the web desk to trade and transfer.</Callout>
         ) : tg.linked ? (
           <>
-            <p className="muted small">Linked{tg.linked_at ? ` ${relTime(tg.linked_at)}` : ""}. Every action in chat shows a preview and needs your tap to confirm.</p>
+            <p className="muted small">Linked{tg.linked_at ? ` ${relTime(tg.linked_at)}` : ""}. Monitor your account in chat; review trades and transfers in the web desk.</p>
             <div className="chips">
-              {["/wallets", "/launches", "/buy", "/sell", "/claim", "/burn", "/send", "/withdraw", "/status"].map((c) => <span key={c} className="badge mono" style={{ textTransform: "none" }}>{c}</span>)}
+              {["/wallets", "/launches", "/status"].map((c) => <span key={c} className="badge mono" style={{ textTransform: "none" }}>{c}</span>)}
             </div>
             <div className="row">
               {bot && <a className="btn secondary" href={`https://t.me/${bot}`} target="_blank" rel="noreferrer"><Icon name="telegram" size={15} />Open bot</a>}
@@ -131,7 +131,7 @@ function Telegram() {
           </>
         ) : !linkCode ? (
           <>
-            <p className="muted small">Trade and monitor from Telegram. Every action shows a preview and needs your tap to confirm. Buys from Telegram have a daily cap.</p>
+            <p className="muted small">Monitor wallets and launches in Telegram. Trades and transfers stay in the web desk with their confirmation previews.</p>
             <button className="btn" style={{ alignSelf: "flex-start" }} onClick={() => api<Code>("/telegram/link-code", { body: {} }).then(setLinkCode).catch((e) => toast("bad", errMsg(e)))}>
               <Icon name="link" size={15} />Link Telegram</button>
           </>
@@ -161,6 +161,7 @@ function AccountSettings() {
   const [sessErr, setSessErr] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [allSessions, setAllSessions] = useState(false);
   const load = () => api<S[]>("/auth/sessions").then((r) => { setSessions(r); setSessErr(""); }).catch((e) => setSessErr(errMsg(e)));
   const revoke = (id: string) => {
     setRevoking(id);
@@ -201,7 +202,7 @@ function AccountSettings() {
             <caption className="sr-only">Signed-in sessions</caption>
             <thead><tr><th>Device</th><th className="hide-sm">IP address</th><th>Started</th><th className="hide-sm">Expires</th><th className="r"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
-              {sessions.map((s) => (
+              {[...sessions].sort((a,b)=>parseDate(b.created_at).getTime()-parseDate(a.created_at).getTime()).slice(0,allSessions?sessions.length:6).map((s) => (
                 <tr key={s.id}>
                   <td className="span"><span className="row nowrap" style={{ gap: 10 }}>
                     <span className="feed-ic" aria-hidden="true" style={{ width: 28, height: 28 }}><Icon name={s.user_agent === "telegram-bot" ? "telegram" : "monitor"} size={14} /></span>
@@ -223,6 +224,7 @@ function AccountSettings() {
             </tbody>
           </table></TableWrap>
         )}
+        {sessions && sessions.length > 6 && <button type="button" className="btn sm secondary session-list-toggle" onClick={()=>setAllSessions(!allSessions)}>{allSessions?'Show recent sessions':`Show all ${sessions.length} sessions`}</button>}
       </Card>
     </>
   );

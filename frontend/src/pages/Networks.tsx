@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { useAutoRefresh } from "../components/useAutoRefresh";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { chainOf, ExtraChainId } from "../chains";
@@ -83,7 +84,7 @@ export default function Networks() {
             </button>))}</div>
         </Card>
       )}
-      {current && <NetworkPanel net={current} />}
+      {current && <NetworkPanel key={current.id} net={current} />}
     </>
   );
 }
@@ -91,12 +92,14 @@ export default function Networks() {
 function NetworkPanel({ net }: { net: Net }) {
   const toast = useToast();
   const [wallets, setWallets] = useState<any[] | null>(null);
+  const [readError, setReadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const load = useCallback(() => {
-    api<any[]>("/wallets?with_balances=true").then((ws) => setWallets(ws.filter((w) => w.network === net.id))).catch((e) => toast("bad", errMsg(e)));
-  }, [net.id, toast]);
+    return api<any[]>("/wallets?with_balances=true").then((ws) => {setWallets(ws.filter((w) => w.network === net.id));setReadError("");}).catch((e) => setReadError(errMsg(e)));
+  }, [net.id]);
   useEffect(() => { setWallets(null); setOpenId(null); load(); }, [load]);
+  useAutoRefresh(load);
   const create = () => {
     setBusy(true);
     api("/wallets", { body: { network: net.id, count: 1, label_prefix: `${net.name} wallet` } })
@@ -121,6 +124,7 @@ function NetworkPanel({ net }: { net: Net }) {
           </table></TableWrap>
         )}
       </Card>
+      {readError && <Callout tone="warn">Latest wallet check failed: {readError}. Retrying automatically.</Callout>}
       {openId && wallets && <WalletDetail net={net} wallet={wallets.find((w) => w.id === openId)} onChanged={load} />}
     </div>
   );
@@ -132,15 +136,20 @@ function WalletDetail({ net, wallet, onChanged }: { net: Net; wallet: any; onCha
   const [bal, setBal] = useState<any>(null);
   const [hist, setHist] = useState<any>(null);
   const [send, setSend] = useState(false);
+  const [balanceError, setBalanceError] = useState(false);
   const load = useCallback(() => {
-    api(`/chains/${net.id}/wallets/${wallet.id}/balances?tokens=${encodeURIComponent(tokens.join(","))}`).then(setBal).catch(() => undefined);
-    api(`/chains/${net.id}/wallets/${wallet.id}/history`).then(setHist).catch(() => undefined);
+    return Promise.allSettled([
+      api(`/chains/${net.id}/wallets/${wallet.id}/balances?tokens=${encodeURIComponent(tokens.join(","))}`).then(r=>{setBal(r);setBalanceError(false);}).catch(()=>setBalanceError(true)),
+      api(`/chains/${net.id}/wallets/${wallet.id}/history`).then(setHist),
+    ]);
   }, [net.id, wallet.id, tokens]);
-  useEffect(load, [load]);
+  useEffect(()=>{void load();}, [load]);
+  useAutoRefresh(load);
   return (
     <div className="grid g-2">
       <Card title="Balances" icon="coins" sub={<span className="row nowrap" style={{ gap: 6 }}><ChainLabel network={net.id} size={14} /> · {short(wallet.address)}</span>}
         actions={wallet.kind === "managed" || wallet.kind === "connected" ? <button className="btn sm" onClick={() => setSend(true)}><Icon name="send" size={13} />Send</button> : undefined}>
+        {balanceError && <Callout tone="warn">Latest balance check failed. Retrying automatically.</Callout>}
         {!bal ? <Loading rows={2} /> : (
           <div className="stack tight">
             <div className="row between"><b>{net.native}</b><span className="mono">{bal.native ? bal.native.amount : "unavailable"}</span></div>

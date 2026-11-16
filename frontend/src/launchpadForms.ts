@@ -7,7 +7,7 @@ interface Profile { sections: Section[]; scope: string; pair: string; funding: s
 const execution: Section = { title: "Execution preferences", description: "These settings apply when you review and deploy the draft.", keys: ["priority_fee_sol", "slippage_pct"] };
 const clanker: Profile = {
   sections: [{ title: "Pool protection", description: "Set the opening swap fee and how long it takes to decay.", keys: ["sniper_start_pct", "sniper_decay_s"] }, execution],
-  scope: "Helm uses the WETH pool preset and the disclosed creator/Helm reward recipients. Custom pool currencies, vesting, airdrops and social launch tools are not supported here.", pair: "WETH", funding: "Creator buy",
+  scope: "Helm uses Clanker V4's WETH pool preset and the disclosed creator/Helm reward recipients. The native V5 tax, holder-dividend and custom-quote controls are not integrated here. Vesting, airdrops and social launch tools are not configured by this preset.", pair: "WETH", funding: "Creator buy",
 };
 const flap: Profile = {
   sections: [{ title: "Token type & trading tax", description: "Choose a standard token or a tax-token preset. Review the tax before deployment.", keys: ["tax_rate_pct"] }, execution],
@@ -16,7 +16,7 @@ const flap: Profile = {
 export const LAUNCHPAD_FORMS: Record<string, Profile> = {
   pumpfun: { sections: [execution], scope: "SOL curve with creator rewards. Custom quote assets, holder-reward mode, banners and video uploads are not supported here.", pair: "SOL", funding: "Creator buy" },
   letsbonk: { sections: [execution], scope: "Helm supports the SOL launch route with token artwork and an optional creator buy. Other BONKfun launch modes are not configured here.", pair: "SOL", funding: "Creator buy" },
-  bags: { sections: [execution], scope: "Choose a supported pair below. Helm configures the disclosed creator/Helm fee split; social shareholders, holder rewards and Bags apps are not configurable here.", pair: "Selected asset", funding: "Creator buy" },
+  bags: { sections: [execution], scope: "SOL launches configure the disclosed creator/Helm fee split. New custom-quote launches require Bags' updated DBC and Fee Share V2 execution and reward integration; they are not available here yet. Social shareholders, holder rewards and Bags apps are not configurable here.", pair: "SOL", funding: "Creator buy" },
   "meteora-dbc": { sections: [{ title: "Curve & launch protection", description: "Select the Studio API preset and its anti-sniping setting.", keys: ["dbc_quote", "anti_sniping"] }, execution], scope: "Helm uses the integrated Studio API presets. Custom curves, creator vesting and the full native Studio configuration are not available here. An initial creator buy is not supported.", pair: "Curve currency", funding: "Creator buy unavailable" },
   printr: { sections: [{ title: "Curve size", description: "When the bonding curve graduates to Printr's AMM pool.", keys: ["graduation_usd"] }, execution], scope: "Helm launches Printr tokens on Solana only, with creator fees to the dev wallet. Multichain launches, staking, buyback and custom fee routing are not configured here.", pair: "SOL", funding: "Creator buy" },
   clanker, "clanker-robinhood": clanker,

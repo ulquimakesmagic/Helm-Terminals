@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAutoRefresh } from "../components/useAutoRefresh";
 import { Link } from "react-router-dom";
 import { api, errMsg, fmt, usd } from "../api";
 import { Reveal, Ticker } from "../components/motion";
@@ -55,13 +56,16 @@ export default function Dashboard() {
   const [folio, setFolio] = useState<any>(null);
   const [folioErr, setFolioErr] = useState("");
   const [folioBusy, setFolioBusy] = useState(false);
+  const folioFlight = useRef(false);
   const [dialog, setDialog] = useState<SpendRequest | null>(null);
   const [, tick] = useState(0);
 
   const loadFolio = (fresh = false) => {
+    if (folioFlight.current) return Promise.resolve();
+    folioFlight.current = true;
     setFolioBusy(true);
     return api(`/portfolio${fresh ? "?fresh=true" : ""}`)
-      .then((p) => { setFolio(p); setFolioErr(""); }).catch((e) => setFolioErr(errMsg(e))).finally(() => setFolioBusy(false));
+      .then((p) => { setFolio(p); setFolioErr(""); }).catch((e) => setFolioErr(errMsg(e))).finally(() => { setFolioBusy(false); folioFlight.current = false; });
   };
   const load = () => api(`/dashboard?period=${period}`).then((d) => { setData(d); setError(""); }).catch((e) => setError(errMsg(e)));
   useEffect(() => { load(); }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -71,6 +75,7 @@ export default function Dashboard() {
     const t = setInterval(() => tick((n) => n + 1), 30_000); // keeps the "as of" age honest
     return () => clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(() => loadFolio(), 30_000);
 
   const managed = wallets.data?.filter((w) => w.kind === "managed") ?? [];
   const live = launches.data?.filter((l) => l.status === "live") ?? [];
@@ -133,7 +138,8 @@ export default function Dashboard() {
               : "Reading balances across chains…"}
           </p>
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            {checkedAt && folio?.wallets > 0 && <span className={`asof ${stale ? "stale" : ""}`}>{stale ? "Stale · " : ""}as of {checkedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({relTime(folio.checked_at)})</span>}
+            {checkedAt && folio?.wallets > 0 && <span className={`asof ${stale ? "stale" : ""}`}>{stale ? "Last successful check · " : "Updated "}{checkedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ({relTime(folio.checked_at)})</span>}
+            <span className="balance-refresh-note"><i/>{folioBusy ? 'Checking balances…' : folioErr ? 'Retrying automatically' : 'Auto-refresh · 30s'}</span>
             {(folioErr || folio?.wallets > 0) && <button className="btn sm ghost" onClick={() => loadFolio(true)} disabled={folioBusy} style={{ marginLeft: -6 }}>
               {folioBusy ? <Spinner /> : <Icon name="refresh" size={13} />}{folioErr ? "Try again" : "Refresh balances"}
             </button>}

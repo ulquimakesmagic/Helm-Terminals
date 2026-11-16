@@ -75,13 +75,15 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   const [win, setWin] = useState<Win>("h24");
   const [res, setRes] = useState<Res>("15");
   const [gInt, setGInt] = useState<ChartInterval>("15");
+  const [chartSource, setChartSource] = useState<"gmgn" | "codex">("gmgn");
   const [pool, setPool] = useState("");
   const [allStats, setAllStats] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(t); }, []);
   useEffect(() => setPool(""), [launchId, network, token]);
   const m = usePoll<MarketRes>(`/launches/${launchId}/market`, 30000, [network, token]);
-  const gmgnUrl = gmgnChartUrl(m.data?.network ?? network, m.data?.token ?? token, gInt);
+  const embedUrl = gmgnChartUrl(m.data?.network ?? network, m.data?.token ?? token, gInt);
+  const gmgnUrl = chartSource === "gmgn" ? embedUrl : null;
   const chartOn = !gmgnUrl && !!m.data?.chart?.available && ["ok", "no_pool"].includes(m.data.state);
   const c = usePoll<CandleRes>(chartOn ? `/launches/${launchId}/market/candles?resolution=${res}${pool ? `&pool=${pool}` : ""}` : null,
     res === "1" || res === "5" ? 20000 : 60000, [chartOn]);
@@ -143,11 +145,12 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
           <div className="chart-head">
             <div className="row small"><span className="term-kicker"><Icon name="trend" size={13} />{gmgnUrl ? "Chart · GMGN" : "Price · USD"}</span>
               <span className="badge">{gmgnUrl ? "Token view" : pool && shownPool ? `${shownPool.dex ?? "Pool"} pool` : "All pools"}</span></div>
+            {embedUrl && <select className="chart-source" aria-label="Chart source" value={chartSource} onChange={event=>setChartSource(event.target.value as "gmgn" | "codex")}><option value="gmgn">GMGN chart</option><option value="codex">Codex chart</option></select>}
             {gmgnUrl ? <Seg value={gInt} onChange={setGInt} options={CHART_INTERVALS} className="res-seg" />
               : <Seg value={res} onChange={setRes} options={RES} className="res-seg" />}
           </div>
           {!(r?.token ?? token) ? <div className="chart-unavailable"><Empty icon="trend" title="No token yet" text="The chart appears once this launch has a token address and trades are indexed." /></div>
-            : gmgnUrl ? <GmgnChart url={gmgnUrl} symbol={r?.symbol ?? symbol} />
+            : gmgnUrl ? <GmgnChart url={gmgnUrl} symbol={r?.symbol ?? symbol} onUseCodex={()=>setChartSource("codex")} />
             : !r && !m.error ? <Skeleton h={380} />
             : !chartOn ? <div className="chart-unavailable"><Empty icon="globe" title="Chart unavailable" text={r?.state === "unsupported" ? `Codex doesn't cover ${net}.` : r?.state === "not_configured" ? "Market data isn't configured on this server." : "No candles are available for this token yet."} />{r?.explorer_url && <a href={r.explorer_url} target="_blank" rel="noreferrer">View token on explorer <Icon name="ext" size={12} /></a>}</div>
             : !c.data && !c.error ? <Skeleton h={380} />

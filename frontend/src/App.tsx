@@ -20,6 +20,12 @@ const Tracker = lazy(() => import("./pages/Tracker"));
 const Activity = lazy(() => import("./pages/Activity"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
+
+function NetworkRedirect() {
+  const {search}=useLocation();
+  const params=new URLSearchParams(search);params.set('section','networks');
+  return <Navigate to={`/settings?${params}`} replace/>;
+}
 const Admin = lazy(() => import("./pages/Admin"));
 import { ProfileAvatar } from "./components/profile";
 
@@ -188,7 +194,7 @@ export default function App() {
         <Route path="/launches" element={<Private><Launches /></Private>} />
         <Route path="/launches/:id" element={<Private><Workspace /></Private>} />
         <Route path="/wallets" element={<Private><Wallets /></Private>} />
-        <Route path="/networks" element={<Private><Navigate to="/settings?section=networks" replace /></Private>} />
+        <Route path="/networks" element={<Private><NetworkRedirect /></Private>} />
         <Route path="/tracker" element={<Private><Tracker /></Private>} />
         <Route path="/activity" element={<Private><Activity /></Private>} />
         <Route path="/profile" element={<Private><Profile /></Private>} />

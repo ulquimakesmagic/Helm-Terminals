@@ -29,8 +29,8 @@ export default function Landing() {
         <div className="pub-wrap launch-hero-grid">
           <div className="launch-hero-copy">
             <div className="hero-kicker"><span className="hero-rule" />ONE DESK. EVERY STAGE.</div>
-            <h1 id="hero-title">An idea is just<br />the beginning.<br /><span>Make it a launch.</span></h1>
-            <p className="hero-description">From your first token to the wallets behind it. Create, launch and run your operation across chains — from one desk built for the whole journey.</p>
+            <h1 id="hero-title">Take the helm.<br /><span>Launch what’s next.</span></h1>
+            <p className="hero-description">Launch your token. Manage the wallets behind it. Trade and track the next move from one multichain desk.</p>
             <div className="pub-ctas"><Link to={register} className="btn lg">Start your next launch<Icon name="arrowright" size={17} /></Link><a href="#how-it-works" className="btn lg ghost">See how it works<Icon name="chevron" size={15} /></a></div>
             {refCode && <p className="small text-2">Your referral code <span className="mono">{refCode}</span> will be applied when you create an account.</p>}
             <SignerNote health={health} />
