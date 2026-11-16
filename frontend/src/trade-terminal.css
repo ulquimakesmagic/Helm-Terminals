@@ -1,4 +1,5 @@
 /* Launch terminal: bounded chart, execution and records work areas. */
+.feed-action { display:inline-flex;align-items:center;min-height:28px;padding:4px 2px; }
 .workspace-terminal,.workspace-draft { display:flex;flex-direction:column;gap:12px;min-width:0; }
 .workspace-terminal > .workspace-back { display:none; }
 .workspace-terminal .workspace-head { padding-block:0;gap:12px;min-height:54px; }

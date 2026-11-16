@@ -79,7 +79,7 @@ async def test_liquidity_principal_is_not_billed_as_an_initial_developer_trade(c
     from types import SimpleNamespace
     from app.services.charges import attach_launch_fee
     from app.services.preflight import build_preflight
-    launch = SimpleNamespace(launchpad="uniswap-v2", network="ethereum", dev_buy_sol=0.5)
+    launch = SimpleNamespace(launchpad="uniswap-v2", network="ethereum", dev_buy_sol=0.5, launchpad_params={})
     body = SimpleNamespace(confirm=False, launch_fee_approval=None)
     result = await attach_launch_fee(build_preflight("deploy", {"helm_fees": "Free launch"}),
                                     None, None, None, launch, None, body)
