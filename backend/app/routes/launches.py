@@ -1665,6 +1665,8 @@ async def _token_out_evm(l: Launch, body, user: User, db: AsyncSession, ex: Exec
                 _finish(j, funded); await session.commit(); return
             result = await run_evm_plan(session, ex, j, w, kind, EvmPlan([EvmStep(kind, l.mint_address, data)]))
             if funded:
+                from ..services.gas_funding import assets_dispatched
+                assets_dispatched(j)
                 _finish(j, [*funded, result]); await session.commit()
 
         await run_job(job.id, work)

@@ -341,6 +341,9 @@ async def disperse(body: DisperseBody, user: User = Depends(current_user), db: A
                 results.append(res)
                 if res.status != "confirmed":
                     break  # don't keep spending from a wallet whose last send went wrong
+            if len(results) == len(funding) + len(chunks):
+                from ..services.gas_funding import assets_dispatched
+                assets_dispatched(j)
             _finish(j, results)
             await session.commit()
 
@@ -468,6 +471,8 @@ async def consolidate(body: ConsolidateBody, user: User = Depends(current_user),
                 await _record(session, j, s, "consolidate", res, None)
                 await session.commit()
                 results.append(res)
+            from ..services.gas_funding import assets_dispatched
+            assets_dispatched(j)
             _finish(j, results)
             await session.commit()
 

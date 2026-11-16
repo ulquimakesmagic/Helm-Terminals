@@ -100,8 +100,8 @@ async def test_uncertain_gas_funding_stops_the_asset_transfer(client,fake_rpc,mo
     app.dependency_overrides[get_executor]=lambda:Executor(fake_rpc,get_signer(),evm_rpcs={'bsc':node})
     from app.services import gas_funding
     async def uncertain(*_):
-        return [SubmitResult('uncertain-funding-hash','timeout','Funding receipt is not known')]
-    monkeypatch.setattr(gas_funding,'execute',uncertain)
+        return SubmitResult('0x'+'ab'*32,'timeout','Funding receipt is not known')
+    monkeypatch.setattr(gas_funding,'send_evm_tracked',uncertain)
     try:
         headers=await signup(client,main=False)
         source,dest,payer=(await client.post('/wallets',headers=headers,json={'network':'bsc','count':3})).json()
@@ -111,6 +111,9 @@ async def test_uncertain_gas_funding_stops_the_asset_transfer(client,fake_rpc,mo
         _,job=await confirm(client,headers,'/wallets/disperse',{'from_wallet_id':source['id'],
             'to_wallet_ids':[dest['id']],'asset':'0x'+'ab'*20,'total':'1','fee_wallet_id':payer['id']},'uncertain-gas')
         assert job['status']=='unconfirmed' and not node.sent
+        # A late funding confirmation still cannot prove that the asset moved.
+        again=(await client.get('/jobs/'+job['id'],headers=headers)).json()
+        assert again['status']=='unconfirmed' and not node.sent
     finally:
         app.dependency_overrides.pop(get_executor,None)
 

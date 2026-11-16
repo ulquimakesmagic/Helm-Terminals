@@ -64,10 +64,11 @@ function Value({ k, v, network, asset, decimals }: { k: string; v: unknown; netw
     return <div className="stack tight"><b>Minimum {bound.minimum_raw} base units</b><span>{chainOf(bound.network).name} · <Address address={bound.asset} network={bound.network} /></span><small>Locked to this preview. A lower output or expired quote requires confirmation again.</small></div>;
   }
   if (k === "pons_rewards" && v && typeof v === "object") {
-    const r = v as { creator: string; treasury: string; splitter: string };
+    const r = v as { creator: string; treasury: string; splitter: string; bps?: number };
+    const helmShare = (r.bps ?? 600) / 100;
     return <div className="stack tight">
-      <span>Creator 94% <Address address={r.creator} network={network} /></span>
-      <span>Helm 6% <Address address={r.treasury} network={network} /></span>
+      <span>Creator {100-helmShare}% <Address address={r.creator} network={network} /></span>
+      <span>Helm {helmShare}% <Address address={r.treasury} network={network} /></span>
       <span>Launch reward address <Address address={r.splitter} network={network} /></span>
     </div>;
   }

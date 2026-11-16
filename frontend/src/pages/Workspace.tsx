@@ -406,11 +406,11 @@ export default function Workspace() {
                   <>
                     {l.launchpad === "pons" && <PonsRewards launchId={l.id} />}
                     <p className="muted small">{l.pons_rewards
-                      ? "This launch's ETH rewards are split permanently: 94% to the creator and 6% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract."
+                      ? `This launch's ETH rewards are split permanently: ${100-(l.pons_rewards.bps ?? 600)/100}% to the creator and ${(l.pons_rewards.bps ?? 600)/100}% to Helm. The selected wallet pays gas; it cannot change either recipient. First claim also deploys the reward contract.`
                       : experience.claimCopy}</p>
                     {l.pons_rewards && <div className="stack tight small">
-                      <span>Creator (94%) <Address address={l.pons_rewards.creator} network={l.network} /></span>
-                      <span>Helm (6%) <Address address={l.pons_rewards.treasury} network={l.network} /></span>
+                      <span>Creator ({100-(l.pons_rewards.bps ?? 600)/100}%) <Address address={l.pons_rewards.creator} network={l.network} /></span>
+                      <span>Helm ({(l.pons_rewards.bps ?? 600)/100}%) <Address address={l.pons_rewards.treasury} network={l.network} /></span>
                       <span>Reward address <Address address={l.pons_rewards.splitter} network={l.network} /></span>
                       <span className="muted">Each party can withdraw independently. Failed payments stay claimable at the reward address. Pons retains its timelocked authority over future reward routing.</span>
                     </div>}

@@ -64,6 +64,9 @@ async def plan(db, ex, user, requirements, fee_wallet_id=None):
 
 async def execute(db, ex, job, funding):
     from .execution_journal import require_steps
+    if funding:
+        # A funding receipt proves only the gas transfer, never the intended asset movement.
+        job.params = {**job.params, 'gas_funding_followup_pending': True}
     for i, leg in enumerate(funding):
         await require_steps(db, job, leg['payer_wallet_id'], [f'gas_fund_{i}'])
     results = []
@@ -84,3 +87,8 @@ async def execute(db, ex, job, funding):
         if result.status != 'confirmed':
             break
     return results
+
+
+def assets_dispatched(job):
+    """Called only after the asset orchestrator reached its planned end."""
+    job.params = {key: value for key, value in job.params.items() if key != 'gas_funding_followup_pending'}

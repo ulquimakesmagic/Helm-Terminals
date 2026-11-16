@@ -854,6 +854,8 @@ async def _withdraw_stable(body: WithdrawBody, user: User, db: AsyncSession, ex:
                 await _record(session, j, w, "withdraw", res, None)
                 await session.commit()
                 results.append(res)
+            from ..services.gas_funding import assets_dispatched
+            assets_dispatched(j)
             _finish(j, results)
             await session.commit()
         await run_job(job.id, work)
@@ -901,6 +903,8 @@ async def _withdraw_evm(body: WithdrawBody, user: User, db: AsyncSession, ex: Ex
                 res = await send_evm_tracked(sender, j, w, "withdraw", EvmCall(to=body.destination, value=amt))
                 await _record(session, j, w, "withdraw", res, None)
                 results.append(res)
+            from ..services.gas_funding import assets_dispatched
+            assets_dispatched(j)
             _finish(j, results)
             await session.commit()
         await run_job(job.id, work)
