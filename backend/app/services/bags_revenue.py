@@ -18,13 +18,15 @@ from .charges import split_fee
 async def record_native_payout(db, launch, job, signature, receipt):
     share = (launch.launchpad_params or {}).get('helm_creator_share') or {}
     treasury = share.get('recipient')
-    if (launch.network != 'solana' or launch.launchpad != 'bags' or launch.imported or launch.status != 'live'
+    if (launch.network != 'solana' or launch.launchpad != 'bags' or launch.imported
             or launch.user_id != job.user_id or launch.id != job.launch_id
             or not share.get('bps') or not treasury or not launch.mint_address):return False
     amount = treasury_payout(receipt, signature, launch.mint_address, treasury)
     if not amount:return False
+    if not launch.dev_wallet_id:raise AdapterError('Bags payout is missing its owned developer wallet attribution')
     wallet = await db.get(Wallet, launch.dev_wallet_id)
-    if not wallet or wallet.user_id != launch.user_id or wallet.network != 'solana':return False
+    if not wallet or wallet.user_id != launch.user_id or wallet.network != 'solana':
+        raise AdapterError('Bags payout is missing its owned developer wallet attribution')
     await db.execute(select(Launch.id).where(Launch.id == launch.id).with_for_update())
     key = 'bags:creator:'+sha256(f'{signature}:{launch.mint_address}:{treasury}'.encode()).hexdigest()
     exists = (await db.execute(select(PlatformCharge.id).where(PlatformCharge.reference_key == key))).first()
@@ -112,7 +114,8 @@ async def record_deployer_debts(db, wallet, job, audit: VaultAudit):
     if wallet.user_id != job.user_id or wallet.kind != 'managed' or wallet.network != 'solana' or audit.state.wallet != wallet.address:
         raise AdapterError('Bags deployer accounting requires the owned managed wallet')
     launches = (await db.execute(select(Launch).where(Launch.user_id == wallet.user_id,
-        Launch.network == 'solana', Launch.launchpad == 'bags', Launch.status == 'live', Launch.imported.is_(False)))).scalars().all()
+        Launch.network == 'solana', Launch.launchpad == 'bags', Launch.status.in_(('live','archived')),
+        Launch.imported.is_(False)))).scalars().all()
     by_mint = {}
     for launch in launches:
         by_mint.setdefault(launch.mint_address, []).append(launch)

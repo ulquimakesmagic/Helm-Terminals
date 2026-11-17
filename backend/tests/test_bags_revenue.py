@@ -54,6 +54,7 @@ async def test_imported_launch_or_missing_native_split_never_becomes_a_new_fee(s
 
 async def test_historical_native_percentage_is_recorded_without_repricing(setup):
     db,wallet,launch,job=setup
+    launch.status='archived'  # closing the workspace cannot erase actual received income
     launch.launchpad_params={'helm_creator_share':{'bps':600,'recipient':TREASURY}}
     await bags_revenue.record_native_payout(db,launch,job,'sig',receipt())
     charge=(await db.execute(select(PlatformCharge))).scalar_one()
@@ -120,6 +121,9 @@ async def test_unavailable_and_invalid_receipts_create_no_income(setup):
     assert await db.scalar(select(func.count()).select_from(RevenueEvent)) == 0
     with pytest.raises(AdapterError):
         await bags_revenue.record_native_payout(db,launch,job,'sig',receipt(transfer=False))
+    launch.dev_wallet_id=None
+    with pytest.raises(AdapterError,match='wallet attribution'):
+        await bags_revenue.record_native_payout(db,launch,job,'sig',receipt())
     assert await db.scalar(select(func.count()).select_from(PlatformCharge)) == 0
 
 
