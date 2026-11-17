@@ -79,11 +79,14 @@ async def reconcile(db, launch, rpc, job_id=None):
             continue
         if not receipt:continue
         try:
-            if receipt['transaction']['signatures'][0] != tx.signature or type(receipt['slot']) is not int:
+            if (receipt['transaction']['signatures'][0] != tx.signature or type(receipt['slot']) is not int
+                    or receipt['slot'] < 0):
                 raise AdapterError('Bags finalized receipt does not match the recorded transaction')
-            if receipt['meta'].get('err') is not None:
+            if receipt['meta']['err'] is not None:
                 state = 'failed_on_chain'
             elif PROGRAM not in account_keys(receipt):
+                if any(line.startswith(f'Program {PROGRAM} ') for line in receipt['meta'].get('logMessages') or []):
+                    raise AdapterError('Bags receipt is missing program account identity')
                 state = 'no_bags_program_payment'
             else:
                 paid = await record_native_payout(db, launch, job, tx.signature, receipt)

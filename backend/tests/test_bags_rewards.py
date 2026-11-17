@@ -129,6 +129,8 @@ def test_treasury_income_requires_both_attribution_and_actual_wsOL_transfer():
 
 @pytest.mark.parametrize('mutate', [
     lambda p:p['meta'].update(err={'InstructionError': [0,'bad']}),
+    lambda p:p['meta'].pop('err'),
+    lambda p:p['transaction']['message'].update(addressTableLookups=[{'writableIndexes':[0],'readonlyIndexes':[]}]),
     lambda p:p['transaction'].update(signatures=['other']),
     lambda p:p['meta'].update(logMessages=[f'Program {PROGRAM} invoke [1]']),
     lambda p:p['meta']['logMessages'].insert(1, 'Log truncated'),

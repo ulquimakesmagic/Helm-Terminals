@@ -151,11 +151,17 @@ def decode_event(raw, ordinal):
 
 
 def account_keys(receipt):
-    keys = receipt['transaction']['message']['accountKeys']
+    message = receipt['transaction']['message']
+    keys = message['accountKeys']
     keys = [row['pubkey'] if isinstance(row, dict) else row for row in keys]
     loaded = receipt['meta'].get('loadedAddresses') or {}
+    lookups = message.get('addressTableLookups') or []
+    if lookups and (len(loaded.get('writable', [])) != sum(len(table['writableIndexes']) for table in lookups)
+            or len(loaded.get('readonly', [])) != sum(len(table['readonlyIndexes']) for table in lookups)):
+        raise ValueError('Receipt is missing loaded lookup-table accounts')
     keys += loaded.get('writable', []) + loaded.get('readonly', [])
-    if len(keys) != len(set(keys)):raise ValueError()
+    if not keys or len(keys) != len(set(keys)):raise ValueError()
+    for key in keys:Pubkey.from_string(key)
     return keys
 
 
@@ -172,7 +178,7 @@ def reward_events(receipt, signature):
     try:
         meta = receipt['meta']
         number(receipt['slot'], 'reward receipt slot')
-        if meta.get('err') is not None or receipt['transaction']['signatures'][0] != signature:raise ValueError()
+        if meta['err'] is not None or receipt['transaction']['signatures'][0] != signature:raise ValueError()
         logs = meta.get('logMessages')
         if not isinstance(logs, list) or not logs or len(logs) > 20000:raise ValueError()
         stack = [];logged = [];program_seen = False
@@ -383,7 +389,7 @@ async def audit_deployer_vault(rpc, wallet, *, maximum_transactions=100):
             raise AdapterError('A finalized Bags vault receipt is missing or inconsistent')
         try:
             keys = account_keys(receipt)
-            if vault not in keys or receipt['meta'].get('err') is not None:raise ValueError()
+            if vault not in keys or receipt['meta']['err'] is not None:raise ValueError()
             events = reward_events(receipt, row['signature']) if PROGRAM in keys else []
         except (KeyError, TypeError, ValueError, IndexError):
             raise AdapterError('Bags vault receipt does not prove its account identity') from None
