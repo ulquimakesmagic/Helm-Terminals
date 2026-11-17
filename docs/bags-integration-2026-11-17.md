@@ -77,8 +77,11 @@ they do not establish successful live creation.
    Verify that protocol instructions enforce the declared transfer-fee ceilings.
 2. Implement config, launch and claim adapters with frozen business arguments and
    exact quote units, preserving setup phases and operation-specific consent.
-3. Implement attributed normal/deployer collection with receipt proofs, referrals
-   based on fees actually collected, integer rounding and duplicate protection.
+3. Connect verified deployer obligations to a separately reviewed payment path,
+   with receipt reconciliation and referrals based on fees actually collected.
+   Freeze and verify new-launch consent/configuration evidence before opting a
+   launch into combined collection. The receipt/accounting helpers below do not
+   enable this payment or launch flow by themselves.
 4. Test historical configurations, multiple tokens in one deployer vault,
    sponsorship reimbursements, deferred claims, partial execution and recovery.
 5. Enable each flow only after those checks pass; funded rehearsals remain an
@@ -89,3 +92,75 @@ includes v3 ABIs while some public contract guides describe v2. Current proxy an
 beacon implementations, creation parameters, taxes and post-graduation router
 encoding must be verified independently. Solana's separate deployer-share rule
 must not be copied to Robinhood Chain without evidence.
+
+## Reward accounting and read-only inspection
+
+Normal-recipient treasury income can now be recorded from finalized receipts.
+The evidence requires a matching Bags claim event **and** the actual classic
+WSOL transfer from the expected program-derived authority/vault into the saved
+treasury's WSOL account. A quote, estimated balance, vault accrual, user payout
+or unrelated treasury transfer is not sufficient. This records the existing
+native allocation without an additional claim charge or historical repricing.
+The received asset is recorded as WSOL, the asset directly proven by the token
+transfer. Thirty percent of the collected fee is reserved as referral liability,
+excluded from Helm's own revenue. Receipt keys prevent duplicate booking.
+
+The claim worker and job recovery use this evidence. A bounded reconciliation
+pass also processes finalized claims after the browser closes, caching handled
+receipt signatures. Unavailable evidence stays pending; it does not become zero.
+This does not create a treasury signer or automatically withdraw the treasury's
+normal recipient allocation. Such withdrawals require their own authorized claim
+flow; only receipts that actually pay the saved treasury are booked as received.
+Unsupported native-only payout/transport variants remain pending for review.
+
+An authenticated owner can inspect a managed or watch-only Solana wallet at:
+
+```text
+GET /wallets/{wallet_id}/bags-deployer-rewards
+```
+
+This returns exact decimal raw-unit strings, token-attributed pending/accrued
+amounts, the shared vault, and unattributed funds separately. Its totals follow
+the [Bags deployer-balance contract](https://docs.bags.fm/api-reference/get-deployer-claimable-positions):
+the vault is not added a second time. A 503 response has no fabricated balance.
+The response explicitly has no Helm fee basis and does not authorize a claim.
+
+The bounded read-only chain audit can be run from the repository root with
+server credentials supplied privately in the process environment:
+
+```powershell
+python tools/bags_reward_audit.py --wallet YOUR_PUBLIC_SOLANA_ADDRESS --max-transactions 100 --out .audit-runtime/bags-reward-audit.json
+```
+
+It reads the configured RPC's finalized deployer-vault state and history, uses
+canonical block order for transactions sharing a slot, authenticates program
+events, verifies matching withdrawal transfers, and reconciles the full history
+against the vault's claimed/pending/lifetime counters. Incomplete or pruned
+history, an audit bound, unsupported administrative withdrawals, reverted CPIs
+or truncated logs refuse attribution. It never signs or sends a transaction.
+Its network label is the configured RPC, not deployment authorization.
+
+The accounting helper can record unpaid deployer fee obligations only for
+server-stored, explicitly opted-in new combined-policy launches. A withdrawal
+keeps each token's proven accrual separate; excess unattributed funds and tokens
+without eligible saved terms are excluded. Debt is not received revenue, earns
+no referral until paid, and does not trigger automatic payment. Same-slot or
+earlier withdrawals relative to creation are conservatively excluded pending
+more precise creation-order consent evidence. No enabled creation path currently
+writes this opt-in marker.
+
+Live read-only verification found no deployer positions and no deployer vault for
+the existing test payer. That verifies the empty-state path, not a funded claim.
+The custom-quote configuration-plan endpoint still returned 503. A separate
+unsigned request to the older SOL configuration endpoint was rejected for
+insufficient payer SOL. These are different admission failures; the successful
+balance read does not validate either launch builder. Funding remains deferred.
+No new metadata, token
+deployment, wallet signature or broadcast was created in this follow-up work.
+
+Binary test fixtures are explicitly synthetic and encoded independently from
+the official [pinned IDL](https://github.com/bagsfm/bags-idl/blob/450a04fa94e129f05229eac6ae49c22e81691914/fee-share-v2/idl.json).
+The downloaded source was matched to official Git blob
+`9af0f38f286ea45287f3b8ccf6f31e2e05159b0e` before release.
+Program event transport follows Anchor's [event CPI tag](https://github.com/solana-foundation/anchor/blob/master/lang/src/event.rs).
+Successful fixtures are protocol tests, not evidence of a successful mainnet launch.

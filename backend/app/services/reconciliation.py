@@ -45,6 +45,26 @@ async def reconcile_once(ex=None):
                 except Exception:
                     await db.rollback()
                     log.warning("Job reconciliation unavailable for %s", identifier, exc_info=True)
+    # Native Bags income can finalize after a successful browser flow has ended.
+    # This only reads original receipts; deployer fees are not collected here.
+    async with get_sessionmaker()() as db:
+        bags_jobs = list((await db.execute(select(Job.id).join(Launch, Job.launch_id == Launch.id).where(
+            Job.kind == 'claim_fees', Launch.launchpad == 'bags', Launch.network == 'solana',
+            Job.status.in_(('confirmed', 'partial', 'failed')),
+            Job.updated_at < utcnow() - timedelta(seconds=30),
+            Job.params['bags_reward_accounting_complete'].as_boolean().is_not(True))
+            .order_by(Job.updated_at).limit(30))).scalars())
+    from .bags_revenue import reconcile as reconcile_bags
+    for identifier in bags_jobs:
+        async with get_sessionmaker()() as db:
+            try:
+                job = await db.get(Job, identifier)
+                launch = await db.get(Launch, job.launch_id)
+                await asyncio.wait_for(reconcile_bags(db, launch, ex.rpc, identifier), 8)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                log.warning('Bags receipt accounting unavailable for %s', identifier, exc_info=True)
     # A late-confirming deployment can contain an initial buy. Recovery records its debt without signing.
     async with get_sessionmaker()() as db:
         deployments = list((await db.execute(select(Job.id).join(Launch, Job.launch_id == Launch.id).where(
