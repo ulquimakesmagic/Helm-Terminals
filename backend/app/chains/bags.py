@@ -153,6 +153,11 @@ class BagsAdapter:
 
     # --- fees -----------------------------------------------------------------------------------
 
+    async def deployer_positions(self, wallet: str):
+        from .bags_rewards import Positions
+        response = await self._call('GET', '/fee-share/deployer/claimable-positions', params={'wallet': wallet})
+        return Positions.parse(response, wallet)
+
     async def build_claim_fees_tx(self, req: ClaimRequest) -> BuiltTx | None:
         quote = (req.options or {}).get("quote") or {}
         if quote.get("mint") and quote["mint"] != WSOL:

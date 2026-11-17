@@ -1163,6 +1163,10 @@ async def claim_fees(launch_id: str, body: ClaimBody, user: User = Depends(curre
                 await session.commit()
                 return
             await run_built(session, ex, j, w, "claim_fees", built, {w.address: w.signer_ref or ""})
+            if l.launchpad == 'bags':
+                from ..services.bags_revenue import reconcile
+                await reconcile(session, l, ex.rpc, j.id)
+                await session.commit()
 
         await run_job(job.id, work)
     return {"job_id": job.id, "status": job.status}
@@ -1407,11 +1411,15 @@ async def get_job(job_id: str, user: User = Depends(current_user), db: AsyncSess
     j = await db.get(Job, job_id)
     if not j or j.user_id != user.id:
         raise HTTPException(404, "job not found")
-    if j.kind == "claim_fees" and j.launch_id and j.status in ("confirmed", "unconfirmed"):
+    if j.kind == "claim_fees" and j.launch_id and j.status in ("confirmed", "unconfirmed", "partial", "failed"):
         launch = await db.get(Launch, j.launch_id)
-        if launch and launch.launchpad == "pons":
+        if launch and launch.launchpad == "pons" and j.status in ('confirmed', 'unconfirmed'):
             from ..services.pons_revenue import reconcile
             await reconcile(db, launch, ex.evm(launch.network).rpc, j.id)
+        elif launch and launch.launchpad == 'bags':
+            from ..services.bags_revenue import reconcile
+            await reconcile(db, launch, rpc, j.id)
+            await db.commit()
     last_tx = (await db.execute(select(func.max(Transaction.created_at)).where(Transaction.job_id == j.id))).scalar()
     quiet_since = max(j.updated_at, last_tx) if last_tx else j.updated_at
     if j.status in ("pending", "submitted") and quiet_since < utcnow() - STALE_JOB \

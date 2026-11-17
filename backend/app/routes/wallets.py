@@ -40,6 +40,21 @@ router = APIRouter(tags=["wallets"])
 MAX_WALLETS = 500  # per account: each managed wallet is a key in the signing service, which has quotas and costs
 
 
+@router.get('/wallets/{wallet_id}/bags-deployer-rewards')
+async def bags_deployer_rewards(wallet_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    wallet = await owned_wallet(db, user, wallet_id, managed=False)
+    if wallet.network != 'solana':
+        raise HTTPException(400, 'Bags deployer rewards require a Solana wallet')
+    from ..chains.registry import get_adapter
+    try:
+        async with asyncio.timeout(15):
+            positions = await get_adapter('bags').deployer_positions(wallet.address)
+    except Exception:
+        raise HTTPException(503, 'Bags deployer reward attribution is temporarily unavailable; no zero balance was inferred',
+                            headers={'Retry-After': '15'}) from None
+    return positions.public()
+
+
 async def _check_room(db: AsyncSession, user: User, adding: int) -> None:
     have = (await db.execute(select(func.count()).select_from(Wallet).where(Wallet.user_id == user.id))).scalar_one()
     if have + adding > MAX_WALLETS:

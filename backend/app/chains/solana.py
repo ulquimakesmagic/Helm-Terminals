@@ -115,8 +115,8 @@ class SolanaRPC:
     async def get_slot(self, commitment: str = 'confirmed') -> int:
         return int(await self._call('getSlot',[{'commitment':commitment}]))
 
-    async def get_transaction(self, signature: str) -> dict | None:
-        return await self._call('getTransaction',[signature,{'encoding':'json','commitment':'confirmed','maxSupportedTransactionVersion':0}])
+    async def get_transaction(self, signature: str, commitment: str = 'confirmed') -> dict | None:
+        return await self._call('getTransaction',[signature,{'encoding':'json','commitment':commitment,'maxSupportedTransactionVersion':0}])
 
     async def get_token_balance(self, owner: str, mint: str) -> int:
         res = await self._call(

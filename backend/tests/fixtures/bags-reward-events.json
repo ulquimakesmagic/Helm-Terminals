@@ -1,0 +1,79 @@
+{
+  "synthetic_not_mainnet_receipts": true,
+  "source": "https://github.com/bagsfm/bags-idl/blob/450a04fa94e129f05229eac6ae49c22e81691914/fee-share-v2/idl.json",
+  "source_sha256": "404faa204fb4378fd5b8ef8066f8d5bec8aa60b50b9cd5bab891e3c516321802",
+  "keys": {
+    "mint": "k7FaK87WHGVXzkaoHb7CdVPgkKDQhZ29VLDeBVbDfYn",
+    "mint_b": "p2Yicb86aZig616Eav2VWG9vuXR5mEqhtzshZYBxzsV",
+    "wallet": "swqrv48gsrwpBFbftEwnP2vB4jckpvfGJfXkwaniLCC",
+    "treasury": "ws91DX9HBAAxGW77BZs5FogRDwpRtcUpiLBpKdPTfWu",
+    "pool": "21nS9Wz9sUTQ6MkcYUtnN8aSfPA26xJJP7zqshfzCzqc",
+    "config": "25hjHpTATmkdET17ynDhf1MCuYNDn1z7wXfVw5iaxLAK",
+    "vault": "3zEPuTTyddGzvSCsfKXwagv7xwomLStPWfB5AQpZe4MD",
+    "fee_config": "3XVZjnmHpL79pNkUH1pN81tKh4frGRYmmGFvRxFNud2G",
+    "fee_authority": "7M4Ksp9bZWJtMJEdbrTascMVEiYy8yRDWGHUfGkR6cdT"
+  },
+  "fixtures": {
+    "accrue_a": {
+      "event": "DeployerAccumulatedEvent",
+      "base64": "B0bbED7LMFbgY/tqAAAAAAsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLBpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAEPDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDxAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQLGCgKa21xYSYHuKVhyRrecDSauxd4Y6LLVdKsc2xZGgNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDUBCDwAAAAAAQEIPAAAAAABAQg8AAAAAAAAAAAAAAAAAAA==",
+      "values": {
+        "timestamp": 1794860000,
+        "base_mint": "k7FaK87WHGVXzkaoHb7CdVPgkKDQhZ29VLDeBVbDfYn",
+        "quote_mint": "So11111111111111111111111111111111111111112",
+        "deployer": "swqrv48gsrwpBFbftEwnP2vB4jckpvfGJfXkwaniLCC",
+        "deployer_vault": "3zEPuTTyddGzvSCsfKXwagv7xwomLStPWfB5AQpZe4MD",
+        "pool": "21nS9Wz9sUTQ6MkcYUtnN8aSfPA26xJJP7zqshfzCzqc",
+        "deployer_config": "25hjHpTATmkdET17ynDhf1MCuYNDn1z7wXfVw5iaxLAK",
+        "accumulated": 1000000,
+        "total_accumulated_fees": 1000000,
+        "total_lifetime_accumulated_fees": 1000000,
+        "protocol": 0
+      }
+    },
+    "accrue_b": {
+      "event": "DeployerAccumulatedEvent",
+      "base64": "B0bbED7LMFbgY/tqAAAAAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMBpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAEPDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDxAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQLGCgKa21xYSYHuKVhyRrecDSauxd4Y6LLVdKsc2xZGgNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDYCEHgAAAAAAwMYtAAAAAADAxi0AAAAAAAAAAAAAAAAAAQ==",
+      "values": {
+        "timestamp": 1794860000,
+        "base_mint": "p2Yicb86aZig616Eav2VWG9vuXR5mEqhtzshZYBxzsV",
+        "quote_mint": "So11111111111111111111111111111111111111112",
+        "deployer": "swqrv48gsrwpBFbftEwnP2vB4jckpvfGJfXkwaniLCC",
+        "deployer_vault": "3zEPuTTyddGzvSCsfKXwagv7xwomLStPWfB5AQpZe4MD",
+        "pool": "21nS9Wz9sUTQ6MkcYUtnN8aSfPA26xJJP7zqshfzCzqc",
+        "deployer_config": "25hjHpTATmkdET17ynDhf1MCuYNDn1z7wXfVw5iaxLAK",
+        "accumulated": 2000000,
+        "total_accumulated_fees": 3000000,
+        "total_lifetime_accumulated_fees": 3000000,
+        "protocol": 1
+      }
+    },
+    "withdraw": {
+      "event": "DeployerClaimEvent",
+      "base64": "wXc5mzQuvqjhY/tqAAAAAA0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NLGCgKa21xYSYHuKVhyRrecDSauxd4Y6LLVdKsc2xZGgACT0AAAAAAAAJPQAAAAAAAAAAAAAAAAA=",
+      "values": {
+        "timestamp": 1794860001,
+        "deployer": "swqrv48gsrwpBFbftEwnP2vB4jckpvfGJfXkwaniLCC",
+        "deployer_vault": "3zEPuTTyddGzvSCsfKXwagv7xwomLStPWfB5AQpZe4MD",
+        "claimed": 4000000,
+        "total_claimed_fees": 4000000
+      }
+    },
+    "creator": {
+      "event": "BagsFeeShareUserClaimV2Event",
+      "base64": "wxfTmh6dqTThY/tqAAAAAAsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLBpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAEODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODiWHGJZgRW20QxsgTYpvKuNOUjB1wHnyjmOnM0fSZxtJXkl/ckkzE7s8ZrQu3SCGOZOWG+okAKkLV6yU60SKfhYBAAAAqGEAAAAAAAAAAA==",
+      "values": {
+        "timestamp": 1794860001,
+        "base_mint": "k7FaK87WHGVXzkaoHb7CdVPgkKDQhZ29VLDeBVbDfYn",
+        "quote_mint": "So11111111111111111111111111111111111111112",
+        "user": "ws91DX9HBAAxGW77BZs5FogRDwpRtcUpiLBpKdPTfWu",
+        "fee_share_config": "3XVZjnmHpL79pNkUH1pN81tKh4frGRYmmGFvRxFNud2G",
+        "fee_share_authority": "7M4Ksp9bZWJtMJEdbrTascMVEiYy8yRDWGHUfGkR6cdT",
+        "claimer_index": 1,
+        "claimed": 25000,
+        "force_claim_executor": null,
+        "force_claim_type": null
+      }
+    }
+  }
+}
