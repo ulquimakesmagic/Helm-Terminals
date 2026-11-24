@@ -10,7 +10,8 @@ CLAIMS = {"pumpfun": "in-app", "bags": "in-app", "meteora-dbc": "in-app",
 
 def launchpad_capabilities(identifier, network, status):
     extra = network in {"tron", "near", "arc"}
-    claim = "automatic" if identifier.startswith("flap-sh") else CLAIMS.get(identifier, "none")
+    claim = ("external" if identifier.startswith("elpida-") and status != "planned"
+             else "automatic" if identifier.startswith("flap-sh") else CLAIMS.get(identifier, "none"))
     implemented = status != "planned"
     from . import platform_config as pc
     from .pricing import CREATOR_SHARE_BPS
@@ -19,11 +20,12 @@ def launchpad_capabilities(identifier, network, status):
     reward_ready = no_rewards or share["supported"] or identifier in {"flap-sh", "flap-sh-robinhood"}
     return {"create": implemented and reward_ready, "buy": implemented, "sell": implemented,
             "claim_mode": claim,
-            "supply_lock": False, "creator_reward_share_bps": CREATOR_SHARE_BPS,
+            "supply_lock": False, "creator_reward_share_bps": share.get("bps", CREATOR_SHARE_BPS),
             "creator_reward_collection": "not_applicable" if no_rewards else share["collection"],
             "creator_reward_collection_ready": reward_ready,
             "creator_reward_note": "No separate creator rewards in this launch mode" if no_rewards else share["note"],
             "trade_fee_bps": 250, "launch_fee_usd": 0,
+            **({"launchpad_fee_usd": 10} if identifier.startswith("elpida-") and implemented else {}),
             "wallet_mode": "managed", "verification": "implementation_tests_live_acceptance_required",
             "trade_semantics": "auction_deposit_withdrawal" if identifier == "meme-cooking" else "buy_sell",
             "configured": status == "available"}

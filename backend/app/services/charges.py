@@ -57,11 +57,18 @@ async def attach_launch_fee(pf, db, user, ex, launch, wallet, body):
                    platform_fee="Free launch")
     if launch.dev_buy_sol > 0 and launch.launchpad != "uniswap-v2":
         agreed = await trade_terms(db, launch.network, user)
-        symbol, decimals = native_asset(launch.network)
-        basis = int(Decimal(str(launch.dev_buy_sol)) * 10 ** decimals)
+        launch_payment = summary.get("reviewed_launch_payment")
+        if launch_payment:
+            quote = launch_payment["quote"]
+            symbol, decimals, token = quote["asset"], quote["decimals"], quote["token"]
+            basis = int(launch_payment["first_buy"])
+        else:
+            symbol, decimals = native_asset(launch.network)
+            token = None
+            basis = int(Decimal(str(launch.dev_buy_sol)) * 10 ** decimals)
         summary.update(trade_fee_terms=agreed, initial_buy_fee={"wallet_id": wallet.id,
             "basis_raw": str(basis), "amount_raw": str(basis * agreed['bps'] // 10_000),
-            "asset": symbol, "decimals": decimals, "destination": agreed["destination"],
+            "asset": symbol, "token": token, "decimals": decimals, "destination": agreed["destination"],
             "policy": POLICY_VERSION, "network": launch.network,
             "note": "No Helm trading fee for this account" if agreed['bps'] == 0 else "2.5% of the initial developer buy, due only when deployment and that buy confirm."})
         summary["helm_fees"] += "; no initial-buy trading fee" if agreed['bps'] == 0 else "; 2.5% of the initial developer buy"
@@ -269,7 +276,7 @@ async def initial_buy_fee(db, ex, job, launch, wallet, *, recovery=False):
         platform, referral = split_fee(int(terms["amount_raw"]), bool(link and link.referrer_user_id != job.user_id))
         db.add(PlatformCharge(reference_key=reference, job_id=job.id, launch_id=launch.id,
             wallet_id=wallet.id, payer_user_id=job.user_id, kind="trade", network=wallet.network,
-            asset=terms["asset"], token=None, decimals=terms["decimals"], amount_raw=int(terms["amount_raw"]),
+            asset=terms["asset"], token=terms.get("token"), decimals=terms["decimals"], amount_raw=int(terms["amount_raw"]),
             platform_raw=platform, referral_raw=referral, referrer_user_id=link.referrer_user_id if referral else None,
             referral_status="owed" if referral else "none", status="failed", destination=terms["destination"], terms=terms))
         result = SubmitResult(None, "failed", "Initial developer-buy fee needs settlement in Fees & payments")

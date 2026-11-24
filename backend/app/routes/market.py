@@ -46,6 +46,17 @@ async def launch_market(launch_id: str, user: User = Depends(current_user), db: 
                       "resolutions": list(RESOLUTIONS)}}
     if not token:
         return {**base, "state": "no_token", "pool": None, "pairs": [], "metrics": None}
+    if whose == "launch" and l.launchpad.startswith("elpida-"):
+        from ..chains.base import AdapterError
+        from ..chains.evm import EvmRPCError, EvmRPCUnavailable
+        from ..chains.registry import get_adapter
+        from ..services.elpida_market import snapshot
+
+        try:
+            return {**base, **await snapshot(get_adapter(l.launchpad), token)}
+        except (AdapterError, EvmRPCError, EvmRPCUnavailable):
+            return {**base, "state": "error", "provider": "Elpida pool", "pool": None, "pairs": [], "metrics": None,
+                    "error": "Elpida's pool data is temporarily unavailable."}
     try:
         res = await market.snapshot(network, token)
     except MarketError as e:

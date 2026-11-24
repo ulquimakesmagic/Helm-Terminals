@@ -116,6 +116,11 @@ def treasury_for(network: str) -> str:
 
 def creator_share(launchpad: str) -> dict:
     """Policy and verified collection capability; never silently waive a missing split."""
+    if launchpad.startswith("elpida-"):
+        from ..chains.registry import IMPLEMENTED, get_adapter
+
+        if launchpad in IMPLEMENTED:
+            return get_adapter(launchpad).creator_share()
     from .pricing import CREATOR_SHARE_BPS
     network = CREATOR_SHARE_LAUNCHPADS.get(launchpad)
     recipient = treasury_for(network) if network else ""

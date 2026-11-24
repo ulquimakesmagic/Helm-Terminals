@@ -106,6 +106,7 @@ class EvmTradeRequest:
     side: str  # buy | sell
     amount_wei: int  # native coin in for buys; tokens in (raw units) for sells
     slippage_pct: float = 10.0
+    minimum_out: int = 0  # a minimum already reviewed by the user, in the output token's raw units
 
 
 class EvmLaunchpadAdapter(Protocol):

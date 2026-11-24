@@ -68,11 +68,20 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
   switch (pre.kind) {
     case "deploy": {
       const devUsd = num(pre.dev_buy_usd);
-      const cells: [string, ReactNode][] = [["Dev buy", `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
+      const cells: [string, ReactNode][] = [[pre.initial_buy_display ? "First buy" : "Dev buy",
+        pre.initial_buy_display || `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
       const f = pre.funding && typeof pre.funding === "object" ? pre.funding : null;
       if (f) cells.unshift(["Funded from", `${f.send} on ${f.from_chain}`]);
       if (pre.launch_fee) cells.push(["Launchpad fee", String(pre.launch_fee)]);
-      cells.push(...gasCell, ["Helm launch fee", <>{fee(pre.platform_fee)}{pre.launch_fee_estimate ? <span className="muted small"> ({String(pre.launch_fee_estimate)}{pre.launch_fee_max ? `, ${pre.launch_fee_max}` : ""})</span> : null}</>]);
+      if (pre.launchpad_trade_fee) cells.push(["Elpida trading fee", String(pre.launchpad_trade_fee)]);
+      cells.push(...gasCell);
+      if (pre.initial_buy_display) {
+        cells.push(["Helm launch fee", "$0"]);
+        const initialFee = pre.initial_buy_fee;
+        if (initialFee) cells.push(["Helm first-buy fee", `${formatRaw(initialFee.amount_raw, initialFee.decimals)} ${initialFee.asset}`]);
+      } else {
+        cells.push(["Helm launch fee", <>{fee(pre.platform_fee)}{pre.launch_fee_estimate ? <span className="muted small"> ({String(pre.launch_fee_estimate)}{pre.launch_fee_max ? `, ${pre.launch_fee_max}` : ""})</span> : null}</>]);
+      }
       return {
         label: "Create token", value: `$${pre.symbol ?? ""}`, sub: <>{pre.name} on {padName(pre.launchpad)} · {chain.name}</>, cells,
         next: [
@@ -89,16 +98,18 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
       const amount = num(pre.amount) ?? 0;
       const buy = pre.side === "buy";
       const stagger = pre.mode === "stagger";
+      const tradeAsset = pre.trade_asset ?? coin;
       return {
         label: buy ? "Buy" : "Sell",
         value: buy ? fmt(amount * wallets, 6) : `${fmt(amount, 2)}%`,
-        unit: buy ? coin : "of holdings",
-        sub: buy ? <>{fmt(amount, 6)} {coin} from each of {wallets} wallet{wallets === 1 ? "" : "s"}</> : <>{fmt(amount, 2)}% of each wallet's tokens, across {wallets} wallet{wallets === 1 ? "" : "s"}</>,
+        unit: buy ? tradeAsset : "of holdings",
+        sub: buy ? <>{fmt(amount, 6)} {tradeAsset} from each of {wallets} wallet{wallets === 1 ? "" : "s"}</> : <>{fmt(amount, 2)}% of each wallet's tokens, across {wallets} wallet{wallets === 1 ? "" : "s"}</>,
         cells: [
           ["Wallets", String(wallets)],
           ["Execution", stagger ? `One at a time, ${fmt(num(pre.stagger_ms) ?? 0, 0)} ms apart` : "All at once"],
           ["Max slippage", `${fmt(num(pre.slippage_pct) ?? 0, 2)}%`],
           ...gasCell,
+          ...(pre.launchpad_trade_fee ? [["Elpida trading fee", pre.launchpad_trade_fee] as [string, ReactNode]] : []),
           ["Platform fee", fee(pre.platform_fee)],
         ],
         next: [
@@ -121,6 +132,12 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
       const q = pre.quote;
       const wallet: [string, ReactNode] = ["Wallet", pre.wallet ? <span className="mono" title={pre.wallet}>{short(pre.wallet)}</span> : "—"];
       const bound = "If a fresh quote at execution would deliver less than the minimum shown, nothing is signed and you review again.";
+      if (pre.route === "Elpida router") return {
+        label: "Swap on Elpida", value: String(pre.input ?? ""), unit: "", sub: chain.name,
+        cells: [wallet, ["Minimum received", pre.output ?? "—"], ["Maximum Elpida fee", pre.launchpad_trade_fee],
+          ...gasCell, ["Helm trading fee", fee(pre.platform_fee)], ["Slippage", pre.slippage]],
+        tone: "danger", next: [bound, "Helm simulates the order and sends it to Elpida's pool router."],
+      };
       if (q?.fees_usd) {
         // Relay-routed swap on an EVM chain: the quote carries fees and the arrival estimate like a bridge.
         const f = q.fees_usd;

@@ -4,10 +4,10 @@ import math
 import re
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, ValidationInfo, field_validator
 from solders.pubkey import Pubkey
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import (
     SpendConfirm, begin_spend, current_user, find_replay, get_executor, get_rpc, log_activity, owned_wallet, run_job,
-    two_fa_warnings, valid_address, valid_address_for,
+    two_fa_warnings, valid_address, valid_address_for, web_user,
 )
 from ..models import Automation, FeeRecord, Job, Launch, LaunchWallet, RevenueEvent, Transaction, User, Wallet, utcnow
 from ..services.executor import (
@@ -49,11 +49,15 @@ def _core_only(network: str) -> None:
 
 def _launch_out(l: Launch) -> dict:
     from ..services.capabilities import launchpad_capabilities
+    from ..services.elpida_tokens import token_url
     return {
         "id": l.id, "network": l.network, "launchpad": l.launchpad, "status": l.status, "name": l.name,
         "symbol": l.symbol, "description": l.description, "socials": l.socials, "mint_address": l.mint_address,
         "dev_wallet_id": l.dev_wallet_id, "dev_buy_sol": l.dev_buy_sol, "imported": l.imported,
         "has_image": l.image_blob is not None, "created_at": l.created_at.isoformat(),
+        **({"image_url": (l.launchpad_params or {}).get("image_url"),
+            "launchpad_url": token_url(l.network, l.mint_address) if l.mint_address else None}
+           if l.launchpad.startswith("elpida-") else {}),
         "draft_revision": int((l.launchpad_params or {}).get("draft_revision", 0)),
         "slippage_pct": (l.launchpad_params or {}).get("slippage_pct", 10),
         "clanker_version": (l.launchpad_params or {}).get('clanker_version',4) if l.launchpad.startswith('clanker') else None,
@@ -118,6 +122,8 @@ async def quote_assets(launchpad_id: str):
         raise HTTPException(404, "unknown launchpad")
     adapter = get_adapter(launchpad_id)
     if is_evm(adapter):
+        if hasattr(adapter, "supported_quotes"):
+            return {"assets": await adapter.supported_quotes(), "notice": None}
         if hasattr(adapter,'quote_info'):
             from ..chains.clanker_v5 import QUOTES
             return {'assets':[{**q,'mint':q['address'],'pool':'Clanker V5 Uniswap V4 pool'} for q in QUOTES[adapter.network]],
@@ -166,21 +172,82 @@ async def launchpad_protections(launchpad_id: str, version: int | None = None):
     return protections_for(launchpad_id,version)
 
 
+def _discoverable_pad(launchpad_id: str):
+    if launchpad_id not in IMPLEMENTED:
+        raise HTTPException(404, "unknown launchpad")
+    adapter = get_adapter(launchpad_id)
+    if not hasattr(adapter, "token_pair"):
+        raise HTTPException(404, "this launchpad does not have a public token feed in Helm")
+    from ..chains.evm import evm_rpc_urls
+
+    if not evm_rpc_urls(adapter.network):
+        raise HTTPException(503, "Elpida discovery needs a configured chain RPC")
+    return adapter
+
+
+@router.get("/launchpads/{launchpad_id}/tokens")
+async def discover_launchpad_tokens(launchpad_id: str, limit: int = Query(24, ge=1, le=50),
+                                    user: User = Depends(current_user)):
+    from ..services.elpida_tokens import list_tokens
+
+    return await list_tokens(_discoverable_pad(launchpad_id), limit)
+
+
+@router.post("/launchpads/{launchpad_id}/tokens/{address}/workspace")
+async def open_launchpad_token(launchpad_id: str, address: str, user: User = Depends(web_user),
+                               db: AsyncSession = Depends(get_db)):
+    from ..services.elpida_tokens import token_detail
+
+    adapter = _discoverable_pad(launchpad_id)
+    token = await token_detail(adapter, address)
+    # Serialize workspace creation for the same account across retries and concurrent browser tabs.
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    existing = (await db.execute(select(Launch).where(
+        Launch.user_id == user.id, Launch.launchpad == launchpad_id,
+        func.lower(Launch.mint_address) == token["address"].lower(), Launch.status != "archived"
+    ).order_by(Launch.created_at).limit(1))).scalars().first()
+    if existing:
+        return _launch_out(existing)
+    quote = token["quote"]
+    launch = Launch(user_id=user.id, network=adapter.network, launchpad=adapter.id, status="live", imported=True,
+                    mint_address=token["address"], name=token["name"], symbol=token["symbol"],
+                    description=token["description"], socials=token["socials"],
+                    launchpad_params={"image_url": token["image"],
+                                      "quote": {"mint": quote["token"], "symbol": quote["asset"],
+                                                "name": quote["asset"], "decimals": quote["decimals"]}})
+    db.add(launch)
+    await db.flush()
+    await log_activity(db, user.id, "launch.imported", "launch", launch.id, {"launchpad": launchpad_id})
+    await db.commit()
+    return _launch_out(launch)
+
+
 class CreateLaunch(BaseModel):
     launchpad: str = "pumpfun"
-    name: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=64)
     symbol: str = Field(min_length=1, max_length=10)
-    description: str = Field(default="", max_length=500)
-    image_b64: str | None = Field(default=None, max_length=2_800_000)
+    description: str = Field(default="", max_length=1000)
+    image_b64: str | None = Field(default=None, max_length=6_700_000)
     # twitter, telegram, website: a handful of short strings, never an unbounded blob
     socials: dict[Annotated[str, StringConstraints(max_length=32)], Annotated[str, StringConstraints(max_length=300)]] = \
         Field(default_factory=dict, max_length=10)
     dev_wallet_id: str | None = None
-    dev_buy_sol: float = Field(default=0.0, ge=0, le=100)
+    dev_buy_sol: float = Field(default=0.0, ge=0, le=1_000_000_000)
     slippage_pct: float = Field(default=10.0, ge=0, le=50)
     quote_mint: str | None = None  # pair the token with this instead of SOL (Bags only)
     eligibility_confirmed: bool = False  # required for pair-token launches (tokenized-stock restrictions)
     options: dict = Field(default_factory=dict)  # launchpad-specific settings from /launchpads/{id}/options
+
+    @field_validator("name", "description", "image_b64", "dev_buy_sol")
+    @classmethod
+    def legacy_limits(cls, value, info: ValidationInfo):
+        if value is None or str(info.data.get("launchpad", "")).startswith("elpida-"):
+            return value
+        limit = {"name": 32, "description": 500, "image_b64": 2_800_000, "dev_buy_sol": 100}[info.field_name]
+        number = len(value) if isinstance(value, str) else value
+        if number > limit:
+            raise ValueError(f"{info.field_name} must be at most {limit}")
+        return value
 
 
 def _clean_socials(socials: dict) -> dict:
@@ -208,18 +275,28 @@ async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enf
         raise HTTPException(400, f"launchpad '{body.launchpad}' is not implemented yet")
     if enforce_ready and (reason := needs_setup(body.launchpad)):
         raise HTTPException(400, reason)
+    adapter = get_adapter(body.launchpad)
+    network = adapter.network
+    elpida = hasattr(adapter, "launch_payment")
+    if elpida:
+        from ..chains.elpida import IMAGE_MAX, artwork_extension, validate_identity
+
+        validate_identity(body.name.strip(), body.symbol.strip(), body.description)
+        limit = IMAGE_MAX
+        image_type = artwork_extension
+    else:
+        limit = MAX_IMAGE_BYTES
+        image_type = _image_type
     image = None
     if body.image_b64:
         try:
             image = base64.b64decode(body.image_b64, validate=True)
         except Exception:
             raise HTTPException(400, "image_b64 is not valid base64")
-        if len(image) > MAX_IMAGE_BYTES:
-            raise HTTPException(400, "image too large (max 2 MB)")
-        if _image_type(image) is None:  # served publicly and sent to launchpads, so it must really be an image
-            raise HTTPException(400, "the token image must be a PNG, JPEG, GIF or WebP file")
-    adapter = get_adapter(body.launchpad)
-    network = adapter.network
+        if len(image) > limit:
+            raise HTTPException(400, f"image too large (max {limit // 1_000_000} MB)")
+        if image_type(image) is None:
+            raise HTTPException(400, "Upload a PNG, JPEG, GIF or WebP image" + (", or AVIF or BMP for Elpida" if elpida else ""))
     params: dict = {"slippage_pct": body.slippage_pct}
     allowed = {f["key"]: f for f in adapter.options_schema().get("fields", [])}
     for k, v in (body.options or {}).items():
@@ -237,6 +314,8 @@ async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enf
                 raise HTTPException(400, f"{f.get('label', k)} must be at least {f['min']}")
             if f.get("max") is not None and v > f["max"]:
                 raise HTTPException(400, f"{f.get('label', k)} must be at most {f['max']}")
+            if f.get("step") == 1 and v != int(v):
+                raise HTTPException(400, f"{f.get('label', k)} must be a whole number")
         params[k] = v
     if body.launchpad.startswith('clanker'):
         if warnings:=adapter.deploy_warnings(body.dev_buy_sol,params):
@@ -244,6 +323,14 @@ async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enf
         params['clanker_version']=5
         quote=adapter.quote_info(params)
         params['quote']={'mint':quote['address'],'symbol':quote['symbol'],'name':quote['name'],'decimals':quote['decimals']}
+    if elpida:
+        if enforce_ready and image is None:
+            raise HTTPException(400, "Elpida requires a token image")
+        quote = next((asset for asset in await adapter.supported_quotes()
+                      if asset["kind"] == params.get("elpida_pair", "native")), None)
+        if quote is None:
+            raise HTTPException(400, "Elpida does not currently support launching this quote asset")
+        params["quote"] = quote
     if body.quote_mint and body.quote_mint != SOL_QUOTE["mint"]:
         if body.launchpad != "bags":
             raise HTTPException(400, "pairing with a token other than SOL is only available on Bags")
@@ -270,7 +357,10 @@ async def _draft_values(body: CreateLaunch, user: User, db: AsyncSession, *, enf
 @router.post("/launches", status_code=201)
 async def create_launch(body: CreateLaunch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     network, image, params = await _draft_values(body, user, db)
-    l = Launch(user_id=user.id, network=network, launchpad=body.launchpad, name=body.name, symbol=body.symbol.upper(),
+    elpida = body.launchpad.startswith("elpida-")
+    l = Launch(user_id=user.id, network=network, launchpad=body.launchpad,
+               name=body.name.strip() if elpida else body.name,
+               symbol=body.symbol.strip() if elpida else body.symbol.upper(),
                description=body.description, image_blob=image, socials=_clean_socials(body.socials), dev_wallet_id=body.dev_wallet_id,
                dev_buy_sol=body.dev_buy_sol, launchpad_params=params)
     db.add(l)
@@ -404,7 +494,8 @@ async def update_draft(launch_id: str, body: UpdateDraft, user: User = Depends(c
     if network != launch.network:
         raise HTTPException(409, 'The launchpad network changed; create a fresh draft')
     # Only mutable draft fields change. Provider identity and historical execution terms never get overwritten.
-    launch.name, launch.symbol = body.name.strip(), body.symbol.strip().upper()
+    launch.name = body.name.strip()
+    launch.symbol = body.symbol.strip() if body.launchpad.startswith("elpida-") else body.symbol.strip().upper()
     if not launch.name or not launch.symbol:
         raise HTTPException(400, 'Name and ticker are required')
     launch.description, launch.socials = body.description, _clean_socials(body.socials)
@@ -429,7 +520,7 @@ async def update_draft(launch_id: str, body: UpdateDraft, user: User = Depends(c
 async def private_launch_image(launch_id: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     from fastapi import Response
     launch = await _owned_launch(db, user, launch_id)
-    kind = _image_type(launch.image_blob) if launch.image_blob else None
+    kind = _launch_image_type(launch)
     if kind is None:
         raise HTTPException(404, 'image not found')
     return Response(launch.image_blob, media_type=kind, headers={'Cache-Control': 'private, no-store',
@@ -1034,8 +1125,11 @@ async def _recheck_evm_deploy(l: Launch, db: AsyncSession, ex: Executor, user: U
         return
     token = None
     resolver = _EVM_RESOLVERS.pop(l.id, None)
-    if l.launchpad == "pons" and resolver is None:
-        resolver = get_adapter("pons")._resolver([])  # receipt events survive a process restart
+    if resolver is None:
+        adapter = get_adapter(l.launchpad)
+        resolver = getattr(adapter, "resolve_launch_token", None)
+        if l.launchpad == "pons":
+            resolver = adapter._resolver([])  # receipt events survive a process restart
     if resolver:
         try:
             token = await resolver(receipt.get("logs") or [])
@@ -1516,7 +1610,12 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     dev_buy = int(round(l.dev_buy_sol * WEI))
     launch_fee = 0
     launch_terms = None
-    if hasattr(adapter,'launch_terms'):
+    payment = None
+    if hasattr(adapter, "launch_payment"):
+        if reason := needs_setup(l.launchpad):
+            raise HTTPException(503, reason)
+        payment = await adapter.launch_payment(params, l.dev_buy_sol)
+    elif hasattr(adapter,'launch_terms'):
         if params.get('clanker_version')!=5:
             raise HTTPException(409,'Clanker now uses V5 for new launches. Edit and save this undeployed draft to review the new tax and reward settings')
         try:
@@ -1535,6 +1634,21 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     developer_trade_fee = dev_buy * policy['bps'] // 10_000 if l.launchpad != "uniswap-v2" else 0
     need_raw = dev_buy + developer_trade_fee + launch_fee + gas
     warnings = []
+    if payment:
+        quote = payment["quote"]
+        first_buy = int(payment["first_buy"])
+        developer_trade_fee = first_buy * policy["bps"] // 10_000
+        need_raw = int(payment["value"]) + gas
+        if quote["token"]:
+            need_raw += await sender.max_gas_cost(100_000) if developer_trade_fee else 0
+        else:
+            need_raw += developer_trade_fee
+        stable_needs = adapter.allowances(payment)
+        if quote["token"] and developer_trade_fee:
+            stable_needs[quote["token"]] += developer_trade_fee
+        for token, amount in stable_needs.items():
+            if await sender.rpc.erc20_balance(token, dev.address) < amount:
+                warnings.append(f"{dev.address} has too little {adapter.config.stable_symbol} for the first buy and fees.")
     funding = None
     if bal < need_raw:
         short = (f"Dev wallet has {bal / WEI:.6f} {coin}; needs about {need_raw / WEI:.6f} "
@@ -1562,6 +1676,14 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     }
     if launch_terms:
         summary['clanker_v5_terms']=launch_terms
+    if payment:
+        from ..chains.elpida import amount_label
+
+        fee_label = payment["fee_label"] if payment["stable_fee"] else (
+            f"{payment['fee_label']} (up to {amount_label(int(payment['fee_limit']), 18, coin)}; unused buffer refunded)")
+        summary.update(launch_fee=f"$10 · {fee_label}", initial_buy_display=payment["first_buy_label"],
+                       launchpad_trade_fee=f"{payment['fee_bps'] / 100:g}%",
+                       reviewed_launch_payment=payment)
     if rewards:
         summary["pons_rewards"] = rewards
         summary["reward_terms"] = ("97.5% creator / 2.5% Helm, including creator tax. Native ETH only. The recipients "
@@ -1584,7 +1706,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
     pf = await attach_launch_fee(pf, db, user, ex, l, dev, body)
     if funding:
         pf["preflight"]["funding_detail"] = funding_detail(funding, need_raw - bal, dev.network)
-    pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
+    if not payment:
+        pf["preflight"]["dev_buy_usd"] = await usd_value(dev.network, l.dev_buy_sol)  # display only, not hashed
     if not body.confirm:
         return pf
     if pf["preflight"]["warnings"]:
@@ -1606,6 +1729,8 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
             opts = {**params, "helm_creator_share": share}
             if launch_terms:
                 opts['clanker_v5_terms']=launch_terms
+            if payment:
+                opts["reviewed_launch_payment"] = payment
             if rewards:
                 opts["pons_rewards"] = rewards
             if l.launchpad.startswith("flap-sh"):
@@ -1656,14 +1781,16 @@ async def _deploy_evm(l: Launch, body: DeployBody, user: User, db: AsyncSession,
                 await _note_flap_partner(session, launch)
                 from ..services.charges import initial_buy_fee
                 await initial_buy_fee(session, ex, j, launch, dev)
-            elif len(plan.steps) == 1 and res.status == "timeout" and res.signature:
+            elif res.status == "timeout" and res.signature and (
+                    len(plan.steps) == 1 or await session.scalar(select(Transaction.id).where(
+                        Transaction.job_id == j.id, Transaction.kind == "deploy", Transaction.signature == res.signature))):
                 # The one create transaction was sent but not confirmed in time: it may still land. Stay "deploying"
                 # (which can't be deployed again) and let /recheck read its receipt, so a retry never makes a second token.
                 launch.launchpad_params = {**(launch.launchpad_params or {}), "evm_deploy_tx": res.signature,
                                            "unconfirmed_since": utcnow().isoformat(), "predicted_token": token}
                 if plan.resolve_token:
                     _EVM_RESOLVERS[launch.id] = plan.resolve_token
-            elif res.status == "failed" and not landed:
+            elif res.status == "failed" and (not landed or payment):
                 launch.status = "failed"  # nothing of this deploy is on-chain: safe to retry
             else:
                 # Part of a multi-step deploy landed (the token may exist) or a step's outcome is unknown. Never
@@ -1681,6 +1808,21 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
     sender = ex.evm(l.network)
     coin = EVM_CHAINS[l.network]["native"]
     warnings = []
+    adapter = get_adapter(l.launchpad)
+    quote, current_fee, raw_buy = None, None, None
+    if hasattr(adapter, "token_pair"):
+        from ..chains.elpida import raw_amount
+        from ..chains.evm import evm_rpc_urls
+
+        if not evm_rpc_urls(l.network):
+            raise HTTPException(503, "Elpida trading needs a configured chain RPC")
+        if len({w.id for w in wallets}) != len(wallets):
+            raise HTTPException(400, "Select each trade wallet once")
+        _, quote, current_fee = await adapter.token_pair(l.mint_address)
+        if body.side == "buy":
+            raw_buy = raw_amount(body.amount, quote["decimals"])
+            if not raw_buy:
+                raise HTTPException(400, "The trade amount is below one base unit")
     from ..services import platform_config as pc
     await pc.refresh(db)
     from ..services.charges import trade_terms
@@ -1689,31 +1831,46 @@ async def _trade_evm(l: Launch, body: TradeBody, user: User, db: AsyncSession, e
         warnings.append("The trading-fee treasury is not configured on this network.")
     if getattr(user, "channel", "web") == "bot":
         warnings.append(f"Trading on {EVM_CHAINS[l.network]['name']} from Telegram isn't enabled yet. Use the web app.")
-    gas = await sender.max_gas_cost(EVM_TRADE_GAS)
+    gas = await sender.max_gas_cost(getattr(adapter, "trade_gas_limit", EVM_TRADE_GAS))
     if body.side == "buy":
         for w in wallets:
-            if await sender.rpc.get_balance(w.address) < int(round(body.amount * WEI * (1 + fee_terms['bps'] / 10_000))) + gas:
-                warnings.append(f"{w.address} has too little {coin} for a {body.amount} {coin} buy plus gas.")
+            if quote and quote["token"]:
+                if await sender.rpc.erc20_balance(quote["token"], w.address) < raw_buy + raw_buy * fee_terms["bps"] // 10_000:
+                    warnings.append(f"{w.address} has too little {quote['asset']} for this buy plus the Helm fee.")
+                native_need = gas
+            else:
+                buy_raw = raw_buy if quote else int(round(body.amount * WEI))
+                native_need = buy_raw + buy_raw * fee_terms["bps"] // 10_000 + gas
+            if await sender.rpc.get_balance(w.address) < native_need:
+                warnings.append(f"{w.address} has too little {coin} for this buy and its gas.")
     else:
+        if quote:
+            for w in wallets:
+                if await sender.rpc.get_balance(w.address) < gas:
+                    warnings.append(f"{w.address} has too little {coin} for the sell and its gas.")
         warnings += await _sell_lock_warnings(db, l, wallets, body.amount,
                                               lambda w: sender.rpc.erc20_balance(l.mint_address, w.address),
                                               lambda: sender.rpc.erc20_meta(l.mint_address))
-    pf = build_preflight("trade", {
+    trade_asset = quote["asset"] if quote else coin
+    summary = {
         "launch_id": l.id, "network": l.network, "mint": l.mint_address, "side": body.side, "amount": body.amount,
-        "amount_unit": f"{coin} per wallet" if body.side == "buy" else "% of each wallet's tokens",
+        "amount_unit": f"{trade_asset} per wallet" if body.side == "buy" else "% of each wallet's tokens",
         "wallets": [w.address for w in wallets], "mode": body.mode, "stagger_ms": body.stagger_ms,
         "slippage_pct": body.slippage_pct, "max_gas_each": gas / WEI,
         "trade_fee_terms": fee_terms,
-        "platform_fee": f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else "2.5% of each buy or the native proceeds of each sell; 30% of the fee is owed to your referrer when applicable",
-    }, warnings)
+        "platform_fee": (f"None · {fee_terms['exemption_reason']}" if not fee_terms['bps'] else
+                         f"2.5% of each buy or sell proceeds in {trade_asset}. A referrer receives 30% of the Helm fee when applicable."),
+    }
+    if quote:
+        summary.update(trade_asset=trade_asset, trade_quote_asset=quote, raw_buy=str(raw_buy) if raw_buy else None,
+                       launchpad_trade_fee=f"{current_fee / 100:g}%", max_launchpad_fee_bps=current_fee)
+    pf = build_preflight("trade", summary, warnings)
     if not body.confirm:
         return pf
     if warnings:
         raise HTTPException(400, warnings[0])
     job, created = await begin_spend(db, user, body, pf, f"trade_{body.side}", l.id, pf["preflight"])
     if created:
-        adapter = get_adapter(l.launchpad)
-
         async def work(session, j):
             await run_evm_trade(session, ex, adapter, j, l.mint_address, wallets, body.side, body.amount,
                                 body.mode, body.stagger_ms, body.slippage_pct)
@@ -1787,11 +1944,23 @@ async def launch_image(launch_id: str, db: AsyncSession = Depends(get_db)):
     l = await db.get(Launch, launch_id)
     if not l or not l.image_blob or l.status not in ("deploying", "live"):
         raise HTTPException(404, "not found")
-    kind = _image_type(l.image_blob)
+    kind = _launch_image_type(l)
     if kind is None:  # stored before uploads were checked; never serve arbitrary bytes from our domain
         raise HTTPException(404, "not found")
     return Response(l.image_blob, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable",
                                                             "Content-Security-Policy": "default-src 'none'"})
+
+
+def _launch_image_type(launch: Launch) -> str | None:
+    data = launch.image_blob
+    if not data:
+        return None
+    if launch.launchpad.startswith("elpida-"):
+        from ..chains.elpida import artwork_extension
+
+        if (ext := artwork_extension(data)) in {"avif", "bmp"}:
+            return "image/" + ext
+    return _image_type(data)
 
 
 def _image_type(data: bytes) -> str | None:

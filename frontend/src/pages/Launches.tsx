@@ -1,11 +1,12 @@
 import ChainSelect from "../components/ChainSelect";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, errMsg, short } from "../api";
 import { ALL_CHAIN_ORDER, CHAIN_ORDER, CHAINS, ChainId, chainOf, Pad, padName } from "../chains";
 import { launchpadExperience } from "../launchpadExperience";
 import { groupedFields, launchpadForm, validateLaunchFields } from "../launchpadForms";
 import { LaunchpadDirectory } from "../components/Launchpads";
+import { ElpidaTokens } from "../components/ElpidaTokens";
 import { ChainLabel, PadLabel } from "../components/marks";
 import {
   Address, Callout, Card, Empty, Field, Icon, Loading, LoadError, Modal, PageHeader, SearchInput, Seg, Spinner, StatusBadge, TokenImage, UnitInput, relTime,
@@ -15,7 +16,7 @@ interface QuoteAsset { mint: string; symbol: string; name: string; decimals: num
 interface Launch {
   quote?: { mint: string; symbol: string; name: string } | null;
   id: string; network: string; name: string; symbol: string; status: string; launchpad: string; mint_address: string | null;
-  imported: boolean; created_at: string; dev_buy_sol: number; description: string; has_image?: boolean;
+  imported: boolean; created_at: string; dev_buy_sol: number; description: string; has_image?: boolean; image_url?: string | null;
   dev_wallet_id?: string | null; socials?: Record<string,string>; settings?: Record<string,unknown>; slippage_pct?: number; draft_revision?: number; clanker_version?:number;
 }
 interface W { id: string; label: string; address: string; kind: string; network: string }
@@ -33,7 +34,7 @@ function optLabel(key: string, o: string | number): string {
 
 interface OptField {
   key: string; type: "number" | "select" | string; label?: string; hint?: string;
-  options?: (string | number)[]; default?: unknown; min?: number; max?: number;
+  options?: (string | number)[]; default?: unknown; min?: number; max?: number; step?: number;
   option_labels?: Record<string,string>;
   asset_kinds?: Record<string,string>;
 }
@@ -50,11 +51,11 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-const EMPTY_FORM = { launchpad: "pumpfun", name: "", symbol: "", description: "", twitter: "", telegram: "", website: "", dev_wallet_id: "", dev_buy_sol: "0" };
+const EMPTY_FORM = { launchpad: "pumpfun", name: "", symbol: "", description: "", twitter: "", telegram: "", website: "", discord: "", dev_wallet_id: "", dev_buy_sol: "0" };
 
-export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pads: Pad[]; wallets: W[]; onClose: () => void; initial?: Launch; onSaved?: (launch:Launch)=>void }) {
+export function CreateLaunch({ pads, wallets, onClose, initial, onSaved, initialPad }: { pads: Pad[]; wallets: W[]; onClose: () => void; initial?: Launch; onSaved?: (launch:Launch)=>void; initialPad?: string }) {
   const nav = useNavigate();
-  const [f, setF] = useState(initial ? {...EMPTY_FORM, launchpad:initial.launchpad,name:initial.name,symbol:initial.symbol,description:initial.description,dev_wallet_id:initial.dev_wallet_id ?? '',dev_buy_sol:String(initial.dev_buy_sol),twitter:initial.socials?.twitter ?? '',telegram:initial.socials?.telegram ?? '',website:initial.socials?.website ?? ''} : EMPTY_FORM);
+  const [f, setF] = useState(initial ? {...EMPTY_FORM, launchpad:initial.launchpad,name:initial.name,symbol:initial.symbol,description:initial.description,dev_wallet_id:initial.dev_wallet_id ?? '',dev_buy_sol:String(initial.dev_buy_sol),twitter:initial.socials?.twitter ?? '',telegram:initial.socials?.telegram ?? '',website:initial.socials?.website ?? '',discord:initial.socials?.discord ?? ''} : {...EMPTY_FORM, launchpad: initialPad ?? EMPTY_FORM.launchpad});
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -106,6 +107,11 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
     return () => { active = false; };
   }, [f.launchpad, pad?.status, reloadSettings]);
   const chain = chainOf(pad?.network);
+  const elpida = f.launchpad.startsWith("elpida-");
+  const imageLimit = elpida ? 5_000_000 : 2_000_000;
+  const nameLength = elpida ? new TextEncoder().encode(f.name.trim()).length : f.name.length;
+  const nameLimit = elpida ? 64 : 32;
+  const firstBuyUnit = elpida ? schema.fields.find(field => field.key === "elpida_pair")?.option_labels?.[String(opts.elpida_pair)] ?? chain.native : chain.native;
   const experience = launchpadExperience(f.launchpad);
   const profile = launchpadForm(f.launchpad);
   const requiresImage = schema.requires_image;
@@ -118,7 +124,9 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
   const values = { ...opts, dev_buy_sol: paired ? 0 : f.dev_buy_sol, slippage_pct: slippagePct };
   const validation = schemaReady ? validateLaunchFields(schema.fields, values) : null;
   const blocked = !schemaReady || schemaLoading || quotesLoading || !!quotesError || !!validation;
-  const tokenReady = !!f.name.trim() && !!f.symbol.trim() && (!requiresImage || !!image || !!initial?.has_image && !removeImage) && (!image || image.size <= 2_000_000);
+  const identityError = elpida && nameLength > nameLimit ? "Use a name of at most 64 UTF-8 bytes."
+    : elpida && f.symbol && !/^[A-Za-z0-9]{1,10}$/.test(f.symbol) ? "Use 1–10 letters or digits for the ticker." : "";
+  const tokenReady = !!f.name.trim() && !!f.symbol.trim() && !identityError && (!requiresImage || !!image || !!initial?.has_image && !removeImage) && (!image || image.size <= imageLimit);
   const ready = tokenReady && !blocked && (!!initial || pad?.status === "available") && (!paired || eligible);
   const pickPad = (id:string) => { if (id !== f.launchpad) { setSchemaReady(false); setF(old => ({...old,launchpad:id})); setStep(0); } };
   useEffect(() => {
@@ -126,7 +134,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
   }, [chain.id, wallets]);
   const socials = new Set(schema.socials);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setF({ ...f, [k]: k === "symbol" ? e.target.value.toUpperCase() : e.target.value });
+    setF({ ...f, [k]: k === "symbol" && !elpida ? e.target.value.toUpperCase() : e.target.value });
 
   useEffect(() => {
     if (!image) { setPreview(null); return; }
@@ -138,12 +146,12 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
   async function create() {
     setError("");
     if (!ready || busy) return;
-    if (image && image.size > 2_000_000) { setError("Image must be 2 MB or smaller."); return; }
+    if (image && image.size > imageLimit) { setError("The image exceeds this launchpad's size limit."); return; }
     setBusy(true);
     try {
       const l = await api<Launch>(initial ? `/launches/${initial.id}` : "/launches", { method:initial?'PATCH':'POST',body: {
         launchpad: f.launchpad, name: f.name.trim(), symbol: f.symbol.trim(), description: f.description,
-        socials: { twitter: f.twitter, telegram: f.telegram, website: f.website },
+        socials: { twitter: f.twitter, telegram: f.telegram, website: f.website, ...(elpida ? {discord: f.discord} : {}) },
         dev_wallet_id: f.dev_wallet_id || null, dev_buy_sol: paired ? 0 : +f.dev_buy_sol || 0,
         slippage_pct: +slippagePct || 0,
         image_b64: image ? await toBase64(image) : null,
@@ -171,18 +179,18 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
       {step === 0 && <>
       <div className="launch-identity">
         <label style={{ cursor: "pointer", flex: "none" }} title="Upload image">
-          <input type="file" aria-label="Token artwork" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+          <input type="file" aria-label="Token artwork" accept={elpida ? "image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp" : "image/png,image/jpeg,image/gif,image/webp"} className="sr-only" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
           {preview ? (
             <img src={preview} alt="" style={{ width: 112, height: 112, borderRadius: 18, objectFit: "cover", border: "1px solid var(--line-2)" }} />
           ) : initial?.has_image && !removeImage ? <TokenImage launch={initial} size={112}/> : (
             <div style={{ width: 112, height: 112, borderRadius: 18, border: "1.5px dashed var(--line-2)", display: "grid", placeItems: "center", color: "var(--muted)", textAlign: "center", fontSize: 11.5 }}>
-              <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />{requiresImage ? <b className="warn-t">required</b> : "max 2 MB"}</div></div>
+              <div><Icon name="image" size={22} /><div style={{ marginTop: 6 }}>Add image<br />{requiresImage && <b className="warn-t">Required · </b>}max {imageLimit / 1_000_000} MB</div></div>
             </div>
           )}
         </label>
         <div className="stack grow">
           <div className="launch-identity-fields">
-            <Field label="Token name" extra={`${f.name.length}/32`} style={{ flex: 2 }}><input value={f.name} onChange={set("name")} maxLength={32} placeholder="Helm Cat" autoFocus /></Field>
+            <Field label="Token name" extra={`${nameLength}/${nameLimit}`} style={{ flex: 2 }}><input value={f.name} onChange={set("name")} maxLength={nameLimit} placeholder="Helm Cat" autoFocus /></Field>
             <Field label="Ticker" style={{ flex: 1 }}><input value={f.symbol} onChange={set("symbol")} maxLength={10} placeholder="HCAT" className="mono" /></Field>
           </div>
           <div className="row small muted" style={{ gap: 8 }}>
@@ -191,14 +199,17 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
         </div>
       </div>
       {(image || initial?.has_image && !removeImage) && <button type="button" className="btn sm ghost" onClick={()=>{setImage(null);setRemoveImage(true);}}>Remove artwork</button>}
-      <Field label="Description" extra={`${f.description.length}/500`}>
-        <textarea value={f.description} onChange={set("description")} rows={3} maxLength={500} placeholder="What is this token about?" />
+      <Field label="Description" extra={`${f.description.length}/${elpida ? 1000 : 500}`}>
+        <textarea value={f.description} onChange={set("description")} rows={3} maxLength={elpida ? 1000 : 500} placeholder="What is this token about?" />
       </Field>
       {schema.socials.length > 0 && <details className="launch-links"><summary>Links <span className="muted">optional</span></summary><div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
         {socials.has("twitter") && <Field label="X / Twitter"><input value={f.twitter} onChange={set("twitter")} placeholder="https://x.com/…" /></Field>}
         {socials.has("telegram") && <Field label="Telegram"><input value={f.telegram} onChange={set("telegram")} placeholder="https://t.me/…" /></Field>}
         {socials.has("website") && <Field label="Website"><input value={f.website} onChange={set("website")} placeholder="https://…" /></Field>}
+        {socials.has("discord") && <Field label="Discord"><input value={f.discord} onChange={set("discord")} placeholder="https://discord.gg/…" /></Field>}
       </div></details>}
+      {identityError && <Callout tone="err">{identityError}</Callout>}
+      {image && image.size > imageLimit && <Callout tone="err">Use artwork up to {imageLimit / 1_000_000} MB.</Callout>}
       </>}
       {step === 1 && <>
       <div className="section-heading"><div><h3>{experience.settingsTitle}</h3><p className="muted small">{experience.description}</p></div></div>
@@ -210,7 +221,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
         <div className="grid g-form">{group.fields.filter(x=>x.key!=='quote_eligibility' || selectedQuoteKind==='stock').map(x => <Field key={x.key} label={x.label ?? (x.key === "priority_fee_sol" ? "Priority fee (SOL)" : x.key === "slippage_pct" ? "Maximum slippage (%)" : x.key.replace(/_/g, " "))} hint={x.hint}>
           {x.type === "select" ? <select value={String(opts[x.key] ?? "")} onChange={e => {setOpts({ ...opts, [x.key]: x.options?.find(o => String(o) === e.target.value),...(x.key==='clanker_quote'?{quote_eligibility:'not_confirmed'}:{}) });if(x.key==='clanker_quote' && e.target.value.startsWith('0x'))setF(old=>({...old,dev_buy_sol:'0'}));}}>
             {(x.options ?? []).filter(o=>x.key!=='clanker_quote'||o===opts.clanker_quote||(String(o)+' '+(x.option_labels?.[String(o)]??'')).toLowerCase().includes(pairSearch.toLowerCase())).map(o => <option key={String(o)} value={String(o)}>{x.option_labels?.[String(o)] ?? optLabel(x.key, o)}</option>)}
-          </select> : <input type="number" min={x.min} max={x.max} step="any" value={String(x.key === "slippage_pct" ? slippagePct : opts[x.key] ?? "")} onChange={e => x.key === "slippage_pct" ? setSlippagePct(e.target.value) : setOpts({ ...opts, [x.key]: e.target.value === "" ? "" : +e.target.value })} />}
+          </select> : <input type="number" min={x.min} max={x.max} step={x.step ?? "any"} value={String(x.key === "slippage_pct" ? slippagePct : opts[x.key] ?? "")} onChange={e => x.key === "slippage_pct" ? setSlippagePct(e.target.value) : setOpts({ ...opts, [x.key]: e.target.value === "" ? "" : +e.target.value })} />}
         </Field>)}</div>
         {group.fields.some(x => x.key === "tax_rate_pct") && <p className="small">{Number(opts.tax_rate_pct) > 0 ? `${opts.tax_rate_pct}% buy tax · ${opts.tax_rate_pct}% sell tax · one year · creator allocation to the dev wallet` : "Standard token · no creator trading tax"}</p>}
       </section>)}
@@ -251,7 +262,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
             {validWallets.map((w) => <option key={w.id} value={w.id}>{w.label || "Wallet"} · {short(w.address)}</option>)}
           </select>
         </Field>
-        {!paired && devBuyField && devBuyField.max !== 0 && <Field label={devBuyField.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy"} hint={noCreatorBuy?'This quote has no verified creator-buy route in Helm. Launch without a creator buy.':devBuyField.hint} style={{ flex: 1 }}><UnitInput disabled={noCreatorBuy} type="number" min={devBuyField.min} max={devBuyField.max} step="any" unit={chain.native} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
+        {!paired && devBuyField && devBuyField.max !== 0 && <Field label={devBuyField.label?.replace(/\s*\(.*\)$/, "") ?? "Dev buy"} hint={noCreatorBuy?'This quote has no verified creator-buy route in Helm. Launch without a creator buy.':devBuyField.hint} style={{ flex: 1 }}><UnitInput disabled={noCreatorBuy} type="number" min={devBuyField.min} max={devBuyField.max} step="any" unit={firstBuyUnit} value={f.dev_buy_sol} onChange={set("dev_buy_sol")} /></Field>}
       </div>
       {validation && <Callout tone="err">{validation}</Callout>}
       {schema.notes.map((note) => <Callout key={note}>{note}</Callout>)}
@@ -263,7 +274,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved }: { pad
         anti-sniping settings above are explained again, with their effect and fees, in the deploy preview.</p>
       <section className="launch-form-section launch-summary" aria-label="Draft summary">
         <div className="row">{!preview && initial?.has_image && !removeImage && <TokenImage launch={initial}/>} {preview && <img src={preview} alt="Token preview" width={40} height={40} style={{ borderRadius: 10, objectFit: "cover" }} />}<div><h3>{f.name.trim() || "Your token"} <span className="muted">{f.symbol ? `$${f.symbol}` : ""}</span></h3><span className="small muted">{chain.name} · {padName(f.launchpad)}</span></div></div>
-        <dl><div><dt>Pair</dt><dd>{selectedPair ?? quote?.symbol ?? (opts.dbc_quote ? String(opts.dbc_quote) : profile.pair === "Native asset" ? chain.native : profile.pair)}</dd></div><div><dt>{profile.funding}</dt><dd>{paired || noCreatorBuy ? "Not supported for this pair" : `${f.dev_buy_sol || "0"} ${chain.native}`}</dd></div><div><dt>Dev wallet</dt><dd>{validWallets.find(w => w.id === f.dev_wallet_id)?.label || (f.dev_wallet_id ? short(validWallets.find(w => w.id === f.dev_wallet_id)?.address ?? "") : "Choose before deployment")}</dd></div></dl>
+        <dl><div><dt>Pair</dt><dd>{selectedPair ?? quote?.symbol ?? (elpida ? firstBuyUnit : undefined) ?? (opts.dbc_quote ? String(opts.dbc_quote) : profile.pair === "Native asset" ? chain.native : profile.pair)}</dd></div><div><dt>{profile.funding}</dt><dd>{paired || noCreatorBuy ? "Not supported for this pair" : `${f.dev_buy_sol || "0"} ${firstBuyUnit}`}</dd></div><div><dt>Dev wallet</dt><dd>{validWallets.find(w => w.id === f.dev_wallet_id)?.label || (f.dev_wallet_id ? short(validWallets.find(w => w.id === f.dev_wallet_id)?.address ?? "") : "Choose before deployment")}</dd></div></dl>
         <p className="muted small">Draft only. Network costs, platform fees and reward recipients are reviewed before signing.</p>
       </section>
       </>}
@@ -351,6 +362,7 @@ export function DeleteDraft({ id, name, onDeleted, compact }: { id: string; name
 
 export default function Launches() {
   const nav = useNavigate();
+  const [search, setSearch] = useSearchParams();
   const [launches, setLaunches] = useState<Launch[] | null>(null);
   const [archived, setArchived] = useState<Launch[]>([]);
   const [pads, setPads] = useState<Pad[]>([]);
@@ -359,6 +371,8 @@ export default function Launches() {
   const [q, setQ] = useState("");
   const [chainF, setChainF] = useState<"all" | ChainId>("all");
   const [modal, setModal] = useState<null | "create" | "import">(null);
+  const initialPad = pads.find(p => p.id.startsWith("elpida-") && p.id === search.get("launchpad") && p.status === "available")?.id;
+  const elpidaPads = pads.filter(p => p.id.startsWith("elpida-") && p.status !== "planned");
 
   const [loadErr, setLoadErr] = useState("");
   const load = useCallback(() => {
@@ -445,8 +459,13 @@ export default function Launches() {
           <LaunchpadDirectory pads={pads} />
         </Card></details>
       )}
+      {elpidaPads.length > 0 && <ElpidaTokens pads={elpidaPads} initialNetwork={search.get("elpida")}
+        initialAddress={search.get("token")} onOpen={id => nav("/launches/" + id)} />}
 
-      {modal === "create" && <CreateLaunch pads={pads} wallets={wallets} onClose={() => setModal(null)} />}
+      {(modal === "create" || initialPad) && <CreateLaunch pads={pads} wallets={wallets} initialPad={initialPad} onClose={() => {
+        setModal(null);
+        if (initialPad) setSearch({}, {replace: true});
+      }} />}
       {modal === "import" && <ImportLaunch wallets={wallets} pads={pads} onClose={() => setModal(null)} />}
     </>
   );

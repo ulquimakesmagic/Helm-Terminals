@@ -1070,6 +1070,13 @@ async def _swap_evm(body: SwapBody, user: User, db: AsyncSession, ex: Executor, 
     if in_cur.lower() == out_cur.lower():
         raise HTTPException(400, "input and output are the same token")
 
+    from ..chains.evm import evm_rpc_urls
+    if evm_rpc_urls(net):
+        from ..services.elpida_swap import quote_pair, swap as elpida_swap
+
+        if pair := await quote_pair(net, in_cur, out_cur):
+            return await elpida_swap(body, user, db, ex, w, pair)
+
     async def token_meta(cur: str, mint: str) -> tuple[str, int]:
         if mint == "native":
             return native_coin(net), 18

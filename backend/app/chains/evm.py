@@ -276,7 +276,9 @@ def evm_rpc_urls(network: str) -> str:
 
     if network not in EVM_CHAINS:  # Arc and other registry networks: {NETWORK}_RPC_URL
         return getattr(get_settings(), f"{network.replace('-', '_')}_rpc_url", "") or ""
-    return getattr(get_settings(), f"evm_rpc_{network}", "") or ""
+    settings = get_settings()
+    return (getattr(settings, f"helm_rpc_{EVM_CHAINS[network]['chain_id']}", "")
+            or getattr(settings, f"evm_rpc_{network}", "") or "")
 
 
 def shared_evm(network: str) -> EvmRPC:

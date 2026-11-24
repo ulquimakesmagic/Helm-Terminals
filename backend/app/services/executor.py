@@ -677,20 +677,30 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
     sender_rpc = ex.evm(wallets[0].network).rpc
 
     before_balances = {}
+    agreed = job.params or {}
 
     async def plan_for(w: Wallet):
-        before_balances[w.id] = await sender_rpc.get_balance(w.address)
+        if not hasattr(adapter, "trade_fee_basis"):
+            before_balances[w.id] = await sender_rpc.get_balance(w.address)
         if side == "buy":
-            amt = int(round(amount * 10**18))
+            amt = int(agreed["raw_buy"]) if agreed.get("raw_buy") else int(round(amount * 10**18))
         else:
             balance = await sender_rpc.erc20_balance(token, w.address)
+            if agreed.get("minimum_out") and sell_raw is not None and balance < sell_raw:
+                return None, "This wallet now holds fewer tokens than the reviewed order requires."
             # An exact token amount when given (scheduled exits), else a share of the balance.
             amt = min(sell_raw, balance) if sell_raw is not None else balance * int(round(amount * 100)) // 10_000
         from ..chains.kyber import Graduated
 
         try:
             try:
-                return await adapter.prepare_trade(EvmTradeRequest(token, w.address, side, amt, slippage_pct)), None
+                plan = await adapter.prepare_trade(EvmTradeRequest(token, w.address, side, amt, slippage_pct,
+                                                                   int(agreed.get("minimum_out") or 0)))
+                if agreed.get("trade_quote_asset") and (
+                        plan.notes.get("quote_asset") != agreed["trade_quote_asset"] or
+                        plan.notes["current_fee_bps"] > agreed["max_launchpad_fee_bps"]):
+                    raise AdapterError("The launchpad's trade terms changed. Review a fresh quote.")
+                return plan, None
             except Graduated as g:
                 # Off the launchpad's curve: trade it on the DEX where it now lives.
                 try:
@@ -703,7 +713,7 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
 
     async def one(w: Wallet) -> SubmitResult:
         if execution_guard and not await execution_guard():
-            res = SubmitResult(None, "failed", "The scheduled plan stopped before this order was sent.")
+            res = SubmitResult(None, "failed", "The order authorization expired or was cancelled before signing.")
             await _record(db, job, w, side, res, None)
             await db.commit()
             return res
@@ -726,12 +736,16 @@ async def run_evm_trade(db: AsyncSession, ex: Executor, adapter, job: Job, token
             return
         from .charges import charge_trade
         from decimal import Decimal
-        if side == "buy":
+        fee_asset = {}
+        if hasattr(adapter, "trade_fee_basis"):
+            fee_asset = plan.notes["quote_asset"]
+            basis = adapter.trade_fee_basis(getattr(res, "logs", None) or [], plan, w.address, token, side)
+        elif side == "buy":
             basis = int(Decimal(str(amount)) * 10**18)
         else:
             after = await sender_rpc.get_balance(w.address)
             basis = max(0, after - before_balances[w.id] + (getattr(res, "total_gas_wei", 0) or 0))
-        paid = await charge_trade(db, ex, job, w, basis)
+        paid = await charge_trade(db, ex, job, w, basis, **fee_asset)
         if paid.status != "confirmed":
             results.append(paid)
             job.params = {**job.params, "fee_outstanding": True,

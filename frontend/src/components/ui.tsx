@@ -301,19 +301,19 @@ export function TokenAvatar({ symbol, size = 40 }: { symbol: string; size?: numb
 }
 
 /** The launch's own image when the API can serve it (deploying or live), otherwise the generated avatar. */
-export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol: string; has_image?: boolean; status?: string; draft_revision?: number }; size?: number }) {
+export function TokenImage({ launch, size = 40 }: { launch: { id: string; symbol: string; has_image?: boolean; status?: string; draft_revision?: number; image_url?: string | null }; size?: number }) {
   const [broken, setBroken] = useState(false);
   const [privateImage, setPrivateImage] = useState<{key:string;url:string} | null>(null);
   const publicImage = launch.status === 'live' || launch.status === 'deploying';
-  const key = `${launch.id}:${launch.draft_revision ?? 0}:${launch.has_image}:${publicImage}`;
+  const key = `${launch.id}:${launch.draft_revision ?? 0}:${launch.has_image}:${publicImage}:${launch.image_url ?? ""}`;
   useEffect(()=>{
     let active=true, url:string | undefined;setBroken(false);
     if(launch.has_image && !publicImage)launchImage(launch.id).then(blob=>{if(active){url=URL.createObjectURL(blob);setPrivateImage({key,url});}}).catch(()=>{if(active)setBroken(true);});
     return ()=>{active=false;if(url)URL.revokeObjectURL(url);};
   },[key,launch.id,launch.has_image,publicImage]);
-  const src = publicImage ? `${BASE}/public/launch-images/${launch.id}` : privateImage?.key===key ? privateImage.url : '';
-  if (!launch.has_image || broken || !src) return <TokenAvatar symbol={launch.symbol} size={size} />;
-  return <img src={src} alt={`${launch.symbol} token artwork`} width={size} height={size} onError={() => setBroken(true)}
+  const src = launch.image_url || (launch.has_image && publicImage ? `${BASE}/public/launch-images/${launch.id}` : privateImage?.key===key ? privateImage.url : '');
+  if (broken || !src) return <TokenAvatar symbol={launch.symbol} size={size} />;
+  return <img src={src} alt={`${launch.symbol} token artwork`} width={size} height={size} loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)}
     style={{ width: size, height: size, borderRadius: size * 0.3, objectFit: "cover", flex: "none", border: "1px solid var(--line-2)" }} />;
 }
 

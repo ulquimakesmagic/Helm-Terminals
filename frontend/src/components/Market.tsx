@@ -15,6 +15,7 @@ interface Pool { address: string; dex: string | null; quote_symbol: string | nul
 interface Metrics {
   price_usd: number | null; market_cap_usd: number | null; fdv_usd: number | null; liquidity_usd: number | null;
   holder_count: number | null; created_at?: string | null; last_trade_at?: string | null;
+  price_quote?: number; quote_symbol?: string; volume_quote_24h?: number | null;
   price_change: Record<Win, number | null>; volume_usd: Record<Win, number | null>;
   txns: Record<Win, { buys: number | null; sells: number | null; swaps: number | null }>;
 }
@@ -33,7 +34,7 @@ const pct = (v: number | null | undefined) => v == null ? null : `${v > 0 ? "+" 
 const ago = (s: number) => s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
 
 function HeadStat({ label, value, tone, title }: { label: string; value: string | null; tone?: string; title?: string }) {
-  return <div className="th-stat" title={value == null ? "Not reported by Codex for this token" : `${value}${title?` · ${title}`:""}`}>
+  return <div className="th-stat" title={value == null ? "Unavailable for this token" : `${value}${title?` · ${title}`:""}`}>
     <span className="k">{label}</span><span className={`v num ${value == null ? "na" : tone ?? ""}`}>{value ?? "—"}{value == null && <span className="sr-only"> not reported</span>}</span>
   </div>;
 }
@@ -100,6 +101,11 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   const buys = tx?.buys, sells = tx?.sells;
   const split = buys != null && sells != null && buys + sells > 0 ? buys / (buys + sells) : null;
   const net = chainOf(r?.network ?? network).name;
+  const provider = r?.provider ?? "Codex";
+  const quoteUnit = metrics?.quote_symbol;
+  const priceInQuote = metrics?.price_quote != null && quoteUnit ? `${fmtPrice(metrics.price_quote)} ${quoteUnit}` : null;
+  const volumeInQuote = metrics?.volume_quote_24h != null && quoteUnit ?
+    `${metrics.volume_quote_24h.toLocaleString(undefined, {maximumSignificantDigits: 5})} ${quoteUnit}` : null;
 
   let notice: ReactNode = null;
   if (m.error) notice = <Callout tone="warn"><b>Market refresh failed.</b> {m.error}{r?.fetched_at ? " The last response is shown and marked stale." : ""}</Callout>;
@@ -107,26 +113,26 @@ export default function MarketTerminal({ launchId, network, token, symbol, ticke
   else if (r?.state === "unsupported") notice = <Callout icon="globe">Codex doesn't cover {net}, so Helm shows no market data here. Wallets and Helm trading remain available where supported.</Callout>;
   else if (r?.state === "not_indexed") notice = <Callout icon="radar"><b>Codex hasn't indexed this token yet.</b> New tokens usually appear after their first trades.{r.explorer_url && <> <a href={r.explorer_url} target="_blank" rel="noreferrer">View token on explorer</a></>}</Callout>;
   else if (r?.state === "no_pool") notice = <Callout icon="radar"><b>No pool indexed yet.</b> Codex knows this token but lists no trading pool for it.</Callout>;
-  else if (r?.state === "error" || r?.stale) notice = <Callout tone="warn"><b>{r.stale ? "Showing previously fetched Codex data." : "Market data is unavailable right now."}</b> {r.error}</Callout>;
+  else if (r?.state === "error" || r?.stale) notice = <Callout tone="warn"><b>{r.stale ? "Showing previously fetched market data." : "Market data is unavailable right now."}</b> {r.error}</Callout>;
 
   return <section className={`term terminal-view-${mobileView}`} aria-label="Indicative market data">
     <div className="term-head">
-      <div className="th-pool"><span className="term-kicker"><Icon name="trend" size={12} />Codex · indicative market data</span>
+      <div className="th-pool"><span className="term-kicker"><Icon name="trend" size={12} />{provider} · indicative market data</span>
         <b className="th-poolname">{r?.symbol ?? symbol} <span className="muted">/ USD · {net}</span></b>
         <button className="btn sm ghost mobile-stats-toggle" type="button" aria-expanded={allStats} onClick={() => setAllStats(!allStats)}>{allStats ? "Fewer stats" : "More stats"}</button>
       </div>
       <div className={`th-stats ${allStats ? "stats-expanded" : ""}`} role="region" aria-label="Market statistics">
-        <HeadStat label="Price" value={metrics?.price_usd != null ? `$${fmtPrice(metrics.price_usd)}` : null} title="Codex price in US dollars" />
+        <HeadStat label="Price" value={metrics?.price_usd != null ? `$${fmtPrice(metrics.price_usd)}` : priceInQuote} title={provider} />
         <HeadStat label="24h change" value={pct(change)} tone={change != null && change >= 0 ? "good" : "bad"} title="Token price change over 24 hours (Codex)" />
-        <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title="Circulating market cap: price × circulating supply, as reported by Codex" />
+        <HeadStat label="Mkt cap" value={usd(metrics?.market_cap_usd)} title={provider === "Elpida pool" ? "Pool price × fixed supply" : "Price × circulating supply (Codex)"} />
         <HeadStat label="FDV" value={usd(metrics?.fdv_usd)} title="Fully diluted valuation: price × total supply, as reported by Codex" />
         <HeadStat label="Liquidity" value={usd(metrics?.liquidity_usd)} title="Liquidity across the token's indexed pools (Codex)" />
-        <HeadStat label="24h volume" value={usd(metrics?.volume_usd.h24)} title="Token-wide volume across indexed pools (Codex)" />
+        <HeadStat label="24h volume" value={usd(metrics?.volume_usd.h24) ?? volumeInQuote} title={provider === "Elpida pool" ? "Swap volume in the Elpida pool" : "Token-wide volume across indexed pools (Codex)"} />
         <HeadStat label="Holders" value={count(metrics?.holder_count)} title="Holder count reported by Codex" />
       </div>
       <div className="th-src">
         <span className={`fresh ${stale || expired ? "stale" : ""}`} role="status">
-          {r?.fetched_at ? `${expired ? "Expired · " : stale ? "Stale · " : ""}Codex · updated ${ago(ageS)}` : r ? "Codex" : "Loading market data…"}
+          {r?.fetched_at ? `${expired ? "Expired · " : stale ? "Stale · " : ""}${provider} · updated ${ago(ageS)}` : r ? provider : "Loading market data…"}
         </span>
         <button className="btn sm ghost" onClick={() => { m.refresh(); c.refresh(); }} disabled={m.busy} aria-label="Refresh market data">
           {m.busy ? <Spinner /> : <Icon name="refresh" size={13} />}Refresh
