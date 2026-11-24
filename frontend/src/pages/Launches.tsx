@@ -199,7 +199,7 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved, initial
         </div>
       </div>
       {(image || initial?.has_image && !removeImage) && <button type="button" className="btn sm ghost" onClick={()=>{setImage(null);setRemoveImage(true);}}>Remove artwork</button>}
-      <Field label="Description" extra={`${f.description.length}/500`}>
+      <Field label="Description" extra={`${f.description.length}/${elpida ? 1000 : 500}`}>
         <textarea value={f.description} onChange={set("description")} rows={3} maxLength={elpida ? 1000 : 500} placeholder="What is this token about?" />
       </Field>
       {schema.socials.length > 0 && <details className="launch-links"><summary>Links <span className="muted">optional</span></summary><div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -207,8 +207,9 @@ export function CreateLaunch({ pads, wallets, onClose, initial, onSaved, initial
         {socials.has("telegram") && <Field label="Telegram"><input value={f.telegram} onChange={set("telegram")} placeholder="https://t.me/…" /></Field>}
         {socials.has("website") && <Field label="Website"><input value={f.website} onChange={set("website")} placeholder="https://…" /></Field>}
         {socials.has("discord") && <Field label="Discord"><input value={f.discord} onChange={set("discord")} placeholder="https://discord.gg/…" /></Field>}
-        {identityError && <Callout tone="err">{identityError}</Callout>}
       </div></details>}
+      {identityError && <Callout tone="err">{identityError}</Callout>}
+      {image && image.size > imageLimit && <Callout tone="err">Use artwork up to {imageLimit / 1_000_000} MB.</Callout>}
       </>}
       {step === 1 && <>
       <div className="section-heading"><div><h3>{experience.settingsTitle}</h3><p className="muted small">{experience.description}</p></div></div>

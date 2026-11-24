@@ -68,12 +68,20 @@ function summarizeKind(pre: any, network: string): ReviewSummary | null {
   switch (pre.kind) {
     case "deploy": {
       const devUsd = num(pre.dev_buy_usd);
-      const cells: [string, ReactNode][] = [["Dev buy", pre.initial_buy_display || `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
+      const cells: [string, ReactNode][] = [[pre.initial_buy_display ? "First buy" : "Dev buy",
+        pre.initial_buy_display || `${fmt(num(pre.dev_buy_sol) ?? 0, 6)} ${coin}${devUsd != null && num(pre.dev_buy_sol) ? ` ≈ $${fmt(devUsd, 2)}` : ""}`]];
       const f = pre.funding && typeof pre.funding === "object" ? pre.funding : null;
       if (f) cells.unshift(["Funded from", `${f.send} on ${f.from_chain}`]);
       if (pre.launch_fee) cells.push(["Launchpad fee", String(pre.launch_fee)]);
       if (pre.launchpad_trade_fee) cells.push(["Elpida trading fee", String(pre.launchpad_trade_fee)]);
-      cells.push(...gasCell, ["Helm launch fee", <>{fee(pre.platform_fee)}{pre.launch_fee_estimate ? <span className="muted small"> ({String(pre.launch_fee_estimate)}{pre.launch_fee_max ? `, ${pre.launch_fee_max}` : ""})</span> : null}</>]);
+      cells.push(...gasCell);
+      if (pre.initial_buy_display) {
+        cells.push(["Helm launch fee", "$0"]);
+        const initialFee = pre.initial_buy_fee;
+        if (initialFee) cells.push(["Helm first-buy fee", `${formatRaw(initialFee.amount_raw, initialFee.decimals)} ${initialFee.asset}`]);
+      } else {
+        cells.push(["Helm launch fee", <>{fee(pre.platform_fee)}{pre.launch_fee_estimate ? <span className="muted small"> ({String(pre.launch_fee_estimate)}{pre.launch_fee_max ? `, ${pre.launch_fee_max}` : ""})</span> : null}</>]);
+      }
       return {
         label: "Create token", value: `$${pre.symbol ?? ""}`, sub: <>{pre.name} on {padName(pre.launchpad)} · {chain.name}</>, cells,
         next: [

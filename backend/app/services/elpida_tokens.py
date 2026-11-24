@@ -146,7 +146,8 @@ async def _base_explorer_events(adapter, deployment, limit: int) -> list[dict]:
         if not isinstance(log, dict):
             continue
         tx, topics = log.get("transactionHash"), log.get("topics")
-        if not isinstance(tx, str) or not TX.fullmatch(tx) or not isinstance(topics, list) or len(topics) < 4:
+        if (not isinstance(tx, str) or not TX.fullmatch(tx) or not isinstance(topics, list) or len(topics) < 4
+                or not isinstance(topics[2], str) or not TX.fullmatch(topics[2])):
             continue
         receipt = await adapter.rpc.receipt(tx)
         if verified := _launch_event(receipt, (deployment,), "0x" + topics[2][-40:]):
@@ -184,7 +185,7 @@ async def list_tokens(adapter, limit: int) -> list[dict]:
 
         async def from_events(deployment):
             try:
-                events = await asyncio.wait_for(_recent_launch_events(adapter, deployment, limit), timeout=5)
+                events = await asyncio.wait_for(_recent_launch_events(adapter, deployment, limit), timeout=10)
             except (EvmRPCError, EvmRPCUnavailable, TimeoutError):
                 events = []
             if not events and adapter.network == "base" and deployment in adapter.config.previous:
