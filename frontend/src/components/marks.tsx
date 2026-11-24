@@ -25,6 +25,7 @@ const PAD_BRAND: Record<string, string> = {
   "meteora-dbc": "meteora", "uniswap-v2": "uniswap", "flap-sh": "flap", "flap-sh-base": "flap", "flap-sh-robinhood": "flap",
   "clanker-robinhood": "clanker",
   "clanker-bsc":"clanker",
+  "elpida-base": "elpida", "elpida-bsc": "elpida", "elpida-robinhood": "elpida", "elpida-ethereum": "elpida",
 };
 
 /*
@@ -45,6 +46,7 @@ const TREATMENT: Record<string, { fit: "fill" | "pad"; bg?: string; round?: bool
   "launchpads/clanker": { fit: "fill" }, "launchpads/letsbonk": { fit: "fill", round: true },
   "launchpads/sunpump": { fit: "fill", round: true }, "launchpads/meme-cooking": { fit: "fill", round: true },
   "launchpads/tolly": { fit: "fill" }, "launchpads/gaspump": { fit: "fill" },
+  "launchpads/elpida": { fit: "fill" },
 };
 
 const reported = new Set<string>();

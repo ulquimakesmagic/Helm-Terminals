@@ -6,10 +6,13 @@ Safety rules baked in:
 """
 
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Awaitable, Callable
+from urllib.parse import urlencode
 
 import asyncio
 
@@ -51,6 +54,9 @@ HELP = """<b>Helm Terminals bot</b>
 /wallets  your wallets and balances
 /launches  your launches
 /launch &lt;id&gt;  wallets, holdings and P&amp;L
+/launch elpida &lt;base|bsc|robinhood|ethereum&gt;  start a draft in Helm
+/elpida &lt;chain&gt; [token address]  open Elpida discovery in Helm
+/buy &lt;launch&gt; &lt;amount&gt; and /sell &lt;launch&gt; &lt;percent&gt;  open an Elpida order in Helm
 /transparency &lt;id&gt;  how much supply your wallets hold
 /status &lt;job id&gt;
 /unlink  disconnect this Telegram account
@@ -65,8 +71,10 @@ LINK_TEXT = ("This Telegram account isn't linked yet.\n"
 
 class Controller:
     def __init__(self, api: BotApi, pending: PendingStore | None = None, poll_interval: float = 1.5,
-                 poll_timeout: float = 90, clock: Callable[[], float] = time.monotonic) -> None:
+                 poll_timeout: float = 90, clock: Callable[[], float] = time.monotonic,
+                 web_url: str = "https://helmterminals.xyz") -> None:
         self.api = api
+        self.web_url = web_url.rstrip("/")
         self.pending = pending or PendingStore(clock=clock)
         self.poll_interval, self.poll_timeout, self.clock = poll_interval, poll_timeout, clock
         self.awaiting: dict[int, str] = {}  # tg_id -> pending id waiting for a 2FA code
@@ -179,8 +187,36 @@ class Controller:
         await send(Reply(render_launches(await self._get(tg_id, "/launches"))))
 
     async def cmd_launch(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
+        if args and args[0].lower() == "elpida":
+            network = self._elpida_network(args[1:])
+            pads = await self._get(tg_id, "/launchpads")
+            launchpad = next((pad for pad in pads if pad["id"] == f"elpida-{network}"), None)
+            if not launchpad or launchpad["status"] != "available":
+                raise BotError((launchpad or {}).get("reason") or "Elpida launches are unavailable on this chain.")
+            await send(self._web_reply("/launches", {"launchpad": launchpad["id"]}, "Create an Elpida draft"))
+            return
         lid = await self._launch_id(tg_id, args, "/launch <id>")
         await send(Reply(render_workspace(await self._get(tg_id, f"/launches/{lid}/workspace"))))
+
+    @staticmethod
+    def _elpida_network(args: list[str]) -> str:
+        if not args or args[0].lower() not in {"base", "bsc", "bnb", "robinhood", "ethereum"}:
+            raise BotError("Choose Base, BNB (bsc), Robinhood or Ethereum.")
+        network = args[0].lower()
+        return "bsc" if network == "bnb" else network
+
+    def _web_reply(self, path: str, query: dict, label: str) -> Reply:
+        url = self.web_url + path + "?" + urlencode(query)
+        return Reply(f'<a href="{e(url)}">{e(label)}</a>\nReview and confirm in the Helm web app.')
+
+    async def cmd_elpida(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
+        network = self._elpida_network(args)
+        params = {"elpida": network}
+        if len(args) > 1:
+            if not re.fullmatch(r"0x[0-9a-fA-F]{40}", args[1]):
+                raise BotError("Enter a valid Elpida token address.")
+            params["token"] = args[1]
+        await send(self._web_reply("/launches", params, "Open Elpida tokens"))
 
     async def cmd_transparency(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
         lid = await self._launch_id(tg_id, args, "/transparency <id>")
@@ -196,7 +232,14 @@ class Controller:
     async def cmd_buy(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
         if len(args) < 2:
             raise BotError("Usage: /buy <launch> <sol per wallet> [wallets|all]")
-        lid = await self._launch_id(tg_id, args[:1], "/buy")
+        launch = self._resolve(await self._get(tg_id, "/launches"), args[0], "launch")
+        lid = launch["id"]
+        if launch.get("launchpad", "").startswith("elpida-"):
+            self._number(args[1], "quote amount")
+            amount = format(Decimal(args[1]), "f")
+            await send(self._web_reply(f"/launches/{lid}", {"side": "buy", "amount": amount},
+                                       "Review Elpida buy"))
+            return
         amount = self._number(args[1], "SOL amount")
         ids = await self._launch_wallets(tg_id, lid, args[2] if len(args) > 2 else "all")
         await self._start_spend(tg_id, "Buy", f"/launches/{lid}/trade", {
@@ -206,10 +249,15 @@ class Controller:
     async def cmd_sell(self, tg_id: int, chat_id: int, args: list[str], send: Send) -> None:
         if len(args) < 2:
             raise BotError("Usage: /sell <launch> <percent> [wallets|all]")
-        lid = await self._launch_id(tg_id, args[:1], "/sell")
+        launch = self._resolve(await self._get(tg_id, "/launches"), args[0], "launch")
+        lid = launch["id"]
         pct = self._number(args[1].rstrip("%"), "percent")
         if pct > 100:
             raise BotError("Percent must be between 1 and 100.")
+        if launch.get("launchpad", "").startswith("elpida-"):
+            await send(self._web_reply(f"/launches/{lid}", {"side": "sell", "amount": str(pct)},
+                                       "Review Elpida sell"))
+            return
         ids = await self._launch_wallets(tg_id, lid, args[2] if len(args) > 2 else "all")
         await self._start_spend(tg_id, "Sell", f"/launches/{lid}/trade", {
             "side": "sell", "wallet_ids": ids, "amount": pct, "mode": "stagger", "stagger_ms": 1000,
@@ -323,7 +371,7 @@ class Controller:
             v = float(raw)
         except ValueError:
             raise BotError(f"'{e(raw)}' is not a valid {what}.")
-        if v <= 0:
+        if not math.isfinite(v) or v <= 0:
             raise BotError(f"The {what} must be greater than zero.")
         return v
 

@@ -39,6 +39,7 @@ segment), so their bytes differ; the artwork itself is unchanged.
 | `launchpads/flap.png` (resized) | flap-sh, flap-sh-robinhood | github.com/flap-sh/flap-vault-component-template @ df6c461a `public/logo.png` | Linked from docs.flap.sh | beb0861f… |
 | `launchpads/pons.jpg` | pons | github.com/ponsdotdev/ponsfamily @ 74de0196 `media/logo.png` (a JPEG despite its name) | "Official repository for the ponsfamily.com smart contracts"; shown as "Pons Family" in its README | 26e844ee… |
 | `launchpads/surge.png` | surge | surge.xyz/branding/apple-touch-icon.png | Surge's own site (currently a "coming soon" page); its only published mark | 1825e0f2… |
+| `launchpads/elpida.png` | Elpida on four EVM chains | elpida.fun/assets/brand/icon-512.png | Organization logo published in Elpida's site metadata | 43c6d64d… |
 
 ## Supplied by the project owner (2026-09-27)
 

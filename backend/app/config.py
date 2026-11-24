@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     evm_rpc_bsc: str = ""
     evm_rpc_ethereum: str = ""
     evm_rpc_robinhood: str = ""
+    helm_rpc_8453: str = ""
+    helm_rpc_56: str = ""
+    helm_rpc_1: str = ""
+    helm_rpc_4663: str = ""
     # Enable only after independent contract review and a verified deployment on chain 4663.
     pons_rewards_enabled: bool = False
     pons_rewards_factory: str = ""  # Historical immutable 6% splitters only
@@ -99,7 +103,7 @@ class Settings(BaseSettings):
     ton_rpc_url: str = ""  # toncenter-compatible index API base (default https://toncenter.com)
     toncenter_api_key: str = ""  # X-API-Key; without it toncenter allows 1 request a second
     ton_proof_domains: str = ""  # hosts a TON Connect proof may name; default: helmterminals.xyz + CORS_ORIGINS hosts
-    pinata_jwt: str = ""  # Pinata API JWT: pins Meme.Cooking token images and metadata to IPFS
+    pinata_jwt: str = ""  # Pinata API JWT for Meme.Cooking and Elpida metadata
     extra_rpc_timeout_s: float = Field(default=15.0, gt=0, le=60)
     letsbonk_storage_url: str = "https://nft-storage.letsbonk22.workers.dev"
     flap_upload_url: str = "https://funcs.flap.sh/api/upload"

@@ -159,6 +159,14 @@ export const LAUNCHPAD_EXPERIENCES: Record<string, LaunchpadExperience> = {
 };
 
 export function launchpadExperience(id: string, version?:number): LaunchpadExperience {
+  if (id.startsWith("elpida-") && id !== "elpida-solana") return {
+    ...DEFAULT, mode: "Uniswap v4 launch", title: "Configure Elpida launch",
+    description: "Choose a pool asset and publish metadata to IPFS.",
+    features: ["Native or stablecoin quote", "Same pool after graduation"],
+    rewardTitle: "Creator rewards",
+    rewardCopy: "Elpida allocates 30% of trading fees to the launching wallet, 50% to traders, and 20% to Elpida.",
+    claimMode: "external", claimCopy: "Manage creator rewards on Elpida.", claimUrl: "https://elpida.fun/",
+  };
   if(id.startsWith('clanker') && version===4)return CLANKER_V4;
   return LAUNCHPAD_EXPERIENCES[id] ?? DEFAULT;
 }

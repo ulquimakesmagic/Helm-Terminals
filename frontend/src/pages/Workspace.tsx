@@ -148,8 +148,11 @@ export default function Workspace() {
   const [folders, setFolders] = useState<{id:string;name:string}[]>([]);
   const [consolidateOpen, setConsolidateOpen] = useState(false);
   useEffect(() => { api<{id:string;name:string}[]>("/folders").then(setFolders).catch(() => {}); }, []);
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [amount, setAmount] = useState("0.1");
+  const [side, setSide] = useState<"buy" | "sell">(search.get("side") === "sell" ? "sell" : "buy");
+  const [amount, setAmount] = useState(() => {
+    const input = search.get("amount") ?? "";
+    return /^\d+(?:\.\d+)?$/.test(input) && +input > 0 ? input : search.get("side") === "sell" ? "25" : "0.1";
+  });
   const [mode, setMode] = useState<"stagger" | "parallel">("stagger");
   const [stagger, setStagger] = useState("1000");
   const [slippage, setSlippage] = useState("10");
@@ -164,7 +167,7 @@ export default function Workspace() {
   const workspaceFlights = useRef(new Set<string | undefined>());
   const currentWorkspace = useRef(id);
   currentWorkspace.current = id;
-  const [mobileView, setMobileView] = useState<"chart" | "trade" | "activity">("chart");
+  const [mobileView, setMobileView] = useState<"chart" | "trade" | "activity">(search.has("side") ? "trade" : "chart");
   const [supplyOpen, setSupplyOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -253,6 +256,7 @@ export default function Workspace() {
   if(l.clanker_version===5)opOptions.splice(1,0,["dividends","Holder dividends"]);
   const chosenSettings = Object.entries(l.settings ?? {});
   const cur = chain.native;
+  const tradeUnit = l.launchpad.startsWith("elpida-") ? l.quote?.symbol ?? cur : cur;
   const live = l.status === "live";
   // Extra-chain launch plans remain unavailable; Meme.Cooking trades are auction deposits.
   const extra = isExtraChain(l.network);
@@ -341,8 +345,8 @@ export default function Workspace() {
                   </div>
                 </details>
                 {auction && <p className="muted small">Meme.Cooking is an auction: deposits count until the countdown ends; withdrawing before then costs 2%.</p>}
-                <Field label={side === "buy" ? (auction ? "Deposit per wallet" : `Spend per wallet`) : (auction ? "Withdraw from each wallet's deposit" : "Sell from each wallet")} extra={side === "sell" && auction ? "percent of each wallet's deposit" : side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
-                  <UnitInput unit={side === "buy" ? cur : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <Field label={side === "buy" ? (auction ? "Deposit per wallet" : `Spend per wallet`) : (auction ? "Withdraw from each wallet's deposit" : "Sell from each wallet")} extra={side === "sell" && auction ? "percent of each wallet's deposit" : side === "sell" && sel.length ? `${compact(selTok)} tokens selected` : side === "buy" && sel.length && tradeUnit === cur ? `${fmt(selSol, 4)} ${cur} available` : undefined}>
+                  <UnitInput unit={side === "buy" ? tradeUnit : "%"} value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </Field>
                 <div className="chips" role="group" aria-label="Preset amounts">
                   {presets.map((p) => <button key={p} type="button" className={`chip ${amount === p ? "on" : ""}`} aria-pressed={amount === p} onClick={() => setAmount(p)}>{p}{side === "sell" ? "%" : ""}</button>)}
@@ -351,7 +355,7 @@ export default function Workspace() {
                   <div className="k">Wallets</div>
                   <div className="v">{sel.length ? <span className="mono">{sel.length}</span> : <button type="button" className="btn sm ghost" style={{ height: 22, padding: "0 6px" }} onClick={() => setSelected(new Set(ws.wallets.map((w: any) => w.id)))} disabled={!ws.wallets.length}>Select all {ws.wallets.length}</button>}</div>
                   <div className="k">{side === "buy" ? "Spend before fees" : "Selling"}</div>
-                  <div className="v mono">{side === "buy" ? `${fmt(sel.length * amt, 6)} ${cur}` : `${fmt(amt, 2)}% ≈ ${compact((selTok * Math.min(amt, 100)) / 100)} tokens`}</div>
+                  <div className="v mono">{side === "buy" ? `${fmt(sel.length * amt, 6)} ${tradeUnit}` : `${fmt(amt, 2)}% ≈ ${compact((selTok * Math.min(amt, 100)) / 100)} tokens`}</div>
                   <div className="k">Execution</div>
                   <div className="v">{mode === "stagger" ? `One at a time · ${stagger} ms` : "All at once"} · {slippage}% slippage</div>
                   <div className="k">Helm trading fee</div><div className="v">{me?.trade_fee?.bps===0?'0% · '+me.trade_fee.reason:'2.5% · exact costs in review'}</div>
@@ -525,6 +529,7 @@ export default function Workspace() {
             <div className="row small muted" style={{ gap: 8, marginTop: 4 }}>
               <ChainLabel network={l.network} size={16} /><span aria-hidden="true">·</span><PadLabel pad={l.launchpad} network={l.network} size={18} />
               {l.quote && <span className="badge info">paired with {l.quote.symbol}</span>}
+              {l.launchpad_url && <a href={l.launchpad_url} target="_blank" rel="noreferrer">View on Elpida <Icon name="ext" size={12} /></a>}
               {l.mint_address && <><span aria-hidden="true">·</span><Address address={l.mint_address} type="token" chars={6} network={l.network} /></>}
               {!l.mint_address && l.cloned_from && <><span aria-hidden="true">·</span><span>copied from <Address address={l.cloned_from.address} type="token" chars={5} network={l.cloned_from.network} /></span></>}
             </div>
@@ -559,7 +564,7 @@ export default function Workspace() {
           <div className="grow">
             <h2>{l.status === "failed" ? "Deployment failed. Review and retry." : "Next: deploy this token"}</h2>
             <p className="muted small" style={{ marginTop: 2 }}>
-              {l.dev_wallet_id ? <>Dev buy <b className="text-2 mono">{fmt(l.dev_buy_sol, 6)} {cur}</b> from the dev wallet. The preview shows every cost before anything is sent.</> : "This launch has no dev wallet yet. Set one before deploying."}
+              {l.dev_wallet_id ? <>Dev buy <b className="text-2 mono">{fmt(l.dev_buy_sol, 6)} {tradeUnit}</b> from the dev wallet. The preview shows every cost before anything is sent.</> : "This launch has no dev wallet yet. Set one before deploying."}
             </p>
           </div>
           <button className="btn" disabled={!l.dev_wallet_id && !editPads.length} onClick={() => l.dev_wallet_id ? setDialog({ title: `Deploy ${l.name}`, path: `/launches/${id}/deploy`, body: {} }) : setEditDraft(true)}>

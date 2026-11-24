@@ -19,6 +19,7 @@ class BotSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     telegram_bot_token: str
     helm_api_url: str = "http://localhost:8000"
+    helm_web_url: str = "https://helmterminals.xyz"
     bot_api_key: str
 
 
@@ -26,6 +27,7 @@ COMMANDS = [
     ("wallets", "Your wallets and balances"), ("launches", "Your launches"), ("launch", "Launch details: /launch <id>"),
     ("transparency", "Supply held by your wallets"), ("status", "Job status"),
     ("unlink", "Disconnect this Telegram"), ("help", "Help"),
+    ("elpida", "Explore Elpida tokens"), ("buy", "Open a buy in Helm"), ("sell", "Open a sell in Helm"),
 ]
 
 
@@ -40,7 +42,7 @@ async def run() -> None:
     logging.basicConfig(level=logging.INFO)
     cfg = BotSettings()
     http = httpx.AsyncClient(base_url=cfg.helm_api_url, timeout=30)
-    ctl = Controller(BotApi(http, cfg.bot_api_key))
+    ctl = Controller(BotApi(http, cfg.bot_api_key), web_url=cfg.helm_web_url)
     bot = Bot(cfg.telegram_bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     no_preview = LinkPreviewOptions(is_disabled=True)

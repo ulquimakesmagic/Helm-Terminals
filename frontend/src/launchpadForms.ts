@@ -1,6 +1,6 @@
 export interface LaunchField {
   key: string; type: string; label?: string; hint?: string;
-  options?: (string | number)[]; default?: unknown; min?: number; max?: number;
+  options?: (string | number)[]; default?: unknown; min?: number; max?: number; step?: number;
   option_labels?: Record<string,string>;
   asset_kinds?: Record<string,string>;
 }
@@ -36,6 +36,12 @@ export const LAUNCHPAD_FORMS: Record<string, Profile> = {
   tolly: { sections: [], scope: "Helm uses Tolly's fixed USDC pool preset with locked liquidity. The protocol limits each wallet to 3% of supply for the first five minutes.", pair: "USDC", funding: "Creator buy" },
 };
 export function launchpadForm(id: string): Profile {
+  if (id.startsWith("elpida-") && id !== "elpida-solana") return {
+    sections: [{title: "Pool and fees", description: "Choose the quote asset, trading fee and launch fee payment.",
+      keys: ["elpida_pair", "elpida_fee_bps", "elpida_fee_payment"]}, execution],
+    scope: "Elpida publishes your artwork and links to IPFS. The pool opens at launch and stays in place after graduation.",
+    pair: "Selected quote asset", funding: "First buy",
+  };
   return LAUNCHPAD_FORMS[id] ?? { sections: [execution], scope: "This launchpad is not configured for deployment yet.", pair: "Unavailable", funding: "Launch funding" };
 }
 export function groupedFields(id: string, fields: LaunchField[]) {
@@ -59,6 +65,7 @@ export function validateLaunchFields(fields: LaunchField[], values: Record<strin
   const hard = Number(values.hard_cap_near), soft = Number(values.soft_cap_near);
   if (values.dividend_share_pct !== undefined && Number(values.dividend_share_pct)+Number(values.burn_share_pct ?? 0)>100) return 'Dividends and burns together cannot exceed 100%.';
   if (Number(values.dividend_share_pct)>0 && !Number.isInteger(Number(values.minimum_dividend_tokens))) return 'Enter a whole-token minimum holding.';
+  if (values.elpida_fee_bps !== undefined && !Number.isInteger(Number(values.elpida_fee_bps))) return "Enter a whole number of basis points.";
   const quote=fields.find(f=>f.key==='clanker_quote');
   const kind=quote?.asset_kinds?.[String(values.clanker_quote)];
   if (kind==='stock' && values.quote_eligibility!=='confirmed') return 'Confirm the stock-token issuer’s eligibility terms.';

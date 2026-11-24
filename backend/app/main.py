@@ -113,7 +113,7 @@ async def _release_single_replica_lock(conn) -> None:
 
 DEFAULT_SECRET = "dev-secret-change-me"
 # Largest request body the API reads: a 2 MB token image as base64 plus its form fields (audit HT-07).
-MAX_BODY_BYTES = 3_500_000
+MAX_BODY_BYTES = 6_750_000  # base64-encoded 5 MB Elpida artwork plus draft fields
 
 
 class BodyLimit:

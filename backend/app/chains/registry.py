@@ -2,7 +2,8 @@
 
 from ..config import get_settings
 from .bags import BagsAdapter
-from .evm import shared_evm
+from .evm import evm_rpc_urls, shared_evm
+from .elpida import ElpidaAdapter, NETWORKS as ELPIDA_NETWORKS
 from .flap import FlapAdapter
 from .clanker_v5 import ClankerV5Adapter
 from .fourmeme import FourMemeAdapter
@@ -49,6 +50,13 @@ def _clanker(launchpad_id: str, network: str):
     return make
 
 
+def _elpida(network: str):
+    def make():
+        key = get_settings().pinata_jwt
+        return ElpidaAdapter(network, shared_evm(network), Pinata(key) if key else None)
+    return make
+
+
 IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                "flap-sh": _flap("flap-sh", "bsc"), "flap-sh-robinhood": _flap("flap-sh-robinhood", "robinhood"),
                "flap-sh-base": _flap("flap-sh-base", "base"),
@@ -66,6 +74,7 @@ IMPLEMENTED = {"pumpfun": _pumpfun, "letsbonk": _letsbonk, "bags": _bags,
                    if get_settings().jupiter_api_key else None),
                "clanker": _clanker("clanker", "base"), "clanker-robinhood": _clanker("clanker-robinhood", "robinhood"),
                "clanker-bsc": _clanker("clanker-bsc", "bsc"),
+               **{f"elpida-{network}": _elpida(network) for network in ELPIDA_NETWORKS},
                # TRON, NEAR and Arc (see chains/extra_pads.py and services/extra_launch.py)
                "sunpump": SunPump, "tolly": Tolly,
                "meme-cooking": lambda: MemeCooking(Pinata(get_settings().pinata_jwt) if get_settings().pinata_jwt
@@ -91,6 +100,14 @@ def is_evm_network(network: str) -> bool:
 
 def needs_setup(launchpad_id: str) -> str | None:
     """Why an implemented launchpad can't be used on this server yet, or None if it can."""
+    if launchpad_id.startswith("elpida-") and launchpad_id in IMPLEMENTED:
+        from .evm import EVM_CHAINS
+
+        network = get_adapter(launchpad_id).network
+        if not evm_rpc_urls(network):
+            return f"Elpida needs a chain RPC (HELM_RPC_{EVM_CHAINS[network]['chain_id']})"
+        if not get_settings().pinata_jwt:
+            return "Elpida launches need IPFS pinning (PINATA_JWT)"
     if launchpad_id == "pons" and not get_settings().pons_rewards_factory_v2:
         return "Pons 2.5% creator rewards need a separately verified PONS_REWARDS_FACTORY_V2"
     if launchpad_id == "bags" and not get_settings().bags_api_key:
@@ -113,9 +130,7 @@ def needs_setup(launchpad_id: str) -> str | None:
 PLANNED = [
     ("surge", "solana"), ("anoncoin", "solana"), ("stonkfun", "solana"),
     ("bankr", "base"),
-    # Elpida is a development prototype. Enable only after deployed program/contract verification.
-    ("elpida-solana", "solana"), ("elpida-ethereum", "ethereum"), ("elpida-base", "base"),
-    ("elpida-bsc", "bsc"), ("elpida-robinhood", "robinhood"),
+    ("elpida-solana", "solana"),
 ]
 
 _cache: dict[str, LaunchpadAdapter] = {}
